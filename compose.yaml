@@ -22,7 +22,7 @@ services:
   server:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: .setup/build/dev/Dockerfile
     container_name: solado-certo-server
     restart: unless-stopped
     depends_on:
@@ -31,11 +31,14 @@ services:
     env_file:
       - .env
     environment:
-      PORT: ${PORT:-3000}
+      SERVER_PORT: ${SERVER_PORT:-3000}
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/solado_certo?sslmode=disable}
       SECRET_KEY: ${SECRET_KEY:-your-secret-key}
     ports:
-      - "8080:8080"
+      - "3000:3000"
     volumes:
       - .:/app
-      - ./tmp:/app/tmp
+      - server_tmp:/app/tmp
+
+volumes:
+  server_tmp:
