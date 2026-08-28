@@ -1,12 +1,12 @@
 SERVER_CONTAINER=server
-EXEC=docker-compose exec
+EXEC=docker compose exec
 
 up:
-	docker-compose up --build -d
+	docker compose up --build -d
 down:
-	docker-compose down
+	docker compose down
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 format:
 	go fmt ./...
 tidy:
