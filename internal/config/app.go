@@ -7,6 +7,7 @@ import (
 type App struct {
 	Envs 	   *Envs
 	RegisterUser auth.RegisterUseCase
+	LoginUser    auth.LoginUseCase
 }
 
 func InitApp() *App {
@@ -15,5 +16,6 @@ func InitApp() *App {
 	return &App{
 		Envs:         dependencies.envs,
 		RegisterUser: dependencies.registerUser,
+		LoginUser: dependencies.loginUser,
 	}
 }

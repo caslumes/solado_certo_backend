@@ -1,5 +1,7 @@
 package auth
 
+import "time"
+
 type UserEntity struct {
 	ID        string
 	Nome      string
@@ -8,9 +10,9 @@ type UserEntity struct {
 	SenhaHash string
 	AvatarURL string
 	Status    string
-	CreatedAt string
-	UpdatedAt string
-	DeletedAt string
+	CreatedAt *time.Time
+	UpdatedAt *time.Time
+	DeletedAt *time.Time
 }
 
 type RefreshTokenEntity struct {
@@ -18,7 +20,7 @@ type RefreshTokenEntity struct {
 	UsuarioID  string
 	TokenHash  string
 	DeviceName string
-	ExpiresAt  string
-	RevokedAt  string
-	CreatedAt  string
+	ExpiresAt  *time.Time
+	RevokedAt  *time.Time
+	CreatedAt  *time.Time
 }

@@ -1,10 +1,14 @@
-package repository
+package postgres
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
+	model "github.com/caslumes/solado_certo_backend/internal/features/auth/repository"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -30,4 +34,25 @@ func (r *postgresRepository) CreateUser(ctx context.Context, ue *auth.UserEntity
 	}
 
 	return nil
+}
+
+func (r *postgresRepository) GetUserByEmail(ctx context.Context, email string) (*auth.UserEntity, error) {
+	var um model.UserModel
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT id, nome, email, telefone, senha_hash, status, created_at, updated_at FROM usuarios WHERE email = $1",
+		email,
+	).Scan(&um.ID, &um.Nome, &um.Email, &um.Telefone, &um.SenhaHash, &um.Status, &um.CreatedAt, &um.UpdatedAt)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrUserNotFound
+		}
+
+		return nil, err
+	}
+
+	ue := um.ToEntity()
+
+	return &ue, nil
 }

@@ -5,15 +5,17 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 )
 
 type Handler struct {
 	register auth.RegisterUseCase
+	login   auth.LoginUseCase
 }
 
-func NewHandler(register auth.RegisterUseCase) *Handler {
-	return &Handler{register: register}
+func NewHandler(register auth.RegisterUseCase, login auth.LoginUseCase) *Handler {
+	return &Handler{register: register, login: login}
 }
 
 type registerRequest struct {
@@ -37,7 +39,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		Password: request.Password,
 	})
 	if err != nil {
-		if errors.Is(err, auth.ErrInvalidInput) {
+		if errors.Is(err, app.ErrInvalidInput) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -47,4 +49,34 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	err := h.login.Login(r.Context(), &auth.LoginInput{
+		Email:    request.Email,
+		Password: request.Password,
+	})
+	if err != nil {
+		if errors.Is(err, app.ErrInvalidInput) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, app.ErrInvalidCredentials) {
+			http.Error(w, "invalid email or password", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "could not login user", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

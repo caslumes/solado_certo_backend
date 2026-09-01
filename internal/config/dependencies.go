@@ -12,6 +12,7 @@ import (
 type Dependencies struct {
 	envs 	   *Envs
 	registerUser auth.RegisterUseCase
+	loginUser   auth.LoginUseCase
 }
 
 func InitDependencies() *Dependencies {
@@ -28,6 +29,7 @@ func InitDependencies() *Dependencies {
 	return &Dependencies{
 		envs:         envs,
 		registerUser: authService,
+		loginUser:    authService,
 	}
 }
 

@@ -6,3 +6,8 @@ type RegisterInput struct {
 	Phone    string
 	Password string
 }
+
+type LoginInput struct {
+	Email    string
+	Password string
+}
