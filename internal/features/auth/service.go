@@ -41,6 +41,10 @@ func (s *service) Register(context context.Context, input *RegisterInput) error 
 }
 
 func hashPassword(password string) (string, error) {
-	// TODO: implement password hashing
-	return password, nil
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+
+	return string(bytes), nil
 }
