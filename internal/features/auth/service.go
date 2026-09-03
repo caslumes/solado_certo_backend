@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -14,6 +16,7 @@ import (
 type repository interface {
 	CreateUser(context context.Context, ue *UserEntity) error
 	GetUserByEmail(context context.Context, email string) (*UserEntity, error)
+	SaveRefreshToken(context context.Context, rt *RefreshTokenEntity) error
 }
 
 type RegisterUseCase interface {
@@ -122,16 +125,28 @@ func (s *service) createTokens(userID string) (TokenPair, error) {
 	}
 
 	tokenID := fmt.Sprintf("%d-%s", time.Now().UnixNano(), userID)
+	tokenHashBytes := sha256.Sum256([]byte(tokenID))
+	tokenHashString := hex.EncodeToString(tokenHashBytes[:])
 	refreshClaims := &Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        tokenID,
+			ID:        tokenHashString,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	refreshTokenString, err := refreshToken.SignedString(s.secretKey)
+	if err != nil {
+		return TokenPair{}, err
+	}
+
+	err = s.r.SaveRefreshToken(context.Background(), &RefreshTokenEntity{
+		UsuarioID:  userID,
+		TokenHash:  tokenHashString,
+		DeviceName: "default",
+		ExpiresAt:  &refreshClaims.ExpiresAt.Time,
+	})
 	if err != nil {
 		return TokenPair{}, err
 	}

@@ -56,3 +56,19 @@ func (r *postgresRepository) GetUserByEmail(ctx context.Context, email string) (
 
 	return &ue, nil
 }
+
+func (r *postgresRepository) SaveRefreshToken(ctx context.Context, rt *auth.RefreshTokenEntity) error {
+	now := time.Now().UTC()
+	_, err := r.pool.Exec(
+		ctx,
+		"INSERT INTO refresh_tokens (usuario_id, token_hash, device_name, expires_at, created_at) " + 
+		"VALUES ($1, $2, $3, $4, $5)",
+		rt.UsuarioID, rt.TokenHash, rt.DeviceName, rt.ExpiresAt, now,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
