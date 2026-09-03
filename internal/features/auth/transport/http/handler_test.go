@@ -13,13 +13,13 @@ import (
 )
 
 type registerUseCaseFunc func(context.Context, *auth.RegisterInput) error
-type loginUseCaseFunc func(context.Context, *auth.LoginInput) error
+type loginUseCaseFunc func(context.Context, *auth.LoginInput) (auth.TokenPair, error)
 
 func (f registerUseCaseFunc) Register(ctx context.Context, input *auth.RegisterInput) error {
 	return f(ctx, input)
 }
 
-func (f loginUseCaseFunc) Login(ctx context.Context, input *auth.LoginInput) error {
+func (f loginUseCaseFunc) Login(ctx context.Context, input *auth.LoginInput) (auth.TokenPair, error) {
 	return f(ctx, input)
 }
 
@@ -33,8 +33,8 @@ func TestRegisterDecodesRequestAndPassesContext(t *testing.T) {
 		}
 		received = input
 		return nil
-	}), loginUseCaseFunc(func(ctx context.Context, input *auth.LoginInput) error {
-		return nil
+	}), loginUseCaseFunc(func(ctx context.Context, input *auth.LoginInput) (auth.TokenPair, error) {
+		return auth.TokenPair{}, nil
 	}))
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`)).WithContext(requestContext)
@@ -55,8 +55,8 @@ func TestRegisterRejectsMalformedJSON(t *testing.T) {
 	handler := NewHandler(registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
 		called = true
 		return nil
-	}), loginUseCaseFunc(func(ctx context.Context, input *auth.LoginInput) error {
-		return nil
+	}), loginUseCaseFunc(func(ctx context.Context, input *auth.LoginInput) (auth.TokenPair, error) {
+		return auth.TokenPair{}, nil
 	}))
 	recorder := httptest.NewRecorder()
 
@@ -73,8 +73,8 @@ func TestRegisterRejectsMalformedJSON(t *testing.T) {
 func TestRegisterMapsApplicationErrors(t *testing.T) {
 	handler := NewHandler(registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
 		return app.ErrInvalidInput
-	}), loginUseCaseFunc(func(ctx context.Context, input *auth.LoginInput) error {
-		return nil
+	}), loginUseCaseFunc(func(ctx context.Context, input *auth.LoginInput) (auth.TokenPair, error) {
+		return auth.TokenPair{}, nil
 	}))
 	recorder := httptest.NewRecorder()
 	body := `{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`
@@ -89,8 +89,8 @@ func TestRegisterMapsApplicationErrors(t *testing.T) {
 func TestRegisterMapsUnexpectedErrors(t *testing.T) {
 	handler := NewHandler(registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
 		return errors.New("database unavailable")
-	}), loginUseCaseFunc(func(ctx context.Context, input *auth.LoginInput) error {
-		return nil
+	}), loginUseCaseFunc(func(ctx context.Context, input *auth.LoginInput) (auth.TokenPair, error) {
+		return auth.TokenPair{}, nil
 	}))
 	recorder := httptest.NewRecorder()
 	body := `{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`

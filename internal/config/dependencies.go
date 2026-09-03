@@ -24,7 +24,7 @@ func InitDependencies() *Dependencies {
 	}
 
 	authRepository := authRepository.NewPostgresRepository(dbPool)
-	authService := auth.NewService(authRepository)
+	authService := auth.NewService(authRepository, envs.SecretKey)
 
 	return &Dependencies{
 		envs:         envs,

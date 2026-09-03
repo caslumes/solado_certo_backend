@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	httpconstants "github.com/caslumes/solado_certo_backend/internal/app/constants/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 )
 
@@ -61,7 +62,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.login.Login(r.Context(), &auth.LoginInput{
+	tokenPair, err := h.login.Login(r.Context(), &auth.LoginInput{
 		Email:    request.Email,
 		Password: request.Password,
 	})
@@ -77,6 +78,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not login user", http.StatusInternalServerError)
 		return
 	}
-
+	
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"access_token": tokenPair.AccessToken, "refresh_token": tokenPair.RefreshToken})
 }

@@ -8,12 +8,14 @@ import (
 type Envs struct {
 	ServerPort  string `env:"SERVER_PORT" envDefault:"8080"`
 	DatabaseURL string `env:"DATABASE_URL"`
+	SecretKey   string `env:"SECRET_KEY" envDefault:"secret_key"`
 }
 
 func LoadEnvs() *Envs {
 	return &Envs{
 		ServerPort:  getString("SERVER_PORT", "8080"),
 		DatabaseURL: getString("DATABASE_URL", "postgres://user:password@localhost:5432/dbname"),
+		SecretKey:   getString("SECRET_KEY", "secret_key"),
 	}
 }
 
