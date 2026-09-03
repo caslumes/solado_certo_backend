@@ -24,3 +24,15 @@ type RefreshTokenEntity struct {
 	RevokedAt  *time.Time
 	CreatedAt  *time.Time
 }
+
+func (r *RefreshTokenEntity) IsRevoked() bool {
+	return r.RevokedAt != nil
+}
+
+func (r *RefreshTokenEntity) IsExpired() bool {
+	if r.ExpiresAt == nil {
+		return false
+	}
+
+	return r.ExpiresAt.Before(time.Now())
+}

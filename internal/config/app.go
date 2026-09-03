@@ -8,6 +8,7 @@ type App struct {
 	Envs 	   *Envs
 	RegisterUser auth.RegisterUseCase
 	LoginUser    auth.LoginUseCase
+	RefreshToken auth.RefreshTokenUseCase
 }
 
 func InitApp() *App {
@@ -17,5 +18,6 @@ func InitApp() *App {
 		Envs:         dependencies.envs,
 		RegisterUser: dependencies.registerUser,
 		LoginUser: dependencies.loginUser,
+		RefreshToken: dependencies.refreshToken,
 	}
 }

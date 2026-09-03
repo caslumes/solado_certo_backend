@@ -72,3 +72,43 @@ func (r *postgresRepository) SaveRefreshToken(ctx context.Context, rt *auth.Refr
 
 	return nil
 }
+
+func (r *postgresRepository) GetTokenByHash(ctx context.Context, tokenHash string) (*auth.RefreshTokenEntity, error) {
+	var rtm model.RefreshTokenModel
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT id, usuario_id, token_hash, device_name, expires_at, revoked_at, created_at FROM refresh_tokens WHERE token_hash = $1",
+		tokenHash,
+	).Scan(&rtm.ID, &rtm.UsuarioID, &rtm.TokenHash, &rtm.DeviceName, &rtm.ExpiresAt, &rtm.RevokedAt, &rtm.CreatedAt)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrTokenNotFound
+		}
+
+		return nil, err
+	}
+
+	rt := rtm.ToEntity()
+
+	return &rt, nil
+}
+
+func (r *postgresRepository) RevokeToken(ctx context.Context, tokenHash string) error {
+	now := time.Now().UTC()
+	result, err := r.pool.Exec(
+		ctx,
+		"UPDATE refresh_tokens SET revoked_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL",
+		now, tokenHash,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return app.ErrTokenNotFound
+	}
+
+	return nil
+}

@@ -42,3 +42,16 @@ type RefreshTokenModel struct {
 	RevokedAt  *time.Time
 	CreatedAt  *time.Time
 }
+
+func (r *RefreshTokenModel) ToEntity() auth.RefreshTokenEntity {
+	var rte auth.RefreshTokenEntity
+	rte.ID = r.ID
+	rte.UsuarioID = r.UsuarioID
+	rte.TokenHash = r.TokenHash
+	rte.DeviceName = r.DeviceName
+	rte.ExpiresAt = r.ExpiresAt
+	rte.RevokedAt = r.RevokedAt
+	rte.CreatedAt = r.CreatedAt
+
+	return rte
+}
