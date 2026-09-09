@@ -2,10 +2,12 @@ package config
 
 import (
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
+	"github.com/caslumes/solado_certo_backend/internal/middleware"
 )
 
 type App struct {
 	Envs 	   *Envs
+	AuthMiddleware *middleware.AuthMiddleware
 	RegisterUser auth.RegisterUseCase
 	LoginUser    auth.LoginUseCase
 	RefreshToken auth.RefreshTokenUseCase

@@ -7,10 +7,12 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 	authRepository "github.com/caslumes/solado_certo_backend/internal/features/auth/repository/postgres"
+	"github.com/caslumes/solado_certo_backend/internal/middleware"
 )
 
 type Dependencies struct {
 	envs 	   *Envs
+	authMiddleware *middleware.AuthMiddleware
 	registerUser auth.RegisterUseCase
 	loginUser   auth.LoginUseCase
 	refreshToken auth.RefreshTokenUseCase
@@ -26,12 +28,14 @@ func InitDependencies() *Dependencies {
 
 	authRepository := authRepository.NewPostgresRepository(dbPool)
 	authService := auth.NewService(authRepository, envs.SecretKey)
+	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	return &Dependencies{
 		envs:         envs,
 		registerUser: authService,
 		loginUser:    authService,
 		refreshToken: authService,
+		authMiddleware: authMiddleware,
 	}
 }
 

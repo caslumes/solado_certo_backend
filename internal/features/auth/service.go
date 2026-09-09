@@ -243,7 +243,7 @@ func (s *service) createRefreshToken(context context.Context, userID string) (Re
 	}, refreshTokenString, nil
 }
 
-func (s *service) parseToken(tokenString string) (string, error) {
+func (s *service) ParseToken(tokenString string) (string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return []byte(s.secretKey), nil
 	})
