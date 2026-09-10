@@ -14,6 +14,7 @@ import (
 
 type registerUseCaseFunc func(context.Context, *auth.RegisterInput) error
 type loginUseCaseFunc func(context.Context, *auth.LoginInput) (auth.TokenPair, error)
+type logoutUseCaseFunc func(context.Context, string) error
 type refreshTokenUseCaseFunc func(context.Context, string) (auth.TokenPair, error)
 
 func nilRegisterUseCaseFunc(context.Context, *auth.RegisterInput) error {
@@ -22,6 +23,10 @@ func nilRegisterUseCaseFunc(context.Context, *auth.RegisterInput) error {
 
 func nilLoginUseCaseFunc(context.Context, *auth.LoginInput) (auth.TokenPair, error) {
 	return auth.TokenPair{}, nil
+}
+
+func nilLogoutUseCaseFunc(context.Context, string) error {
+	return nil
 }
 
 func nilRefreshTokenUseCaseFunc(context.Context, string) (auth.TokenPair, error) {
@@ -36,6 +41,10 @@ func (f loginUseCaseFunc) Login(ctx context.Context, input *auth.LoginInput) (au
 	return f(ctx, input)
 }
 
+func (f logoutUseCaseFunc) Logout(ctx context.Context, refreshToken string) error {
+	return f(ctx, refreshToken)
+}
+
 func (f refreshTokenUseCaseFunc) RefreshToken(ctx context.Context, refreshToken string) (auth.TokenPair, error) {
 	return f(ctx, refreshToken)
 }
@@ -44,13 +53,18 @@ func TestRegisterDecodesRequestAndPassesContext(t *testing.T) {
 	requestContext := context.WithValue(context.Background(), struct{}{}, "request")
 	var received *auth.RegisterInput
 
-	handler := NewHandler(registerUseCaseFunc(func(ctx context.Context, input *auth.RegisterInput) error {
-		if ctx.Value(struct{}{}) != "request" {
-			t.Errorf("context was not passed to use case")
-		}
-		received = input
-		return nil
-	}), loginUseCaseFunc(nilLoginUseCaseFunc), refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc))
+	handler := NewHandler(
+		registerUseCaseFunc(func(ctx context.Context, input *auth.RegisterInput) error {
+			if ctx.Value(struct{}{}) != "request" {
+				t.Errorf("context was not passed to use case")
+			}
+			received = input
+			return nil
+		}),
+		loginUseCaseFunc(nilLoginUseCaseFunc),
+		logoutUseCaseFunc(nilLogoutUseCaseFunc),
+		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
+	)
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`)).WithContext(requestContext)
 	recorder := httptest.NewRecorder()
@@ -67,10 +81,15 @@ func TestRegisterDecodesRequestAndPassesContext(t *testing.T) {
 
 func TestRegisterRejectsMalformedJSON(t *testing.T) {
 	called := false
-	handler := NewHandler(registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
-		called = true
-		return nil
-	}), loginUseCaseFunc(nilLoginUseCaseFunc), refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc))
+	handler := NewHandler(
+		registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
+			called = true
+			return nil
+		}),
+		loginUseCaseFunc(nilLoginUseCaseFunc),
+		logoutUseCaseFunc(nilLogoutUseCaseFunc),
+		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
+	)
 	recorder := httptest.NewRecorder()
 
 	handler.Register(recorder, httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader("{")))
@@ -84,9 +103,14 @@ func TestRegisterRejectsMalformedJSON(t *testing.T) {
 }
 
 func TestRegisterMapsApplicationErrors(t *testing.T) {
-	handler := NewHandler(registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
-		return app.ErrInvalidInput
-	}), loginUseCaseFunc(nilLoginUseCaseFunc), refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc))
+	handler := NewHandler(
+		registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
+			return app.ErrInvalidInput
+		}),
+		loginUseCaseFunc(nilLoginUseCaseFunc),
+		logoutUseCaseFunc(nilLogoutUseCaseFunc),
+		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
+	)
 	recorder := httptest.NewRecorder()
 	body := `{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`
 
@@ -98,9 +122,14 @@ func TestRegisterMapsApplicationErrors(t *testing.T) {
 }
 
 func TestRegisterMapsUnexpectedErrors(t *testing.T) {
-	handler := NewHandler(registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
-		return errors.New("database unavailable")
-	}), loginUseCaseFunc(nilLoginUseCaseFunc), refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc))
+	handler := NewHandler(
+		registerUseCaseFunc(func(context.Context, *auth.RegisterInput) error {
+			return errors.New("database unavailable")
+		}),
+		loginUseCaseFunc(nilLoginUseCaseFunc),
+		logoutUseCaseFunc(nilLogoutUseCaseFunc),
+		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
+	)
 	recorder := httptest.NewRecorder()
 	body := `{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`
 

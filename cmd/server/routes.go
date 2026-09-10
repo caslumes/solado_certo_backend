@@ -9,12 +9,13 @@ import (
 )
 
 func initRoutes(r *gin.Engine, a *config.App) {
-	authHandler := httpauth.NewHandler(a.RegisterUser, a.LoginUser, a.RefreshToken)
+	authHandler := httpauth.NewHandler(a.RegisterUser, a.LoginUser, a.Logout, a.RefreshToken)
 
 	authGroup := r.Group("/auth")
 	{
 		authGroup.POST("/register", gin.WrapH(http.HandlerFunc(authHandler.Register)))
 		authGroup.POST("/login", gin.WrapH(http.HandlerFunc(authHandler.Login)))
+		authGroup.POST("/logout", gin.WrapH(http.HandlerFunc(authHandler.Logout)))
 		authGroup.POST("/refresh-token", gin.WrapH(http.HandlerFunc(authHandler.RefreshToken)))
 	}
 }

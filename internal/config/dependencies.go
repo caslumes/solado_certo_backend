@@ -14,7 +14,8 @@ type Dependencies struct {
 	envs 	   *Envs
 	authMiddleware *middleware.AuthMiddleware
 	registerUser auth.RegisterUseCase
-	loginUser   auth.LoginUseCase
+	login   auth.LoginUseCase
+	logout auth.LogoutUseCase
 	refreshToken auth.RefreshTokenUseCase
 }
 
@@ -33,7 +34,8 @@ func InitDependencies() *Dependencies {
 	return &Dependencies{
 		envs:         envs,
 		registerUser: authService,
-		loginUser:    authService,
+		login:    authService,
+		logout: authService,
 		refreshToken: authService,
 		authMiddleware: authMiddleware,
 	}

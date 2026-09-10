@@ -29,6 +29,10 @@ type LoginUseCase interface {
 	Login(context context.Context, input *LoginInput) (TokenPair, error)
 }
 
+type LogoutUseCase interface {
+	Logout(context context.Context, refreshToken string) error
+}
+
 type RefreshTokenUseCase interface {
 	RefreshToken(context context.Context, refreshToken string) (TokenPair, error)
 }
@@ -101,6 +105,36 @@ func (s *service) Login(context context.Context, input *LoginInput) (TokenPair, 
 	}
 
 	return tokenPair, nil
+}
+
+func (s *service) Logout(context context.Context, refreshToken string) error {
+	token, err := jwt.Parse(refreshToken, func(token *jwt.Token) (interface{}, error) {
+		return s.secretKey, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if !token.Valid {
+		return errors.New("invalid refresh token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return errors.New("failed to extract claims")
+	}
+
+	tokenID, ok := claims["jti"].(string)
+	if !ok {
+		return errors.New("failed to extract token ID")
+	}
+
+	err = s.r.RevokeToken(context, tokenID)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *service) RefreshToken(context context.Context, refreshToken string) (TokenPair, error) {

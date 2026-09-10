@@ -10,6 +10,7 @@ type App struct {
 	AuthMiddleware *middleware.AuthMiddleware
 	RegisterUser auth.RegisterUseCase
 	LoginUser    auth.LoginUseCase
+	Logout       auth.LogoutUseCase
 	RefreshToken auth.RefreshTokenUseCase
 }
 
@@ -19,7 +20,8 @@ func InitApp() *App {
 	return &App{
 		Envs:         dependencies.envs,
 		RegisterUser: dependencies.registerUser,
-		LoginUser: dependencies.loginUser,
+		LoginUser: dependencies.login,
+		Logout: dependencies.logout,
 		RefreshToken: dependencies.refreshToken,
 	}
 }
