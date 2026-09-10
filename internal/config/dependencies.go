@@ -7,7 +7,9 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 	authRepository "github.com/caslumes/solado_certo_backend/internal/features/auth/repository/postgres"
-	"github.com/caslumes/solado_certo_backend/internal/middleware"
+	"github.com/caslumes/solado_certo_backend/internal/features/me"
+	meRepository "github.com/caslumes/solado_certo_backend/internal/features/me/repository/postgres"
+	"github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 )
 
 type Dependencies struct {
@@ -17,6 +19,7 @@ type Dependencies struct {
 	login   auth.LoginUseCase
 	logout auth.LogoutUseCase
 	refreshToken auth.RefreshTokenUseCase
+	getProfile   me.GetProfileUseCase
 }
 
 func InitDependencies() *Dependencies {
@@ -28,7 +31,11 @@ func InitDependencies() *Dependencies {
 	}
 
 	authRepository := authRepository.NewPostgresRepository(dbPool)
+	meRepository := meRepository.NewPostgresRepository(dbPool)
+
 	authService := auth.NewService(authRepository, envs.SecretKey)
+	meService := me.NewService(meRepository)
+
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	return &Dependencies{
@@ -38,6 +45,7 @@ func InitDependencies() *Dependencies {
 		logout: authService,
 		refreshToken: authService,
 		authMiddleware: authMiddleware,
+		getProfile: meService,
 	}
 }
 

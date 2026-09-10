@@ -1,0 +1,24 @@
+package repository
+
+import "github.com/caslumes/solado_certo_backend/internal/features/me"
+
+type ProfileModel struct {
+	Name      string
+	Email     string
+	Phone     string
+	AvatarURL *string
+}
+
+func (p *ProfileModel) ToEntity() *me.ProfileEntity {
+	avatarURL := ""
+	if p.AvatarURL != nil {
+		avatarURL = *p.AvatarURL
+	}
+
+	return &me.ProfileEntity{
+		Name:      p.Name,
+		Email:     p.Email,
+		Phone:     p.Phone,
+		AvatarURL: avatarURL,
+	}
+}
