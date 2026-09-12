@@ -24,8 +24,8 @@ func (r *postgresRepository) CreateUser(ctx context.Context, ue *auth.UserEntity
 	now := time.Now().UTC()
 	_, err := r.pool.Exec(
 		ctx,
-		"INSERT INTO usuarios (nome, email, telefone, senha_hash, status, created_at, updated_at) " + 
-		"VALUES ($1, $2, $3, $4, $5, $6, $7)",
+		"INSERT INTO usuarios (nome, email, telefone, senha_hash, status, created_at, updated_at) "+
+			"VALUES ($1, $2, $3, $4, $5, $6, $7)",
 		ue.Nome, ue.Email, ue.Telefone, ue.SenhaHash, "pendente", now, now,
 	)
 
@@ -61,8 +61,8 @@ func (r *postgresRepository) SaveRefreshToken(ctx context.Context, rt *auth.Refr
 	now := time.Now().UTC()
 	_, err := r.pool.Exec(
 		ctx,
-		"INSERT INTO refresh_tokens (usuario_id, token_hash, device_name, expires_at, created_at) " + 
-		"VALUES ($1, $2, $3, $4, $5)",
+		"INSERT INTO refresh_tokens (usuario_id, token_hash, device_name, expires_at, created_at) "+
+			"VALUES ($1, $2, $3, $4, $5)",
 		rt.UsuarioID, rt.TokenHash, rt.DeviceName, rt.ExpiresAt, now,
 	)
 

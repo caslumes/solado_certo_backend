@@ -48,14 +48,14 @@ type TokenPair struct {
 }
 
 type service struct {
-	r repository
+	r         repository
 	secretKey []byte
 }
 
 func NewService(r repository, secretKey string) *service {
 	byteSecretKey := []byte(secretKey)
 	return &service{
-		r: r,
+		r:         r,
 		secretKey: byteSecretKey,
 	}
 }

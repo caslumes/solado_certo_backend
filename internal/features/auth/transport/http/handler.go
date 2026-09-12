@@ -11,9 +11,9 @@ import (
 )
 
 type Handler struct {
-	register auth.RegisterUseCase
-	login   auth.LoginUseCase
-	logout auth.LogoutUseCase
+	register     auth.RegisterUseCase
+	login        auth.LoginUseCase
+	logout       auth.LogoutUseCase
 	refreshToken auth.RefreshTokenUseCase
 }
 
@@ -85,7 +85,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not login user", http.StatusInternalServerError)
 		return
 	}
-	
+
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"access_token": tokenPair.AccessToken, "refresh_token": tokenPair.RefreshToken})
