@@ -1,6 +1,7 @@
 package me
 
 type ProfileEntity struct {
+	ID      string
 	Name  string
 	Email string
 	Phone string

@@ -30,3 +30,20 @@ func (r *postgresRepository) GetProfileByUserID(ctx context.Context, userID stri
 	e := m.ToEntity()
 	return e, nil
 }
+
+func (r *postgresRepository) UpdateProfile(ctx context.Context, profile *me.ProfileEntity) error {
+	_, err := r.pool.Exec(
+		ctx,
+		"UPDATE usuarios SET nome = $1, email = $2, telefone = $3, avatar_url = $4 WHERE id = $5",
+		profile.Name,
+		profile.Email,
+		profile.Phone,
+		profile.AvatarURL,
+		profile.ID,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

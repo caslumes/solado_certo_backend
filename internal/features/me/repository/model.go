@@ -3,6 +3,7 @@ package repository
 import "github.com/caslumes/solado_certo_backend/internal/features/me"
 
 type ProfileModel struct {
+	ID 	  	  string
 	Name      string
 	Email     string
 	Phone     string
@@ -16,6 +17,7 @@ func (p *ProfileModel) ToEntity() *me.ProfileEntity {
 	}
 
 	return &me.ProfileEntity{
+		ID:        p.ID,
 		Name:      p.Name,
 		Email:     p.Email,
 		Phone:     p.Phone,

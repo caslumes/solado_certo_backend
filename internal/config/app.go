@@ -14,6 +14,7 @@ type App struct {
 	Logout       auth.LogoutUseCase
 	RefreshToken auth.RefreshTokenUseCase
 	GetProfile   me.GetProfileUseCase
+	EditProfile   me.EditProfileUseCase
 }
 
 func InitApp() *App {
@@ -27,5 +28,6 @@ func InitApp() *App {
 		Logout: dependencies.logout,
 		RefreshToken: dependencies.refreshToken,
 		GetProfile: dependencies.getProfile,
+		EditProfile: dependencies.editProfile,
 	}
 }

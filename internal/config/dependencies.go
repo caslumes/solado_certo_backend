@@ -20,6 +20,7 @@ type Dependencies struct {
 	logout auth.LogoutUseCase
 	refreshToken auth.RefreshTokenUseCase
 	getProfile   me.GetProfileUseCase
+	editProfile   me.EditProfileUseCase
 }
 
 func InitDependencies() *Dependencies {
@@ -46,6 +47,7 @@ func InitDependencies() *Dependencies {
 		refreshToken: authService,
 		authMiddleware: authMiddleware,
 		getProfile: meService,
+		editProfile: meService,
 	}
 }
 

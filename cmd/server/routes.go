@@ -12,7 +12,7 @@ import (
 
 func initRoutes(r *gin.Engine, a *config.App) {
 	authHandler := httpauth.NewHandler(a.RegisterUser, a.LoginUser, a.Logout, a.RefreshToken)
-	meHandler := httpme.NewHandler(a.GetProfile)
+	meHandler := httpme.NewHandler(a.GetProfile, a.EditProfile)
 
 	authGroup := r.Group("/auth")
 	{
@@ -26,5 +26,6 @@ func initRoutes(r *gin.Engine, a *config.App) {
 	meGroup.Use(middleware.GinAuthAdapter(a.AuthMiddleware))
 	{
 		meGroup.GET("/profile", gin.WrapH(http.HandlerFunc(meHandler.GetProfile)))
+		meGroup.PATCH("/profile", gin.WrapH(http.HandlerFunc(meHandler.EditProfile)))
 	}
 }
