@@ -3,7 +3,7 @@ package repository
 import "github.com/caslumes/solado_certo_backend/internal/features/me"
 
 type ProfileModel struct {
-	ID 	  	  string
+	ID        string
 	Name      string
 	Email     string
 	Phone     string
@@ -22,5 +22,39 @@ func (p *ProfileModel) ToEntity() *me.ProfileEntity {
 		Email:     p.Email,
 		Phone:     p.Phone,
 		AvatarURL: avatarURL,
+	}
+}
+
+type AddressModel struct {
+	ID         string
+	UserID     string
+	Label      string
+	Receiver   string
+	ZIPCode    string
+	Street     string
+	Number     string
+	Complement string
+	District   string
+	City       string
+	State      string
+	Country    string
+	IsDefault  bool
+}
+
+func (a *AddressModel) ToEntity() *me.AddressEntity {
+	return &me.AddressEntity{
+		ID:         a.ID,
+		UserID:     a.UserID,
+		Label:      a.Label,
+		Receiver:   a.Receiver,
+		ZIPCode:    a.ZIPCode,
+		Street:     a.Street,
+		Number:     a.Number,
+		Complement: a.Complement,
+		District:   a.District,
+		City:       a.City,
+		State:      a.State,
+		Country:    a.Country,
+		IsDefault:  a.IsDefault,
 	}
 }

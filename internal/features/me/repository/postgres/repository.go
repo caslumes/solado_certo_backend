@@ -47,3 +47,41 @@ func (r *postgresRepository) UpdateProfile(ctx context.Context, profile *me.Prof
 
 	return nil
 }
+
+func (r *postgresRepository) GetAddressesByUserID(ctx context.Context, userID string) ([]*me.AddressEntity, error) {
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT id, usuario_id, apelido, destinatario, cep, logradouro, numero, complemento, bairro, cidade, estado, pais, is_principal FROM enderecos WHERE usuario_id = $1",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var addresses []*me.AddressEntity
+	for rows.Next() {
+		var m repository.AddressModel
+		err := rows.Scan(
+			&m.ID,
+			&m.UserID,
+			&m.Label,
+			&m.Receiver,
+			&m.ZIPCode,
+			&m.Street,
+			&m.Number,
+			&m.Complement,
+			&m.District,
+			&m.City,
+			&m.State,
+			&m.Country,
+			&m.IsDefault,
+		)
+		if err != nil {
+			return nil, err
+		}
+		addresses = append(addresses, m.ToEntity())
+	}
+
+	return addresses, nil
+}

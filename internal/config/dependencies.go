@@ -13,14 +13,15 @@ import (
 )
 
 type Dependencies struct {
-	envs 	   *Envs
+	envs           *Envs
 	authMiddleware *middleware.AuthMiddleware
-	registerUser auth.RegisterUseCase
-	login   auth.LoginUseCase
-	logout auth.LogoutUseCase
-	refreshToken auth.RefreshTokenUseCase
-	getProfile   me.GetProfileUseCase
-	editProfile   me.EditProfileUseCase
+	registerUser   auth.RegisterUseCase
+	login          auth.LoginUseCase
+	logout         auth.LogoutUseCase
+	refreshToken   auth.RefreshTokenUseCase
+	getProfile     me.GetProfileUseCase
+	editProfile    me.EditProfileUseCase
+	getAddresses   me.GetAddressesUseCase
 }
 
 func InitDependencies() *Dependencies {
@@ -40,14 +41,15 @@ func InitDependencies() *Dependencies {
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	return &Dependencies{
-		envs:         envs,
-		registerUser: authService,
-		login:    authService,
-		logout: authService,
-		refreshToken: authService,
+		envs:           envs,
+		registerUser:   authService,
+		login:          authService,
+		logout:         authService,
+		refreshToken:   authService,
 		authMiddleware: authMiddleware,
-		getProfile: meService,
-		editProfile: meService,
+		getProfile:     meService,
+		editProfile:    meService,
+		getAddresses:   meService,
 	}
 }
 

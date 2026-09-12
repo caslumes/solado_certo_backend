@@ -7,27 +7,29 @@ import (
 )
 
 type App struct {
-	Envs 	   *Envs
+	Envs           *Envs
 	AuthMiddleware *middleware.AuthMiddleware
-	RegisterUser auth.RegisterUseCase
-	LoginUser    auth.LoginUseCase
-	Logout       auth.LogoutUseCase
-	RefreshToken auth.RefreshTokenUseCase
-	GetProfile   me.GetProfileUseCase
-	EditProfile   me.EditProfileUseCase
+	RegisterUser   auth.RegisterUseCase
+	LoginUser      auth.LoginUseCase
+	Logout         auth.LogoutUseCase
+	RefreshToken   auth.RefreshTokenUseCase
+	GetProfile     me.GetProfileUseCase
+	EditProfile    me.EditProfileUseCase
+	GetAddresses   me.GetAddressesUseCase
 }
 
 func InitApp() *App {
 	dependencies := InitDependencies()
 
 	return &App{
-		Envs:         dependencies.envs,
+		Envs:           dependencies.envs,
 		AuthMiddleware: dependencies.authMiddleware,
-		RegisterUser: dependencies.registerUser,
-		LoginUser: dependencies.login,
-		Logout: dependencies.logout,
-		RefreshToken: dependencies.refreshToken,
-		GetProfile: dependencies.getProfile,
-		EditProfile: dependencies.editProfile,
+		RegisterUser:   dependencies.registerUser,
+		LoginUser:      dependencies.login,
+		Logout:         dependencies.logout,
+		RefreshToken:   dependencies.refreshToken,
+		GetProfile:     dependencies.getProfile,
+		EditProfile:    dependencies.editProfile,
+		GetAddresses:   dependencies.getAddresses,
 	}
 }

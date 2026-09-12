@@ -9,19 +9,24 @@ import (
 )
 
 type editProfileRequest struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Phone string `json:"phone"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	Phone     string `json:"phone"`
 	AvatarURL string `json:"avatar_url"`
 }
 
 type Handler struct {
-	getProfile me.GetProfileUseCase
-	editProfile me.EditProfileUseCase
+	getProfile   me.GetProfileUseCase
+	editProfile  me.EditProfileUseCase
+	getAddresses me.GetAddressesUseCase
 }
 
-func NewHandler(getProfile me.GetProfileUseCase, editProfile me.EditProfileUseCase) *Handler {
-	return &Handler{getProfile: getProfile, editProfile: editProfile}
+func NewHandler(
+	getProfile me.GetProfileUseCase,
+	editProfile me.EditProfileUseCase,
+	getAddresses me.GetAddressesUseCase,
+) *Handler {
+	return &Handler{getProfile: getProfile, editProfile: editProfile, getAddresses: getAddresses}
 }
 
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -58,9 +63,9 @@ func (h *Handler) EditProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := me.ProfileInput{
-		Name:  request.Name,
-		Email: request.Email,
-		Phone: request.Phone,
+		Name:      request.Name,
+		Email:     request.Email,
+		Phone:     request.Phone,
 		AvatarURL: request.AvatarURL,
 	}
 
@@ -71,4 +76,24 @@ func (h *Handler) EditProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(profile.ToOutput())
+}
+
+func (h *Handler) GetAddresses(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "could not get user ID", http.StatusUnauthorized)
+		return
+	}
+
+	addresses, err := h.getAddresses.GetAddressesByUserID(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "could not get addresses", http.StatusInternalServerError)
+		return
+	}
+
+	var output me.AddressesOutput
+	output = output.FromEntities(addresses)
+	json.NewEncoder(w).Encode(output)
 }
