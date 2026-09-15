@@ -85,3 +85,31 @@ func (r *postgresRepository) GetAddressesByUserID(ctx context.Context, userID st
 
 	return addresses, nil
 }
+
+func (r *postgresRepository) CreateAddress(ctx context.Context, userID string, address *me.AddressEntity) (*me.AddressEntity, error) {
+	var m repository.AddressModel
+	err := r.pool.QueryRow(
+		ctx,
+		"INSERT INTO enderecos (usuario_id, apelido, destinatario, cep, logradouro, numero, complemento, bairro, cidade, estado, pais, is_principal, created_at, updated_at)"+
+			"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()) RETURNING id",
+		userID,
+		address.Label,
+		address.Receiver,
+		address.ZIPCode,
+		address.Street,
+		address.Number,
+		address.Complement,
+		address.District,
+		address.City,
+		address.State,
+		address.Country,
+		address.IsDefault,
+	).Scan(&m.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	address.ID = m.ID
+
+	return address, nil
+}

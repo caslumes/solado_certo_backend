@@ -8,19 +8,19 @@ type ProfileOutput struct {
 }
 
 type AddressOutput struct {
-	ID         string `json:"id"`
-	UserID     string `json:"user_id"`
-	Label      string `json:"label"`
-	Receiver   string `json:"receiver"`
-	ZIPCode    string `json:"zip_code"`
-	Street     string `json:"street"`
-	Number     string `json:"number"`
-	Complement string `json:"complement"`
-	District   string `json:"district"`
-	City       string `json:"city"`
-	State      string `json:"state"`
-	Country    string `json:"country"`
-	IsDefault  bool   `json:"is_default"`
+	ID         string  `json:"id"`
+	UserID     string  `json:"user_id"`
+	Label      *string `json:"label"`
+	Receiver   string  `json:"receiver"`
+	ZIPCode    string  `json:"zip_code"`
+	Street     string  `json:"street"`
+	Number     string  `json:"number"`
+	Complement *string `json:"complement"`
+	District   string  `json:"district"`
+	City       string  `json:"city"`
+	State      string  `json:"state"`
+	Country    string  `json:"country"`
+	IsDefault  bool    `json:"is_default"`
 }
 
 type AddressesOutput []AddressOutput

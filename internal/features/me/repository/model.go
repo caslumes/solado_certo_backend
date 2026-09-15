@@ -28,12 +28,12 @@ func (p *ProfileModel) ToEntity() *me.ProfileEntity {
 type AddressModel struct {
 	ID         string
 	UserID     string
-	Label      string
+	Label      *string
 	Receiver   string
 	ZIPCode    string
 	Street     string
 	Number     string
-	Complement string
+	Complement *string
 	District   string
 	City       string
 	State      string

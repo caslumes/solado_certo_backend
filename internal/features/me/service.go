@@ -17,10 +17,15 @@ type GetAddressesUseCase interface {
 	GetAddressesByUserID(context context.Context, userID string) ([]*AddressEntity, error)
 }
 
+type AddAddressUseCase interface {
+	AddAddress(context context.Context, userID string, input AddressInput) (*AddressEntity, error)
+}
+
 type repository interface {
 	GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error)
 	UpdateProfile(context context.Context, profile *ProfileEntity) error
 	GetAddressesByUserID(context context.Context, userID string) ([]*AddressEntity, error)
+	CreateAddress(context context.Context, userID string, address *AddressEntity) (*AddressEntity, error)
 }
 
 type service struct {
@@ -71,4 +76,29 @@ func (s *service) GetAddressesByUserID(context context.Context, userID string) (
 	}
 
 	return addresses, nil
+}
+
+func (s *service) AddAddress(context context.Context, userID string, input AddressInput) (*AddressEntity, error) {
+	address := &AddressEntity{
+		UserID:     userID,
+		Label:      input.Label,
+		Receiver:   input.Receiver,
+		ZIPCode:    input.ZIPCode,
+		Street:     input.Street,
+		Number:     input.Number,
+		Complement: input.Complement,
+		District:   input.District,
+		City:       input.City,
+		State:      input.State,
+		Country:    input.Country,
+		IsDefault:  input.IsDefault,
+	}
+
+	newAddress, err := s.r.CreateAddress(context, userID, address)
+	if err != nil {
+		fmt.Printf("err %v\n", err)
+		return nil, err
+	}
+
+	return newAddress, nil
 }
