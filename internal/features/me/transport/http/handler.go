@@ -15,7 +15,7 @@ type editProfileRequest struct {
 	AvatarURL string `json:"avatar_url"`
 }
 
-type addAddressRequest struct {
+type addressRequest struct {
 	Label      *string `json:"label"`
 	Receiver   string  `json:"receiver"`
 	ZIPCode    string  `json:"zip_code"`
@@ -34,6 +34,7 @@ type Handler struct {
 	editProfile  me.EditProfileUseCase
 	getAddresses me.GetAddressesUseCase
 	addAddress   me.AddAddressUseCase
+	editAddress  me.EditAddressUseCase
 }
 
 func NewHandler(
@@ -41,8 +42,15 @@ func NewHandler(
 	editProfile me.EditProfileUseCase,
 	getAddresses me.GetAddressesUseCase,
 	addAddress me.AddAddressUseCase,
+	editAddress me.EditAddressUseCase,
 ) *Handler {
-	return &Handler{getProfile: getProfile, editProfile: editProfile, getAddresses: getAddresses, addAddress: addAddress}
+	return &Handler{
+		getProfile:   getProfile,
+		editProfile:  editProfile,
+		getAddresses: getAddresses,
+		addAddress:   addAddress,
+		editAddress:  editAddress,
+	}
 }
 
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +131,7 @@ func (h *Handler) AddAddress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var request addAddressRequest
+	var request addressRequest
 	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
 		http.Error(w, "could not decode input", http.StatusBadRequest)
@@ -147,6 +155,51 @@ func (h *Handler) AddAddress(w http.ResponseWriter, r *http.Request) {
 	address, err := h.addAddress.AddAddress(r.Context(), userID, input)
 	if err != nil {
 		http.Error(w, "could not add address", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(address.ToOutput())
+}
+
+func (h *Handler) EditAddress(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "could not get user ID", http.StatusUnauthorized)
+		return
+	}
+
+	addressID := r.PathValue("addressID")
+	if addressID == "" {
+		http.Error(w, "could not get address ID", http.StatusBadRequest)
+		return
+	}
+
+	var request addressRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, "could not decode input", http.StatusBadRequest)
+		return
+	}
+
+	input := me.AddressInput{
+		Label:      request.Label,
+		Receiver:   request.Receiver,
+		ZIPCode:    request.ZIPCode,
+		Street:     request.Street,
+		Number:     request.Number,
+		Complement: request.Complement,
+		District:   request.District,
+		City:       request.City,
+		State:      request.State,
+		Country:    request.Country,
+		IsDefault:  request.IsDefault,
+	}
+
+	address, err := h.editAddress.EditAddress(r.Context(), userID, addressID, input)
+	if err != nil {
+		http.Error(w, "could not edit address", http.StatusInternalServerError)
 		return
 	}
 

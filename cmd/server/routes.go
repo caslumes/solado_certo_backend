@@ -12,7 +12,7 @@ import (
 
 func initRoutes(r *gin.Engine, a *config.App) {
 	authHandler := httpauth.NewHandler(a.RegisterUser, a.LoginUser, a.Logout, a.RefreshToken)
-	meHandler := httpme.NewHandler(a.GetProfile, a.EditProfile, a.GetAddresses, a.AddAddress)
+	meHandler := httpme.NewHandler(a.GetProfile, a.EditProfile, a.GetAddresses, a.AddAddress, a.EditAddress)
 
 	authGroup := r.Group("/auth")
 	{
@@ -29,5 +29,9 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		meGroup.PATCH("/profile", gin.WrapH(http.HandlerFunc(meHandler.EditProfile)))
 		meGroup.GET("/addresses", gin.WrapH(http.HandlerFunc(meHandler.GetAddresses)))
 		meGroup.POST("/addresses", gin.WrapH(http.HandlerFunc(meHandler.AddAddress)))
+		meGroup.PATCH("/addresses/:addressID", func(c *gin.Context) {
+			c.Request.SetPathValue("addressID", c.Param("addressID"))
+			meHandler.EditAddress(c.Writer, c.Request)
+		})
 	}
 }

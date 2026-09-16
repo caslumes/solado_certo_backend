@@ -86,6 +86,35 @@ func (r *postgresRepository) GetAddressesByUserID(ctx context.Context, userID st
 	return addresses, nil
 }
 
+func (r *postgresRepository) GetAddressByID(ctx context.Context, addressID string) (*me.AddressEntity, error) {
+	var m repository.AddressModel
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT id, usuario_id, apelido, destinatario, cep, logradouro, numero, complemento, bairro, cidade, estado, pais, is_principal FROM enderecos WHERE id = $1",
+		addressID,
+	).Scan(
+		&m.ID,
+		&m.UserID,
+		&m.Label,
+		&m.Receiver,
+		&m.ZIPCode,
+		&m.Street,
+		&m.Number,
+		&m.Complement,
+		&m.District,
+		&m.City,
+		&m.State,
+		&m.Country,
+		&m.IsDefault,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	e := m.ToEntity()
+	return e, nil
+}
+
 func (r *postgresRepository) CreateAddress(ctx context.Context, userID string, address *me.AddressEntity) (*me.AddressEntity, error) {
 	var m repository.AddressModel
 	err := r.pool.QueryRow(
@@ -112,4 +141,28 @@ func (r *postgresRepository) CreateAddress(ctx context.Context, userID string, a
 	address.ID = m.ID
 
 	return address, nil
+}
+
+func (r *postgresRepository) UpdateAddress(ctx context.Context, address *me.AddressEntity) error {
+	_, err := r.pool.Exec(
+		ctx,
+		"UPDATE enderecos SET apelido = $1, destinatario = $2, cep = $3, logradouro = $4, numero = $5, complemento = $6, bairro = $7, cidade = $8, estado = $9, pais = $10, is_principal = $11, updated_at = NOW() WHERE id = $12",
+		address.Label,
+		address.Receiver,
+		address.ZIPCode,
+		address.Street,
+		address.Number,
+		address.Complement,
+		address.District,
+		address.City,
+		address.State,
+		address.Country,
+		address.IsDefault,
+		address.ID,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

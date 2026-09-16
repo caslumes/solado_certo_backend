@@ -23,6 +23,7 @@ type Dependencies struct {
 	editProfile    me.EditProfileUseCase
 	getAddresses   me.GetAddressesUseCase
 	addAddress     me.AddAddressUseCase
+	editAddress    me.EditAddressUseCase
 }
 
 func InitDependencies() *Dependencies {
@@ -52,6 +53,7 @@ func InitDependencies() *Dependencies {
 		editProfile:    meService,
 		getAddresses:   meService,
 		addAddress:     meService,
+		editAddress:    meService,
 	}
 }
 

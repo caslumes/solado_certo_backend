@@ -17,6 +17,7 @@ type App struct {
 	EditProfile    me.EditProfileUseCase
 	GetAddresses   me.GetAddressesUseCase
 	AddAddress     me.AddAddressUseCase
+	EditAddress    me.EditAddressUseCase
 }
 
 func InitApp() *App {
@@ -33,5 +34,6 @@ func InitApp() *App {
 		EditProfile:    dependencies.editProfile,
 		GetAddresses:   dependencies.getAddresses,
 		AddAddress:     dependencies.addAddress,
+		EditAddress:    dependencies.editAddress,
 	}
 }
