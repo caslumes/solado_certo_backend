@@ -12,7 +12,7 @@ import (
 
 func initRoutes(r *gin.Engine, a *config.App) {
 	authHandler := httpauth.NewHandler(a.RegisterUser, a.LoginUser, a.Logout, a.RefreshToken)
-	meHandler := httpme.NewHandler(a.GetProfile, a.EditProfile, a.GetAddresses, a.AddAddress, a.EditAddress)
+	meHandler := httpme.NewHandler(a.GetProfile, a.EditProfile, a.GetAddresses, a.AddAddress, a.EditAddress, a.DeleteAddress)
 
 	authGroup := r.Group("/auth")
 	{
@@ -32,6 +32,10 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		meGroup.PATCH("/addresses/:addressID", func(c *gin.Context) {
 			c.Request.SetPathValue("addressID", c.Param("addressID"))
 			meHandler.EditAddress(c.Writer, c.Request)
+		})
+		meGroup.DELETE("/addresses/:addressID", func(c *gin.Context) {
+			c.Request.SetPathValue("addressID", c.Param("addressID"))
+			meHandler.DeleteAddress(c.Writer, c.Request)
 		})
 	}
 }

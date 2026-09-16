@@ -173,3 +173,20 @@ func (r *postgresRepository) UpdateAddress(ctx context.Context, address *me.Addr
 
 	return nil
 }
+
+func (r *postgresRepository) DeleteAddress(ctx context.Context, addressID string) error {
+	_, err := r.pool.Exec(
+		ctx,
+		"DELETE FROM enderecos WHERE id = $1",
+		addressID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return app.ErrAddressNotFound
+		}
+
+		return err
+	}
+
+	return nil
+}

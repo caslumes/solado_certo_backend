@@ -32,11 +32,12 @@ type addressRequest struct {
 }
 
 type Handler struct {
-	getProfile   me.GetProfileUseCase
-	editProfile  me.EditProfileUseCase
-	getAddresses me.GetAddressesUseCase
-	addAddress   me.AddAddressUseCase
-	editAddress  me.EditAddressUseCase
+	getProfile    me.GetProfileUseCase
+	editProfile   me.EditProfileUseCase
+	getAddresses  me.GetAddressesUseCase
+	addAddress    me.AddAddressUseCase
+	editAddress   me.EditAddressUseCase
+	deleteAddress me.DeleteAddressUseCase
 }
 
 func NewHandler(
@@ -45,13 +46,15 @@ func NewHandler(
 	getAddresses me.GetAddressesUseCase,
 	addAddress me.AddAddressUseCase,
 	editAddress me.EditAddressUseCase,
+	deleteAddress me.DeleteAddressUseCase,
 ) *Handler {
 	return &Handler{
-		getProfile:   getProfile,
-		editProfile:  editProfile,
-		getAddresses: getAddresses,
-		addAddress:   addAddress,
-		editAddress:  editAddress,
+		getProfile:    getProfile,
+		editProfile:   editProfile,
+		getAddresses:  getAddresses,
+		addAddress:    addAddress,
+		editAddress:   editAddress,
+		deleteAddress: deleteAddress,
 	}
 }
 
@@ -202,13 +205,42 @@ func (h *Handler) EditAddress(w http.ResponseWriter, r *http.Request) {
 	address, err := h.editAddress.EditAddress(r.Context(), userID, addressID, input)
 	if err != nil {
 		if errors.Is(err, app.ErrAddressNotFound) {
-			http.Error(w, "addresses not found", http.StatusNotFound)
+			http.Error(w, "address not found", http.StatusNotFound)
 			return
 		}
-		
+
 		http.Error(w, "could not edit address", http.StatusInternalServerError)
 		return
 	}
 
 	json.NewEncoder(w).Encode(address.ToOutput())
+}
+
+func (h *Handler) DeleteAddress(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "could not get user ID", http.StatusUnauthorized)
+		return
+	}
+
+	addressID := r.PathValue("addressID")
+	if addressID == "" {
+		http.Error(w, "could not get address ID", http.StatusBadRequest)
+		return
+	}
+
+	err := h.deleteAddress.DeleteAddress(r.Context(), userID, addressID)
+	if err != nil {
+		if errors.Is(err, app.ErrAddressNotFound) {
+			http.Error(w, "address not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "could not delete address", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

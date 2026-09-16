@@ -18,6 +18,7 @@ type App struct {
 	GetAddresses   me.GetAddressesUseCase
 	AddAddress     me.AddAddressUseCase
 	EditAddress    me.EditAddressUseCase
+	DeleteAddress  me.DeleteAddressUseCase
 }
 
 func InitApp() *App {
@@ -35,5 +36,6 @@ func InitApp() *App {
 		GetAddresses:   dependencies.getAddresses,
 		AddAddress:     dependencies.addAddress,
 		EditAddress:    dependencies.editAddress,
+		DeleteAddress:  dependencies.deleteAddress,
 	}
 }

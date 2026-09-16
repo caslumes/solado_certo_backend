@@ -27,6 +27,10 @@ type EditAddressUseCase interface {
 	EditAddress(context context.Context, userID string, addressID string, input AddressInput) (*AddressEntity, error)
 }
 
+type DeleteAddressUseCase interface {
+	DeleteAddress(context context.Context, userID string, addressID string) error
+}
+
 type repository interface {
 	GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error)
 	UpdateProfile(context context.Context, profile *ProfileEntity) error
@@ -34,6 +38,7 @@ type repository interface {
 	GetAddressByID(context context.Context, addressID string) (*AddressEntity, error)
 	CreateAddress(context context.Context, userID string, address *AddressEntity) (*AddressEntity, error)
 	UpdateAddress(context context.Context, address *AddressEntity) error
+	DeleteAddress(context context.Context, addressID string) error
 }
 
 type service struct {
@@ -141,4 +146,24 @@ func (s *service) EditAddress(context context.Context, userID string, addressID 
 	}
 
 	return address, nil
+}
+
+func (s *service) DeleteAddress(context context.Context, userID string, addressID string) error {
+	address, err := s.r.GetAddressByID(context, addressID)
+	if err != nil {
+		fmt.Printf("err %v\n", err)
+		return err
+	}
+
+	if address.UserID != userID {
+		return app.ErrAddressNotFound
+	}
+
+	err = s.r.DeleteAddress(context, addressID)
+	if err != nil {
+		fmt.Printf("err %v\n", err)
+		return err
+	}
+
+	return nil
 }
