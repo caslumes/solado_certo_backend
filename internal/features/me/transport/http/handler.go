@@ -2,8 +2,10 @@ package httpme
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	httpconstants "github.com/caslumes/solado_certo_backend/internal/app/constants/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 )
@@ -199,6 +201,11 @@ func (h *Handler) EditAddress(w http.ResponseWriter, r *http.Request) {
 
 	address, err := h.editAddress.EditAddress(r.Context(), userID, addressID, input)
 	if err != nil {
+		if errors.Is(err, app.ErrAddressNotFound) {
+			http.Error(w, "addresses not found", http.StatusNotFound)
+			return
+		}
+		
 		http.Error(w, "could not edit address", http.StatusInternalServerError)
 		return
 	}

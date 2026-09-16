@@ -2,9 +2,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	"github.com/caslumes/solado_certo_backend/internal/features/me/repository"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -108,6 +111,10 @@ func (r *postgresRepository) GetAddressByID(ctx context.Context, addressID strin
 		&m.IsDefault,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrAddressNotFound
+		}
+
 		return nil, err
 	}
 
