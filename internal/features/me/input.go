@@ -20,3 +20,9 @@ type AddressInput struct {
 	Country    string
 	IsDefault  bool
 }
+
+type PodologicalProfileInput struct {
+	FootstrikeType    string
+	ClinicalCondition string
+	Obs               *string
+}

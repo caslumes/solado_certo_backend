@@ -67,7 +67,7 @@ type PodologicalProfileModel struct {
 	UserID            string
 	FootstrikeType    string
 	ClinicalCondition string
-	Obs               string
+	Obs               *string
 	UpdatedAt         time.Time
 }
 

@@ -36,6 +36,10 @@ type GetPodologicalProfileUseCase interface {
 	GetPodologicalProfileByUserID(context context.Context, userID string) (*PodologicalProfileEntity, error)
 }
 
+type EditPodologicalProfileUseCase interface {
+	EditPodologicalProfile(context context.Context, userID string, input PodologicalProfileInput) (*PodologicalProfileEntity, error)
+}
+
 type repository interface {
 	GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error)
 	UpdateProfile(context context.Context, profile *ProfileEntity) error
@@ -45,6 +49,7 @@ type repository interface {
 	UpdateAddress(context context.Context, address *AddressEntity) error
 	DeleteAddress(context context.Context, addressID string) error
 	GetPodologicalProfileByUserID(context context.Context, userID string) (*PodologicalProfileEntity, error)
+	UpsertPodologicalProfile(context context.Context, profile *PodologicalProfileEntity) error
 }
 
 type service struct {
@@ -181,6 +186,32 @@ func (s *service) GetPodologicalProfileByUserID(context context.Context, userID 
 			return &PodologicalProfileEntity{}, nil
 		}
 
+		fmt.Printf("err %v\n", err)
+		return nil, err
+	}
+
+	return profile, nil
+}
+
+func (s *service) EditPodologicalProfile(context context.Context, userID string, input PodologicalProfileInput) (*PodologicalProfileEntity, error) {
+	profile, err := s.r.GetPodologicalProfileByUserID(context, userID)
+	if err != nil {
+		if !errors.Is(err, app.ErrPodologicalProfileNotFound) {
+			fmt.Printf("err %v\n", err)
+			return nil, err
+		}
+
+		profile = &PodologicalProfileEntity{
+			UserID: userID,
+		}
+	}
+
+	profile.FootstrikeType = input.FootstrikeType
+	profile.ClinicalCondition = input.ClinicalCondition
+	profile.Obs = input.Obs
+
+	err = s.r.UpsertPodologicalProfile(context, profile)
+	if err != nil {
 		fmt.Printf("err %v\n", err)
 		return nil, err
 	}

@@ -20,6 +20,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		a.EditAddress,
 		a.DeleteAddress,
 		a.GetPodologicalProfile,
+		a.EditPodologicalProfile,
 	)
 
 	authGroup := r.Group("/auth")
@@ -46,5 +47,6 @@ func initRoutes(r *gin.Engine, a *config.App) {
 			meHandler.DeleteAddress(c.Writer, c.Request)
 		})
 		meGroup.GET("/podological-profile", gin.WrapH(http.HandlerFunc(meHandler.GetPodologicalProfile)))
+		meGroup.PUT("/podological-profile", gin.WrapH(http.HandlerFunc(meHandler.EditPodologicalProfile)))
 	}
 }

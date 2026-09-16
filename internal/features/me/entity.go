@@ -57,7 +57,7 @@ type PodologicalProfileEntity struct {
 	UserID            string
 	FootstrikeType    string
 	ClinicalCondition string
-	Obs               string
+	Obs               *string
 	UpdatedAt         time.Time
 }
 
@@ -65,7 +65,7 @@ func (p *PodologicalProfileEntity) ToOutput() *PodologicalProfileOutput {
 	return &PodologicalProfileOutput{
 		FootstrikeType:    NullIfZeroValueString(p.FootstrikeType),
 		ClinicalCondition: NullIfZeroValueString(p.ClinicalCondition),
-		Obs:               NullIfZeroValueString(p.Obs),
+		Obs:               p.Obs,
 		UpdatedAt:         NullIfZeroValueTime(p.UpdatedAt),
 	}
 }

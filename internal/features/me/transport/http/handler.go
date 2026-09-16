@@ -31,14 +31,21 @@ type addressRequest struct {
 	IsDefault  bool    `json:"is_default"`
 }
 
+type podologicalProfileRequest struct {
+	FootstrikeType    string  `json:"footstrike_type"`
+	ClinicalCondition string  `json:"clinical_condition"`
+	Obs               *string `json:"obs,omitempty"`
+}
+
 type Handler struct {
-	getProfile            me.GetProfileUseCase
-	editProfile           me.EditProfileUseCase
-	getAddresses          me.GetAddressesUseCase
-	addAddress            me.AddAddressUseCase
-	editAddress           me.EditAddressUseCase
-	deleteAddress         me.DeleteAddressUseCase
-	getPodologicalProfile me.GetPodologicalProfileUseCase
+	getProfile             me.GetProfileUseCase
+	editProfile            me.EditProfileUseCase
+	getAddresses           me.GetAddressesUseCase
+	addAddress             me.AddAddressUseCase
+	editAddress            me.EditAddressUseCase
+	deleteAddress          me.DeleteAddressUseCase
+	getPodologicalProfile  me.GetPodologicalProfileUseCase
+	editPodologicalProfile me.EditPodologicalProfileUseCase
 }
 
 func NewHandler(
@@ -49,15 +56,17 @@ func NewHandler(
 	editAddress me.EditAddressUseCase,
 	deleteAddress me.DeleteAddressUseCase,
 	getPodologicalProfile me.GetPodologicalProfileUseCase,
+	editPodologicalProfile me.EditPodologicalProfileUseCase,
 ) *Handler {
 	return &Handler{
-		getProfile:            getProfile,
-		editProfile:           editProfile,
-		getAddresses:          getAddresses,
-		addAddress:            addAddress,
-		editAddress:           editAddress,
-		deleteAddress:         deleteAddress,
-		getPodologicalProfile: getPodologicalProfile,
+		getProfile:             getProfile,
+		editProfile:            editProfile,
+		getAddresses:           getAddresses,
+		addAddress:             addAddress,
+		editAddress:            editAddress,
+		deleteAddress:          deleteAddress,
+		getPodologicalProfile:  getPodologicalProfile,
+		editPodologicalProfile: editPodologicalProfile,
 	}
 }
 
@@ -260,6 +269,37 @@ func (h *Handler) GetPodologicalProfile(w http.ResponseWriter, r *http.Request) 
 	profile, err := h.getPodologicalProfile.GetPodologicalProfileByUserID(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "could not get podological profile", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(profile.ToOutput())
+}
+
+func (h *Handler) EditPodologicalProfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "could not get user ID", http.StatusUnauthorized)
+		return
+	}
+
+	var request podologicalProfileRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, "could not decode input", http.StatusBadRequest)
+		return
+	}
+
+	input := me.PodologicalProfileInput{
+		FootstrikeType:    request.FootstrikeType,
+		ClinicalCondition: request.ClinicalCondition,
+		Obs:               request.Obs,
+	}
+
+	profile, err := h.editPodologicalProfile.EditPodologicalProfile(r.Context(), userID, input)
+	if err != nil {
+		http.Error(w, "could not edit podological profile", http.StatusInternalServerError)
 		return
 	}
 

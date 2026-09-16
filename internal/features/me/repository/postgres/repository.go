@@ -215,3 +215,20 @@ func (r *postgresRepository) GetPodologicalProfileByUserID(ctx context.Context, 
 	e := m.ToEntity()
 	return e, nil
 }
+
+func (r *postgresRepository) UpsertPodologicalProfile(ctx context.Context, profile *me.PodologicalProfileEntity) error {
+	_, err := r.pool.Exec(
+		ctx,
+		"INSERT INTO perfis_podologicos (usuario_id, tipo_pisada, condicao_clinica, observacoes, updated_at)"+
+			"VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (usuario_id) DO UPDATE SET tipo_pisada = $2, condicao_clinica = $3, observacoes = $4, updated_at = NOW()",
+		profile.UserID,
+		profile.FootstrikeType,
+		profile.ClinicalCondition,
+		profile.Obs,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
