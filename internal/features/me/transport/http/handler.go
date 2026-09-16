@@ -32,12 +32,13 @@ type addressRequest struct {
 }
 
 type Handler struct {
-	getProfile    me.GetProfileUseCase
-	editProfile   me.EditProfileUseCase
-	getAddresses  me.GetAddressesUseCase
-	addAddress    me.AddAddressUseCase
-	editAddress   me.EditAddressUseCase
-	deleteAddress me.DeleteAddressUseCase
+	getProfile            me.GetProfileUseCase
+	editProfile           me.EditProfileUseCase
+	getAddresses          me.GetAddressesUseCase
+	addAddress            me.AddAddressUseCase
+	editAddress           me.EditAddressUseCase
+	deleteAddress         me.DeleteAddressUseCase
+	getPodologicalProfile me.GetPodologicalProfileUseCase
 }
 
 func NewHandler(
@@ -47,14 +48,16 @@ func NewHandler(
 	addAddress me.AddAddressUseCase,
 	editAddress me.EditAddressUseCase,
 	deleteAddress me.DeleteAddressUseCase,
+	getPodologicalProfile me.GetPodologicalProfileUseCase,
 ) *Handler {
 	return &Handler{
-		getProfile:    getProfile,
-		editProfile:   editProfile,
-		getAddresses:  getAddresses,
-		addAddress:    addAddress,
-		editAddress:   editAddress,
-		deleteAddress: deleteAddress,
+		getProfile:            getProfile,
+		editProfile:           editProfile,
+		getAddresses:          getAddresses,
+		addAddress:            addAddress,
+		editAddress:           editAddress,
+		deleteAddress:         deleteAddress,
+		getPodologicalProfile: getPodologicalProfile,
 	}
 }
 
@@ -243,4 +246,22 @@ func (h *Handler) DeleteAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) GetPodologicalProfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "could not get user ID", http.StatusUnauthorized)
+		return
+	}
+
+	profile, err := h.getPodologicalProfile.GetPodologicalProfileByUserID(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "could not get podological profile", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(profile.ToOutput())
 }

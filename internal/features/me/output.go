@@ -1,5 +1,7 @@
 package me
 
+import "time"
+
 type ProfileOutput struct {
 	Name      string `json:"name"`
 	Email     string `json:"email"`
@@ -31,4 +33,11 @@ func (a *AddressesOutput) FromEntities(entities []*AddressEntity) []AddressOutpu
 		outputs = append(outputs, *e.ToOutput())
 	}
 	return outputs
+}
+
+type PodologicalProfileOutput struct {
+	FootstrikeType    *string    `json:"footstrike_type"`
+	ClinicalCondition *string    `json:"clinical_condition"`
+	Obs               *string    `json:"obs"`
+	UpdatedAt         *time.Time `json:"updated_at"`
 }

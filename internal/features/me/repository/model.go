@@ -1,6 +1,10 @@
 package repository
 
-import "github.com/caslumes/solado_certo_backend/internal/features/me"
+import (
+	"time"
+
+	"github.com/caslumes/solado_certo_backend/internal/features/me"
+)
 
 type ProfileModel struct {
 	ID        string
@@ -56,5 +60,23 @@ func (a *AddressModel) ToEntity() *me.AddressEntity {
 		State:      a.State,
 		Country:    a.Country,
 		IsDefault:  a.IsDefault,
+	}
+}
+
+type PodologicalProfileModel struct {
+	UserID            string
+	FootstrikeType    string
+	ClinicalCondition string
+	Obs               string
+	UpdatedAt         time.Time
+}
+
+func (p *PodologicalProfileModel) ToEntity() *me.PodologicalProfileEntity {
+	return &me.PodologicalProfileEntity{
+		UserID:            p.UserID,
+		FootstrikeType:    p.FootstrikeType,
+		ClinicalCondition: p.ClinicalCondition,
+		Obs:               p.Obs,
+		UpdatedAt:         p.UpdatedAt,
 	}
 }

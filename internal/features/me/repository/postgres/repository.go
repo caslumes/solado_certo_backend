@@ -190,3 +190,28 @@ func (r *postgresRepository) DeleteAddress(ctx context.Context, addressID string
 
 	return nil
 }
+
+func (r *postgresRepository) GetPodologicalProfileByUserID(ctx context.Context, userID string) (*me.PodologicalProfileEntity, error) {
+	var m repository.PodologicalProfileModel
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT usuario_id, tipo_pisada, condicao_clinica, observacoes, updated_at FROM perfis_podologicos WHERE usuario_id = $1",
+		userID,
+	).Scan(
+		&m.UserID,
+		&m.FootstrikeType,
+		&m.ClinicalCondition,
+		&m.Obs,
+		&m.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrPodologicalProfileNotFound
+		}
+
+		return nil, err
+	}
+
+	e := m.ToEntity()
+	return e, nil
+}

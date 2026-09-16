@@ -1,5 +1,7 @@
 package me
 
+import "time"
+
 type ProfileEntity struct {
 	ID        string
 	Name      string
@@ -49,4 +51,35 @@ func (a *AddressEntity) ToOutput() *AddressOutput {
 		Country:    a.Country,
 		IsDefault:  a.IsDefault,
 	}
+}
+
+type PodologicalProfileEntity struct {
+	UserID            string
+	FootstrikeType    string
+	ClinicalCondition string
+	Obs               string
+	UpdatedAt         time.Time
+}
+
+func (p *PodologicalProfileEntity) ToOutput() *PodologicalProfileOutput {
+	return &PodologicalProfileOutput{
+		FootstrikeType:    NullIfZeroValueString(p.FootstrikeType),
+		ClinicalCondition: NullIfZeroValueString(p.ClinicalCondition),
+		Obs:               NullIfZeroValueString(p.Obs),
+		UpdatedAt:         NullIfZeroValueTime(p.UpdatedAt),
+	}
+}
+
+func NullIfZeroValueString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func NullIfZeroValueTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }

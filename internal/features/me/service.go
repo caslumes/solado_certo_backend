@@ -2,6 +2,7 @@ package me
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
@@ -31,6 +32,10 @@ type DeleteAddressUseCase interface {
 	DeleteAddress(context context.Context, userID string, addressID string) error
 }
 
+type GetPodologicalProfileUseCase interface {
+	GetPodologicalProfileByUserID(context context.Context, userID string) (*PodologicalProfileEntity, error)
+}
+
 type repository interface {
 	GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error)
 	UpdateProfile(context context.Context, profile *ProfileEntity) error
@@ -39,6 +44,7 @@ type repository interface {
 	CreateAddress(context context.Context, userID string, address *AddressEntity) (*AddressEntity, error)
 	UpdateAddress(context context.Context, address *AddressEntity) error
 	DeleteAddress(context context.Context, addressID string) error
+	GetPodologicalProfileByUserID(context context.Context, userID string) (*PodologicalProfileEntity, error)
 }
 
 type service struct {
@@ -166,4 +172,18 @@ func (s *service) DeleteAddress(context context.Context, userID string, addressI
 	}
 
 	return nil
+}
+
+func (s *service) GetPodologicalProfileByUserID(context context.Context, userID string) (*PodologicalProfileEntity, error) {
+	profile, err := s.r.GetPodologicalProfileByUserID(context, userID)
+	if err != nil {
+		if errors.Is(err, app.ErrPodologicalProfileNotFound) {
+			return &PodologicalProfileEntity{}, nil
+		}
+
+		fmt.Printf("err %v\n", err)
+		return nil, err
+	}
+
+	return profile, nil
 }
