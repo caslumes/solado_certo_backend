@@ -26,3 +26,8 @@ type PodologicalProfileInput struct {
 	ClinicalCondition string
 	Obs               *string
 }
+
+type OnboardingInput struct {
+	Step   string
+	Action string
+}

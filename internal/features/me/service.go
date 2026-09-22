@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
 type GetProfileUseCase interface {
@@ -40,6 +42,14 @@ type EditPodologicalProfileUseCase interface {
 	EditPodologicalProfile(context context.Context, userID string, input PodologicalProfileInput) (*PodologicalProfileEntity, error)
 }
 
+type GetOnboardingUseCase interface {
+	GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error)
+}
+
+type ChangeOnboardingStepUseCase interface {
+	ChangeOnboardingStep(context context.Context, userID string, input OnboardingInput) error
+}
+
 type repository interface {
 	GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error)
 	UpdateProfile(context context.Context, profile *ProfileEntity) error
@@ -50,6 +60,11 @@ type repository interface {
 	DeleteAddress(context context.Context, addressID string) error
 	GetPodologicalProfileByUserID(context context.Context, userID string) (*PodologicalProfileEntity, error)
 	UpsertPodologicalProfile(context context.Context, profile *PodologicalProfileEntity) error
+	CreateOnboarding(context context.Context, onboarding *OnboardingEntity) error
+	GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error)
+	GetOnboardingStepByTag(context context.Context, tag string) (*OnboardingStepEntity, error)
+	GetOnboardingStepByOrder(context context.Context, order int) (*OnboardingStepEntity, error)
+	UpdateOnboarding(context context.Context, userID string, onboarding *OnboardingEntity) error
 }
 
 type service struct {
@@ -217,4 +232,131 @@ func (s *service) EditPodologicalProfile(context context.Context, userID string,
 	}
 
 	return profile, nil
+}
+
+func (s *service) GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error) {
+	onboarding, err := s.r.GetOnboardingByUserID(context, userID)
+	if err != nil {
+		if errors.Is(err, app.ErrOnboardingNotFound) {
+			err = s.r.CreateOnboarding(context, &OnboardingEntity{
+				UserID: userID,
+				Status: OnboardingStatusNotStarted,
+			})
+			if err != nil {
+				fmt.Printf("err %v\n", err)
+				return nil, err
+			}
+
+			onboarding, err = s.r.GetOnboardingByUserID(context, userID)
+			if err != nil {
+				fmt.Printf("err %v\n", err)
+				return nil, err
+			}
+
+			return onboarding, nil
+		}
+		fmt.Printf("err %v\n", err)
+		return nil, err
+	}
+
+	return onboarding, nil
+}
+
+func (s *service) ChangeOnboardingStep(context context.Context, userID string, input OnboardingInput) error {
+	onboarding, err := s.r.GetOnboardingByUserID(context, userID)
+	if err != nil {
+		fmt.Printf("err %v\n", err)
+		return err
+	}
+
+	if onboarding.Status == OnboardingStatusCompleted {
+		return app.ErrOnboardingAlreadyCompleted
+	}
+
+	step, err := s.r.GetOnboardingStepByTag(context, input.Step)
+	if err != nil {
+		fmt.Printf("err %v\n", err)
+		return err
+	}
+
+	action := OnboardingAction(input.Action)
+	err = s.validateOnboardingAction(action, step)
+	if err != nil {
+		fmt.Printf("err %v\n", err)
+		return err
+	}
+
+	if action == OnboardingActionDismiss {
+		onboarding.DispensedAt = helpers.TimePtr(time.Now())
+		err = s.r.UpdateOnboarding(context, userID, onboarding)
+		if err != nil {
+			fmt.Printf("err %v\n", err)
+			return err
+		}
+		return nil
+	}
+
+	if action == OnboardingActionComplete {
+		onboarding.Status = OnboardingStatusCompleted
+		onboarding.CompletedAt = helpers.TimePtr(time.Now())
+		err = s.r.UpdateOnboarding(context, userID, onboarding)
+		if err != nil {
+			fmt.Printf("err %v\n", err)
+			return err
+		}
+		return nil
+	}
+
+	nextStep, err := s.resolveNextOnboardingStep(step, action)
+	if err != nil {
+		fmt.Printf("err %v\n", err)
+		return err
+	}
+
+	if nextStep == nil {
+		return app.ErrOnboardingAlreadyCompleted
+	}
+
+	onboarding.CurrentStep = *nextStep
+	err = s.r.UpdateOnboarding(context, userID, onboarding)
+	if err != nil {
+		fmt.Printf("err %v\n", err)
+		return err
+	}
+
+	return nil
+}
+
+func (s *service) validateOnboardingAction(action OnboardingAction, step *OnboardingStepEntity) error {
+	switch action {
+	case OnboardingActionAdvance, OnboardingActionRetreat, OnboardingActionComplete, OnboardingActionDismiss:
+		break
+	case OnboardingActionSkip:
+		if step.IsRequired {
+			return fmt.Errorf("step is required and cannot be skipped")
+		}
+	default:
+		return fmt.Errorf("invalid onboarding action: %s", action)
+	}
+
+	return nil
+}
+
+func (s *service) resolveNextOnboardingStep(currentStep *OnboardingStepEntity, action OnboardingAction) (*OnboardingStepEntity, error) {
+	switch action {
+	case OnboardingActionAdvance, OnboardingActionSkip:
+		nextStep, err := s.r.GetOnboardingStepByOrder(context.Background(), currentStep.Order + 1)
+		if err != nil {
+			return nil, err
+		}
+		return nextStep, nil
+	case OnboardingActionRetreat:
+		nextStep, err := s.r.GetOnboardingStepByOrder(context.Background(), currentStep.Order - 1)
+		if err != nil {
+			return nil, err
+		}
+		return nextStep, nil
+	default:
+		return nil, fmt.Errorf("invalid onboarding action: %s", action)
+	}
 }

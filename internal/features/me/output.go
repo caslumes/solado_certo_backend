@@ -41,3 +41,7 @@ type PodologicalProfileOutput struct {
 	Obs               *string    `json:"obs"`
 	UpdatedAt         *time.Time `json:"updated_at"`
 }
+
+type OnboardingOutput struct {
+	CurrentStep *string `json:"current_step"`
+}

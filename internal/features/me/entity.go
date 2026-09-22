@@ -70,6 +70,30 @@ func (p *PodologicalProfileEntity) ToOutput() *PodologicalProfileOutput {
 	}
 }
 
+type OnboardingEntity struct {
+	UserID      string
+	Status      OnboardingStatus
+	CurrentStep OnboardingStepEntity
+	CompletedAt *time.Time
+	DispensedAt *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type OnboardingStepEntity struct {
+	ID         uint64
+	Tag        string
+	Name       string
+	Order      int
+	IsRequired bool
+}
+
+func (o *OnboardingEntity) ToOutput() *OnboardingOutput {
+	return &OnboardingOutput{
+		CurrentStep: &o.CurrentStep.Tag,
+	}
+}
+
 func NullIfZeroValueString(s string) *string {
 	if s == "" {
 		return nil

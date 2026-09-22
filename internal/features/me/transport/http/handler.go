@@ -37,6 +37,11 @@ type podologicalProfileRequest struct {
 	Obs               *string `json:"obs,omitempty"`
 }
 
+type onboardingRequest struct {
+	Step string `json:"step"`
+	Action string `json:"action"`
+}
+
 type Handler struct {
 	getProfile             me.GetProfileUseCase
 	editProfile            me.EditProfileUseCase
@@ -46,6 +51,8 @@ type Handler struct {
 	deleteAddress          me.DeleteAddressUseCase
 	getPodologicalProfile  me.GetPodologicalProfileUseCase
 	editPodologicalProfile me.EditPodologicalProfileUseCase
+	getOnboarding           me.GetOnboardingUseCase
+	changeOnboardingStep          me.ChangeOnboardingStepUseCase
 }
 
 func NewHandler(
@@ -57,6 +64,8 @@ func NewHandler(
 	deleteAddress me.DeleteAddressUseCase,
 	getPodologicalProfile me.GetPodologicalProfileUseCase,
 	editPodologicalProfile me.EditPodologicalProfileUseCase,
+	getOnboarding me.GetOnboardingUseCase,
+	changeOnboardingStep me.ChangeOnboardingStepUseCase,
 ) *Handler {
 	return &Handler{
 		getProfile:             getProfile,
@@ -67,6 +76,8 @@ func NewHandler(
 		deleteAddress:          deleteAddress,
 		getPodologicalProfile:  getPodologicalProfile,
 		editPodologicalProfile: editPodologicalProfile,
+		getOnboarding:          getOnboarding,
+		changeOnboardingStep:   changeOnboardingStep,
 	}
 }
 
@@ -304,4 +315,65 @@ func (h *Handler) EditPodologicalProfile(w http.ResponseWriter, r *http.Request)
 	}
 
 	json.NewEncoder(w).Encode(profile.ToOutput())
+}
+
+func (h *Handler) GetOnboarding(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "could not get user ID", http.StatusUnauthorized)
+		return
+	}
+
+	onboarding, err := h.getOnboarding.GetOnboardingByUserID(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "could not get onboarding", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(onboarding.ToOutput())
+}
+
+func (h *Handler) ChangeOnboardingStep(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "could not get user ID", http.StatusUnauthorized)
+		return
+	}
+
+	var request onboardingRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, "could not decode input", http.StatusBadRequest)
+		return
+	}
+
+	input := me.OnboardingInput{
+		Step:   request.Step,
+		Action: request.Action,
+	}
+
+	err = h.changeOnboardingStep.ChangeOnboardingStep(r.Context(), userID, input)
+	if err != nil {
+		if errors.Is(err, app.ErrOnboardingNotFound) {
+			http.Error(w, "onboarding not found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, app.ErrOnboardingStepNotFound) {
+			http.Error(w, "onboarding step not found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, app.ErrOnboardingAlreadyCompleted) {
+			http.Error(w, "onboarding already completed", http.StatusBadRequest)
+			return
+		}
+
+		http.Error(w, "could not change onboarding step", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

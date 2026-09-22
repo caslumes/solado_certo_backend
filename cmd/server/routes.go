@@ -21,6 +21,8 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		a.DeleteAddress,
 		a.GetPodologicalProfile,
 		a.EditPodologicalProfile,
+		a.GetOnboarding,
+		a.ChangeOnboardingStep,
 	)
 
 	authGroup := r.Group("/auth")
@@ -36,6 +38,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 	{
 		meGroup.GET("/profile", gin.WrapH(http.HandlerFunc(meHandler.GetProfile)))
 		meGroup.PATCH("/profile", gin.WrapH(http.HandlerFunc(meHandler.EditProfile)))
+
 		meGroup.GET("/addresses", gin.WrapH(http.HandlerFunc(meHandler.GetAddresses)))
 		meGroup.POST("/addresses", gin.WrapH(http.HandlerFunc(meHandler.AddAddress)))
 		meGroup.PATCH("/addresses/:addressID", func(c *gin.Context) {
@@ -46,7 +49,11 @@ func initRoutes(r *gin.Engine, a *config.App) {
 			c.Request.SetPathValue("addressID", c.Param("addressID"))
 			meHandler.DeleteAddress(c.Writer, c.Request)
 		})
+
 		meGroup.GET("/podological-profile", gin.WrapH(http.HandlerFunc(meHandler.GetPodologicalProfile)))
 		meGroup.PUT("/podological-profile", gin.WrapH(http.HandlerFunc(meHandler.EditPodologicalProfile)))
+
+		meGroup.GET("/onboarding", gin.WrapH(http.HandlerFunc(meHandler.GetOnboarding)))
+		meGroup.PUT("/onboarding", gin.WrapH(http.HandlerFunc(meHandler.ChangeOnboardingStep)))
 	}
 }

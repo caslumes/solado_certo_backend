@@ -80,3 +80,41 @@ func (p *PodologicalProfileModel) ToEntity() *me.PodologicalProfileEntity {
 		UpdatedAt:         p.UpdatedAt,
 	}
 }
+
+type OnboardingStepModel struct {
+	ID         uint64
+	Tag        string
+	Name       string
+	Order      int
+	IsRequired bool
+}
+
+func (s *OnboardingStepModel) ToEntity() *me.OnboardingStepEntity {
+	return &me.OnboardingStepEntity{
+		ID:         s.ID,
+		Tag:        s.Tag,
+		Name:       s.Name,
+		Order:      s.Order,
+		IsRequired: s.IsRequired,
+	}
+}
+
+type OnboardingModel struct {
+	UserID      string
+	Status      string
+	CurrentStep OnboardingStepModel
+	CompletedAt *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (o *OnboardingModel) ToEntity() *me.OnboardingEntity {
+	return &me.OnboardingEntity{
+		UserID: o.UserID,
+		Status: me.OnboardingStatus(o.Status),
+		CurrentStep: *o.CurrentStep.ToEntity(),
+		CompletedAt: o.CompletedAt,
+		CreatedAt:   o.CreatedAt,
+		UpdatedAt:   o.UpdatedAt,
+	}
+}

@@ -232,3 +232,126 @@ func (r *postgresRepository) UpsertPodologicalProfile(ctx context.Context, profi
 
 	return nil
 }
+
+func (r *postgresRepository) CreateOnboarding(ctx context.Context, onboarding *me.OnboardingEntity) (error) {
+	_, err := r.pool.Exec(
+		ctx,
+		"INSERT INTO onboarding (usuario_id, status, etapa_atual_id, concluido_em, dispensado_em, created_at, updated_at) "+
+			"VALUES ($1, $2, (SELECT id FROM onboarding_etapas WHERE ordem = 1), $3, $4, NOW(), NOW())",
+		onboarding.UserID,
+		onboarding.Status,
+		onboarding.CompletedAt,
+		onboarding.DispensedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *postgresRepository) GetOnboardingByUserID(ctx context.Context, userID string) (*me.OnboardingEntity, error) {
+	var osm repository.OnboardingStepModel
+	var om repository.OnboardingModel
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT o.usuario_id, o.status, o.etapa_atual_id, o.concluido_em, o.created_at, o.updated_at, e.id, e.tag, e.nome, e.ordem, e.obrigatorio FROM onboarding o LEFT JOIN onboarding_etapas e ON o.etapa_atual_id = e.id WHERE o.usuario_id = $1",
+		userID,
+	).Scan(
+		&om.UserID,
+		&om.Status,
+		&osm.ID,
+		&om.CompletedAt,
+		&om.CreatedAt,
+		&om.UpdatedAt,
+		&osm.ID,
+		&osm.Tag,
+		&osm.Name,
+		&osm.Order,
+		&osm.IsRequired,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrOnboardingNotFound
+		}
+
+		return nil, err
+	}
+
+	e := om.ToEntity()
+	e.CurrentStep = me.OnboardingStepEntity{
+		ID:         osm.ID,
+		Tag:        osm.Tag,
+		Name:       osm.Name,
+		Order:      osm.Order,
+		IsRequired: osm.IsRequired,
+	}
+	return e, nil
+}
+
+func (r *postgresRepository) GetOnboardingStepByTag(ctx context.Context, tag string) (*me.OnboardingStepEntity, error) {
+	var m repository.OnboardingStepModel
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT id, tag, nome, ordem, obrigatorio FROM onboarding_etapas WHERE tag = $1",
+		tag,
+	).Scan(
+		&m.ID,
+		&m.Tag,
+		&m.Name,
+		&m.Order,
+		&m.IsRequired,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrOnboardingStepNotFound
+		}
+
+		return nil, err
+	}
+
+	e := m.ToEntity()
+	return e, nil
+}
+
+func (r *postgresRepository) GetOnboardingStepByOrder(ctx context.Context, order int) (*me.OnboardingStepEntity, error) {
+	var m repository.OnboardingStepModel
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT id, tag, nome, ordem, obrigatorio FROM onboarding_etapas WHERE ordem = $1",
+		order,
+	).Scan(
+		&m.ID,
+		&m.Tag,
+		&m.Name,
+		&m.Order,
+		&m.IsRequired,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrOnboardingStepNotFound
+		}
+
+		return nil, err
+	}
+
+	e := m.ToEntity()
+	return e, nil
+}
+
+func (r *postgresRepository) UpdateOnboarding(ctx context.Context, userID string, onboarding *me.OnboardingEntity) error {
+	_, err := r.pool.Exec(
+		ctx,
+		"UPDATE onboarding SET status = $1, etapa_atual_id = $2, concluido_em = $3, dispensado_em = $4, updated_at = NOW() WHERE usuario_id = $5",
+		onboarding.Status,
+		onboarding.CurrentStep.ID,
+		onboarding.CompletedAt,
+		onboarding.DispensedAt,
+		userID,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
