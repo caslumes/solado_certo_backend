@@ -345,13 +345,13 @@ func (s *service) validateOnboardingAction(action OnboardingAction, step *Onboar
 func (s *service) resolveNextOnboardingStep(currentStep *OnboardingStepEntity, action OnboardingAction) (*OnboardingStepEntity, error) {
 	switch action {
 	case OnboardingActionAdvance, OnboardingActionSkip:
-		nextStep, err := s.r.GetOnboardingStepByOrder(context.Background(), currentStep.Order + 1)
+		nextStep, err := s.r.GetOnboardingStepByOrder(context.Background(), currentStep.Order+1)
 		if err != nil {
 			return nil, err
 		}
 		return nextStep, nil
 	case OnboardingActionRetreat:
-		nextStep, err := s.r.GetOnboardingStepByOrder(context.Background(), currentStep.Order - 1)
+		nextStep, err := s.r.GetOnboardingStepByOrder(context.Background(), currentStep.Order-1)
 		if err != nil {
 			return nil, err
 		}

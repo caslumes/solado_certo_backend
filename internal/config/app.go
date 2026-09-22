@@ -21,8 +21,8 @@ type App struct {
 	DeleteAddress          me.DeleteAddressUseCase
 	GetPodologicalProfile  me.GetPodologicalProfileUseCase
 	EditPodologicalProfile me.EditPodologicalProfileUseCase
-	GetOnboarding           me.GetOnboardingUseCase
-	ChangeOnboardingStep          me.ChangeOnboardingStepUseCase
+	GetOnboarding          me.GetOnboardingUseCase
+	ChangeOnboardingStep   me.ChangeOnboardingStepUseCase
 }
 
 func InitApp() *App {

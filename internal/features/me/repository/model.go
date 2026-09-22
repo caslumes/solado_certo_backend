@@ -110,8 +110,8 @@ type OnboardingModel struct {
 
 func (o *OnboardingModel) ToEntity() *me.OnboardingEntity {
 	return &me.OnboardingEntity{
-		UserID: o.UserID,
-		Status: me.OnboardingStatus(o.Status),
+		UserID:      o.UserID,
+		Status:      me.OnboardingStatus(o.Status),
 		CurrentStep: *o.CurrentStep.ToEntity(),
 		CompletedAt: o.CompletedAt,
 		CreatedAt:   o.CreatedAt,

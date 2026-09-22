@@ -38,7 +38,7 @@ type podologicalProfileRequest struct {
 }
 
 type onboardingRequest struct {
-	Step string `json:"step"`
+	Step   string `json:"step"`
 	Action string `json:"action"`
 }
 
@@ -51,8 +51,8 @@ type Handler struct {
 	deleteAddress          me.DeleteAddressUseCase
 	getPodologicalProfile  me.GetPodologicalProfileUseCase
 	editPodologicalProfile me.EditPodologicalProfileUseCase
-	getOnboarding           me.GetOnboardingUseCase
-	changeOnboardingStep          me.ChangeOnboardingStepUseCase
+	getOnboarding          me.GetOnboardingUseCase
+	changeOnboardingStep   me.ChangeOnboardingStepUseCase
 }
 
 func NewHandler(

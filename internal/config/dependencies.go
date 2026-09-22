@@ -27,8 +27,8 @@ type Dependencies struct {
 	deleteAddress          me.DeleteAddressUseCase
 	getPodologicalProfile  me.GetPodologicalProfileUseCase
 	editPodologicalProfile me.EditPodologicalProfileUseCase
-	getOnboarding           me.GetOnboardingUseCase
-	changeOnboardingStep          me.ChangeOnboardingStepUseCase
+	getOnboarding          me.GetOnboardingUseCase
+	changeOnboardingStep   me.ChangeOnboardingStepUseCase
 }
 
 func InitDependencies() *Dependencies {

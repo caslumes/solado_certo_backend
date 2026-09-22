@@ -16,11 +16,11 @@ func (s OnboardingStatus) String() string {
 type OnboardingAction string
 
 const (
-	OnboardingActionAdvance   OnboardingAction = "advance"
-	OnboardingActionRetreat   OnboardingAction = "retreat"
-	OnboardingActionSkip    OnboardingAction = "skip"
-	OnboardingActionDismiss OnboardingAction = "dismiss"
-	OnboardingActionComplete  OnboardingAction = "complete"
+	OnboardingActionAdvance  OnboardingAction = "advance"
+	OnboardingActionRetreat  OnboardingAction = "retreat"
+	OnboardingActionSkip     OnboardingAction = "skip"
+	OnboardingActionDismiss  OnboardingAction = "dismiss"
+	OnboardingActionComplete OnboardingAction = "complete"
 )
 
 func (a OnboardingAction) String() string {

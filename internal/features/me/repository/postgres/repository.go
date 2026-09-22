@@ -233,7 +233,7 @@ func (r *postgresRepository) UpsertPodologicalProfile(ctx context.Context, profi
 	return nil
 }
 
-func (r *postgresRepository) CreateOnboarding(ctx context.Context, onboarding *me.OnboardingEntity) (error) {
+func (r *postgresRepository) CreateOnboarding(ctx context.Context, onboarding *me.OnboardingEntity) error {
 	_, err := r.pool.Exec(
 		ctx,
 		"INSERT INTO onboarding (usuario_id, status, etapa_atual_id, concluido_em, dispensado_em, created_at, updated_at) "+
