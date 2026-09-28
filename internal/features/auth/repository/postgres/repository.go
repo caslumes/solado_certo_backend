@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 	model "github.com/caslumes/solado_certo_backend/internal/features/auth/repository"
 	"github.com/jackc/pgx/v5"
@@ -26,7 +27,7 @@ func (r *postgresRepository) CreateUser(ctx context.Context, ue *auth.UserEntity
 		ctx,
 		"INSERT INTO usuarios (nome, email, telefone, senha_hash, status, created_at, updated_at) "+
 			"VALUES ($1, $2, $3, $4, $5, $6, $7)",
-		ue.Nome, ue.Email, ue.Telefone, ue.SenhaHash, "pendente", now, now,
+		ue.Nome, ue.Email, ue.Telefone, ue.SenhaHash, enum.ProfileStatusPending, now, now,
 	)
 
 	if err != nil {
