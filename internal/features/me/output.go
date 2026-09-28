@@ -43,5 +43,6 @@ type PodologicalProfileOutput struct {
 }
 
 type OnboardingOutput struct {
+	Status      string  `json:"status"`
 	CurrentStep *string `json:"current_step"`
 }

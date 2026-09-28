@@ -90,6 +90,7 @@ type OnboardingStepEntity struct {
 
 func (o *OnboardingEntity) ToOutput() *OnboardingOutput {
 	return &OnboardingOutput{
+		Status:      o.Status.String(),
 		CurrentStep: &o.CurrentStep.Tag,
 	}
 }
