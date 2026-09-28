@@ -1,6 +1,10 @@
 package me
 
-import "time"
+import (
+	"time"
+
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
+)
 
 type ProfileEntity struct {
 	ID        string
@@ -8,6 +12,7 @@ type ProfileEntity struct {
 	Email     string
 	Phone     string
 	AvatarURL string
+	Status    enum.ProfileStatus
 }
 
 func (p *ProfileEntity) ToOutput() *ProfileOutput {

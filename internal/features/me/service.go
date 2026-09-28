@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
@@ -300,6 +301,17 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 		onboarding.Status = OnboardingStatusCompleted
 		onboarding.CompletedAt = helpers.TimePtr(time.Now())
 		err = s.r.UpdateOnboarding(context, userID, onboarding)
+		if err != nil {
+			fmt.Printf("err %v\n", err)
+			return err
+		}
+		profile, err := s.r.GetProfileByUserID(context, userID)
+		if err != nil {
+			fmt.Printf("err %v\n", err)
+			return err
+		}
+		profile.Status = enum.ProfileStatusActive
+		err = s.r.UpdateProfile(context, profile)
 		if err != nil {
 			fmt.Printf("err %v\n", err)
 			return err

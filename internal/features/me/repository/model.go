@@ -3,6 +3,7 @@ package repository
 import (
 	"time"
 
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 )
 
@@ -12,6 +13,7 @@ type ProfileModel struct {
 	Email     string
 	Phone     string
 	AvatarURL *string
+	Status    enum.ProfileStatus
 }
 
 func (p *ProfileModel) ToEntity() *me.ProfileEntity {
@@ -26,6 +28,7 @@ func (p *ProfileModel) ToEntity() *me.ProfileEntity {
 		Email:     p.Email,
 		Phone:     p.Phone,
 		AvatarURL: avatarURL,
+		Status:    p.Status,
 	}
 }
 

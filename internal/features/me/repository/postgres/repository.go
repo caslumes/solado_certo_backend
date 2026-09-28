@@ -23,13 +23,14 @@ func (r *postgresRepository) GetProfileByUserID(ctx context.Context, userID stri
 	var m repository.ProfileModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT nome, email, telefone, avatar_url FROM usuarios WHERE id = $1",
+		"SELECT nome, email, telefone, avatar_url, status FROM usuarios WHERE id = $1",
 		userID,
-	).Scan(&m.Name, &m.Email, &m.Phone, &m.AvatarURL)
+	).Scan(&m.Name, &m.Email, &m.Phone, &m.AvatarURL, &m.Status)
 	if err != nil {
 		return nil, err
 	}
 
+	m.ID = userID
 	e := m.ToEntity()
 	return e, nil
 }
@@ -37,11 +38,12 @@ func (r *postgresRepository) GetProfileByUserID(ctx context.Context, userID stri
 func (r *postgresRepository) UpdateProfile(ctx context.Context, profile *me.ProfileEntity) error {
 	_, err := r.pool.Exec(
 		ctx,
-		"UPDATE usuarios SET nome = $1, email = $2, telefone = $3, avatar_url = $4 WHERE id = $5",
+		"UPDATE usuarios SET nome = $1, email = $2, telefone = $3, avatar_url = $4, status = $5 WHERE id = $6",
 		profile.Name,
 		profile.Email,
 		profile.Phone,
 		profile.AvatarURL,
+		profile.Status,
 		profile.ID,
 	)
 	if err != nil {
