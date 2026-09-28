@@ -13,12 +13,12 @@ func main() {
 	app := config.InitApp()
 
 	router := gin.Default()
-	
+
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:*", "http://127.0.0.1:*"},
+		AllowOrigins: []string{"http://localhost:*", "http://127.0.0.1:*"},
 		AllowOriginFunc: func(origin string) bool {
 			return strings.HasPrefix(origin, "http://localhost:") ||
-        		strings.HasPrefix(origin, "http://127.0.0.1:")
+				strings.HasPrefix(origin, "http://127.0.0.1:")
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
