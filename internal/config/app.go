@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
+	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 )
@@ -23,6 +24,7 @@ type App struct {
 	EditPodologicalProfile me.EditPodologicalProfileUseCase
 	GetOnboarding          me.GetOnboardingUseCase
 	ChangeOnboardingStep   me.ChangeOnboardingStepUseCase
+	GetAdvertisements       catalog.GetAdvertisementsUseCase
 }
 
 func InitApp() *App {
@@ -45,5 +47,6 @@ func InitApp() *App {
 		EditPodologicalProfile: dependencies.editPodologicalProfile,
 		GetOnboarding:          dependencies.getOnboarding,
 		ChangeOnboardingStep:   dependencies.changeOnboardingStep,
+		GetAdvertisements:       dependencies.getAdvertisements,
 	}
 }

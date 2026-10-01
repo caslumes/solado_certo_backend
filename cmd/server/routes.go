@@ -5,6 +5,7 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/config"
 	httpauth "github.com/caslumes/solado_certo_backend/internal/features/auth/transport/http"
+	httpcatalog "github.com/caslumes/solado_certo_backend/internal/features/catalog/transport/http"
 	httpme "github.com/caslumes/solado_certo_backend/internal/features/me/transport/http"
 	middleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		a.GetOnboarding,
 		a.ChangeOnboardingStep,
 	)
+	catalogHandler := httpcatalog.NewHandler(a.GetAdvertisements)
 
 	authGroup := r.Group("/auth")
 	{
@@ -55,5 +57,10 @@ func initRoutes(r *gin.Engine, a *config.App) {
 
 		meGroup.GET("/onboarding", gin.WrapH(http.HandlerFunc(meHandler.GetOnboarding)))
 		meGroup.PUT("/onboarding", gin.WrapH(http.HandlerFunc(meHandler.ChangeOnboardingStep)))
+	}
+
+	catalogGroup := r.Group("/catalog")
+	{
+		catalogGroup.GET("", gin.WrapH(http.HandlerFunc(catalogHandler.GetAdvertisements)))
 	}
 }

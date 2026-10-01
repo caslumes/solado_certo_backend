@@ -7,9 +7,11 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 	authRepository "github.com/caslumes/solado_certo_backend/internal/features/auth/repository/postgres"
+	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
+	catalogRepository "github.com/caslumes/solado_certo_backend/internal/features/catalog/repository/postgres"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	meRepository "github.com/caslumes/solado_certo_backend/internal/features/me/repository/postgres"
-	"github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 )
 
 type Dependencies struct {
@@ -29,6 +31,7 @@ type Dependencies struct {
 	editPodologicalProfile me.EditPodologicalProfileUseCase
 	getOnboarding          me.GetOnboardingUseCase
 	changeOnboardingStep   me.ChangeOnboardingStepUseCase
+	getAdvertisements       catalog.GetAdvertisementsUseCase
 }
 
 func InitDependencies() *Dependencies {
@@ -41,9 +44,11 @@ func InitDependencies() *Dependencies {
 
 	authRepository := authRepository.NewPostgresRepository(dbPool)
 	meRepository := meRepository.NewPostgresRepository(dbPool)
+	catalogRepository := catalogRepository.NewPostgresRepository(dbPool)
 
 	authService := auth.NewService(authRepository, envs.SecretKey)
 	meService := me.NewService(meRepository)
+	catalogService := catalog.NewService(catalogRepository)
 
 	authMiddleware := authmiddleware.NewAuthMiddleware(authService)
 
@@ -64,6 +69,7 @@ func InitDependencies() *Dependencies {
 		editPodologicalProfile: meService,
 		getOnboarding:          meService,
 		changeOnboardingStep:   meService,
+		getAdvertisements: catalogService,
 	}
 }
 
