@@ -1,6 +1,6 @@
 package catalog
 
 type GetAdvertisementsInput struct {
-	Limit *uint
+	Limit  *uint
 	Cursor *string
 }

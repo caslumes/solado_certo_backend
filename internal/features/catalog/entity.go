@@ -2,23 +2,23 @@ package catalog
 
 import "time"
 
-type AdvertisementImage struct {
-	URL string
+type AdvertisementImageEntity struct {
+	URL     string
 	AltText string
-	Order int
+	Order   int
 	IsCover bool
 }
 
-func (ai *AdvertisementImage) ToOutput() *AdvertisementImageOutput {
+func (ai *AdvertisementImageEntity) ToOutput() *AdvertisementImageOutput {
 	return &AdvertisementImageOutput{
-		URL: ai.URL,
+		URL:     ai.URL,
 		AltText: ai.AltText,
-		Order: ai.Order,
+		Order:   ai.Order,
 		IsCover: ai.IsCover,
 	}
 }
 
-type Advertisement struct {
+type AdvertisementEntity struct {
 	SellerID             string
 	CategoryID           string
 	Title                string
@@ -28,7 +28,7 @@ type Advertisement struct {
 	Status               string
 	PrescriptionRequired bool
 	CustomMadeAllowed    bool
-	Images			   []*AdvertisementImage
+	Images               []*AdvertisementImageEntity
 	Side                 *string
 	Size                 *string
 	Material             *string
@@ -42,7 +42,7 @@ type Advertisement struct {
 	RemovedAt            *time.Time
 }
 
-func (a *Advertisement) ToOutput() *AdvertisementOutput {
+func (a *AdvertisementEntity) ToOutput() *AdvertisementOutput {
 	images := make([]*AdvertisementImageOutput, len(a.Images))
 	for i, image := range a.Images {
 		images[i] = image.ToOutput()
@@ -71,9 +71,9 @@ func (a *Advertisement) ToOutput() *AdvertisementOutput {
 }
 
 type AdvertisementPage struct {
-	Items []*Advertisement
-	NextCursor     *string
-	HasNext bool
+	Items      []*AdvertisementEntity
+	NextCursor *string
+	HasNext    bool
 }
 
 func (ap *AdvertisementPage) ToOutput() *AdvertisementPageOutput {
@@ -82,9 +82,9 @@ func (ap *AdvertisementPage) ToOutput() *AdvertisementPageOutput {
 		items[i] = item.ToOutput()
 	}
 	return &AdvertisementPageOutput{
-		Items: items,
+		Items:      items,
 		NextCursor: ap.NextCursor,
-		HasNext: ap.HasNext,
+		HasNext:    ap.HasNext,
 	}
 }
 

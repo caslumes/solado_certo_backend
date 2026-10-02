@@ -11,7 +11,7 @@ type GetAdvertisementsUseCase interface {
 }
 
 type repository interface {
-	GetAdvertisements(ctx context.Context, limit uint, cursor *AdvertisementCursor) ([]*Advertisement, error)
+	GetAdvertisements(ctx context.Context, limit uint, cursor *AdvertisementCursor) ([]*AdvertisementEntity, error)
 }
 
 type service struct {
@@ -39,7 +39,7 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 		cursor = &decodedCursor
 	}
 
-	ads, err := s.repo.GetAdvertisements(ctx, limit + 1, cursor)
+	ads, err := s.repo.GetAdvertisements(ctx, limit+1, cursor)
 	if err != nil {
 		return AdvertisementPage{}, err
 	}
@@ -59,9 +59,9 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 	}
 
 	return AdvertisementPage{
-		Items: ads,
-		NextCursor:     &nextCursor,
-		HasNext:        hasNext,
+		Items:      ads,
+		NextCursor: &nextCursor,
+		HasNext:    hasNext,
 	}, nil
 }
 

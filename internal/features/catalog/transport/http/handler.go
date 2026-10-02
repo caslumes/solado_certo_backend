@@ -11,7 +11,7 @@ import (
 
 type getAdvertisementsQuery struct {
 	Cursor *string
-	Limit *uint
+	Limit  *uint
 }
 
 type Handler struct {
@@ -49,7 +49,7 @@ func parsePaginationParams(r *http.Request) (getAdvertisementsQuery, error) {
 	query := r.URL.Query()
 	cursor := query.Get("cursor")
 	limit := query.Get("limit")
-	
+
 	var cursorPtr *string
 	if cursor != "" {
 		cursorPtr = &cursor
@@ -62,13 +62,12 @@ func parsePaginationParams(r *http.Request) (getAdvertisementsQuery, error) {
 		if err != nil {
 			return getAdvertisementsQuery{}, err
 		}
-		limitUint := uint(limitInt) 
+		limitUint := uint(limitInt)
 		return getAdvertisementsQuery{
 			Cursor: cursorPtr,
 			Limit:  &limitUint,
 		}, nil
 	}
-
 
 	return getAdvertisementsQuery{
 		Cursor: cursorPtr,

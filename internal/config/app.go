@@ -24,7 +24,7 @@ type App struct {
 	EditPodologicalProfile me.EditPodologicalProfileUseCase
 	GetOnboarding          me.GetOnboardingUseCase
 	ChangeOnboardingStep   me.ChangeOnboardingStepUseCase
-	GetAdvertisements       catalog.GetAdvertisementsUseCase
+	GetAdvertisements      catalog.GetAdvertisementsUseCase
 }
 
 func InitApp() *App {
@@ -47,6 +47,6 @@ func InitApp() *App {
 		EditPodologicalProfile: dependencies.editPodologicalProfile,
 		GetOnboarding:          dependencies.getOnboarding,
 		ChangeOnboardingStep:   dependencies.changeOnboardingStep,
-		GetAdvertisements:       dependencies.getAdvertisements,
+		GetAdvertisements:      dependencies.getAdvertisements,
 	}
 }

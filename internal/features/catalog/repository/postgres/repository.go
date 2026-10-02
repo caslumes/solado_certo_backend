@@ -16,13 +16,13 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 	return &postgresRepository{pool: pool}
 }
 
-func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, cursor *catalog.AdvertisementCursor) ([]*catalog.Advertisement, error) {
-	var ads []*catalog.Advertisement
+func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, cursor *catalog.AdvertisementCursor) ([]*catalog.AdvertisementEntity, error) {
+	var ads []*catalog.AdvertisementEntity
 	rows, err := r.pool.Query(
 		ctx,
-		"SELECT id, vendedor_id, titulo, descricao, preco, estoque, status, prescription_required, custom_made_allowed, " + 
-		"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, " + 
-		"updated_at, removed_at FROM anuncios ORDER BY created_at DESC LIMIT $1",
+		"SELECT id, vendedor_id, titulo, descricao, preco, estoque, status, prescription_required, custom_made_allowed, "+
+			"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, "+
+			"updated_at, removed_at FROM anuncios ORDER BY created_at DESC LIMIT $1",
 		limit,
 	)
 	if err != nil {

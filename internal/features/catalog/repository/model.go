@@ -13,8 +13,8 @@ type AdvertisementImageModel struct {
 	IsCover bool
 }
 
-func (m *AdvertisementImageModel) ToEntity() *catalog.AdvertisementImage {
-	return &catalog.AdvertisementImage{
+func (m *AdvertisementImageModel) ToEntity() *catalog.AdvertisementImageEntity {
+	return &catalog.AdvertisementImageEntity{
 		URL:     m.URL,
 		AltText: m.AltText,
 		Order:   m.Order,
@@ -33,7 +33,7 @@ type AdvertisementModel struct {
 	Status               string
 	PrescriptionRequired bool
 	CustomMadeAllowed    bool
-	Images			   []*AdvertisementImageModel
+	Images               []*AdvertisementImageModel
 	Side                 *string
 	Size                 *string
 	Material             *string
@@ -47,13 +47,13 @@ type AdvertisementModel struct {
 	RemovedAt            *time.Time
 }
 
-func (m *AdvertisementModel) ToEntity() *catalog.Advertisement {
-	images := make([]*catalog.AdvertisementImage, len(m.Images))
+func (m *AdvertisementModel) ToEntity() *catalog.AdvertisementEntity {
+	images := make([]*catalog.AdvertisementImageEntity, len(m.Images))
 	for i, image := range m.Images {
 		images[i] = image.ToEntity()
 	}
 
-	return &catalog.Advertisement{
+	return &catalog.AdvertisementEntity{
 		SellerID:             m.SellerID,
 		CategoryID:           m.CategoryID,
 		Title:                m.Title,
@@ -63,7 +63,7 @@ func (m *AdvertisementModel) ToEntity() *catalog.Advertisement {
 		Status:               m.Status,
 		PrescriptionRequired: m.PrescriptionRequired,
 		CustomMadeAllowed:    m.CustomMadeAllowed,
-		Images: images,
+		Images:               images,
 		Side:                 m.Side,
 		Size:                 m.Size,
 		Material:             m.Material,
