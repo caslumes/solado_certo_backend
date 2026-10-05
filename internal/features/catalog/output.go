@@ -29,9 +29,12 @@ type AdvertisementOutput struct {
 }
 
 type AdvertisementPageOutput struct {
-	Items      []*AdvertisementOutput `json:"items"`
-	NextCursor *string                `json:"next_cursor,omitempty"`
-	HasNext    bool                   `json:"has_next"`
+	Items       []*AdvertisementOutput `json:"items"`
+	CurrentPage uint                   `json:"current_page"`
+	TotalPages  uint                   `json:"total_pages"`
+	TotalItems  uint                   `json:"total_items"`
+	HasNext     bool                   `json:"has_next"`
+	HasPrevious bool                   `json:"has_previous"`
 }
 
 type CategoryOutput struct {

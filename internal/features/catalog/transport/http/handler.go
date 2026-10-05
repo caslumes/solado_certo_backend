@@ -2,6 +2,7 @@ package httpcatalog
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -9,9 +10,14 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 )
 
+var (
+	errInvalidPage  = errors.New("page must be a positive integer")
+	errInvalidLimit = errors.New("limit must be between 1 and 100")
+)
+
 type getAdvertisementsQuery struct {
-	Cursor *string
-	Limit  *uint
+	Page  uint
+	Limit uint
 }
 
 type Handler struct {
@@ -36,8 +42,8 @@ func (h *Handler) GetAdvertisements(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ap, err := h.getAdvertisements.GetAdvertisements(r.Context(), catalog.GetAdvertisementsInput{
-		Cursor: query.Cursor,
-		Limit:  query.Limit,
+		Page:  query.Page,
+		Limit: query.Limit,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -61,30 +67,26 @@ func (h *Handler) GetCategories(w http.ResponseWriter, r *http.Request) {
 
 func parsePaginationParams(r *http.Request) (getAdvertisementsQuery, error) {
 	query := r.URL.Query()
-	cursor := query.Get("cursor")
-	limit := query.Get("limit")
-
-	var cursorPtr *string
-	if cursor != "" {
-		cursorPtr = &cursor
+	page := uint64(1)
+	if value := query.Get("page"); value != "" {
+		parsed, err := strconv.ParseUint(value, 10, 0)
+		if err != nil || parsed == 0 {
+			return getAdvertisementsQuery{}, errInvalidPage
+		}
+		page = parsed
 	}
 
-	var limitInt int
-	if limit != "" {
-		var err error
-		limitInt, err = strconv.Atoi(limit)
-		if err != nil {
-			return getAdvertisementsQuery{}, err
+	limit := uint64(10)
+	if value := query.Get("limit"); value != "" {
+		parsed, err := strconv.ParseUint(value, 10, 0)
+		if err != nil || parsed == 0 || parsed > 100 {
+			return getAdvertisementsQuery{}, errInvalidLimit
 		}
-		limitUint := uint(limitInt)
-		return getAdvertisementsQuery{
-			Cursor: cursorPtr,
-			Limit:  &limitUint,
-		}, nil
+		limit = parsed
 	}
 
 	return getAdvertisementsQuery{
-		Cursor: cursorPtr,
-		Limit:  nil,
+		Page:  uint(page),
+		Limit: uint(limit),
 	}, nil
 }

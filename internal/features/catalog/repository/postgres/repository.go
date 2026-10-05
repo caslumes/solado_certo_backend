@@ -16,14 +16,15 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 	return &postgresRepository{pool: pool}
 }
 
-func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, cursor *catalog.AdvertisementCursor) ([]*catalog.AdvertisementEntity, error) {
+func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, offset uint) ([]*catalog.AdvertisementEntity, error) {
 	var ads []*catalog.AdvertisementEntity
 	rows, err := r.pool.Query(
 		ctx,
 		"SELECT id, vendedor_id, titulo, descricao, preco, estoque, status, prescription_required, custom_made_allowed, "+
 			"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, "+
-			"updated_at, removed_at FROM anuncios ORDER BY created_at DESC LIMIT $1",
+			"updated_at, removed_at FROM anuncios ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2",
 		limit,
+		offset,
 	)
 	if err != nil {
 		return nil, err
@@ -92,6 +93,16 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 	}
 
 	return ads, nil
+}
+
+func (r *postgresRepository) CountAdvertisements(ctx context.Context) (uint, error) {
+	var total int64
+	err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM anuncios").Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+
+	return uint(total), nil
 }
 
 func (r *postgresRepository) GetCategories(ctx context.Context) ([]*catalog.CategoryEntity, error) {

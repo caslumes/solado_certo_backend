@@ -71,9 +71,12 @@ func (a *AdvertisementEntity) ToOutput() *AdvertisementOutput {
 }
 
 type AdvertisementPage struct {
-	Items      []*AdvertisementEntity
-	NextCursor *string
-	HasNext    bool
+	Items       []*AdvertisementEntity
+	CurrentPage uint
+	TotalPages  uint
+	TotalItems  uint
+	HasNext     bool
+	HasPrevious bool
 }
 
 func (ap *AdvertisementPage) ToOutput() *AdvertisementPageOutput {
@@ -82,15 +85,13 @@ func (ap *AdvertisementPage) ToOutput() *AdvertisementPageOutput {
 		items[i] = item.ToOutput()
 	}
 	return &AdvertisementPageOutput{
-		Items:      items,
-		NextCursor: ap.NextCursor,
-		HasNext:    ap.HasNext,
+		Items:       items,
+		CurrentPage: ap.CurrentPage,
+		TotalPages:  ap.TotalPages,
+		TotalItems:  ap.TotalItems,
+		HasNext:     ap.HasNext,
+		HasPrevious: ap.HasPrevious,
 	}
-}
-
-type AdvertisementCursor struct {
-	CreatedAt time.Time
-	ID        string
 }
 
 type CategoryEntity struct {
