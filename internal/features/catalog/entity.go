@@ -128,3 +128,16 @@ func (c *CategoriesEntity) ToOutput() *CategoriesOutput {
 		Categories: categories,
 	}
 }
+
+type AdvertisementFilters struct {
+	Category             *string
+	PriceMin             *float64
+	PriceMax             *float64
+	PrescriptionRequired *bool
+	CustomMadeAllowed    *bool
+	Side                 *string
+	Size                 *string
+	Material             *string
+	Rigidity             *string
+	UsageIndication      *string
+}

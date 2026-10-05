@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"strconv"
+	"strings"
 
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog/repository"
@@ -16,15 +18,16 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 	return &postgresRepository{pool: pool}
 }
 
-func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, offset uint) ([]*catalog.AdvertisementEntity, error) {
+func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, offset uint, filters catalog.AdvertisementFilters) ([]*catalog.AdvertisementEntity, error) {
 	var ads []*catalog.AdvertisementEntity
+	whereClause, args := whereStringFromFilters(filters)
+	argsCount := len(args)
 	rows, err := r.pool.Query(
 		ctx,
 		"SELECT id, vendedor_id, titulo, descricao, preco, estoque, status, prescription_required, custom_made_allowed, "+
 			"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, "+
-			"updated_at, removed_at FROM anuncios ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2",
-		limit,
-		offset,
+			"updated_at, removed_at FROM anuncios "+whereClause+" ORDER BY created_at DESC, id DESC LIMIT $"+(strconv.Itoa(argsCount+1))+" OFFSET $"+(strconv.Itoa(argsCount+2)),
+		append(args, limit, offset)...,
 	)
 	if err != nil {
 		return nil, err
@@ -136,4 +139,68 @@ func (r *postgresRepository) GetCategories(ctx context.Context) ([]*catalog.Cate
 	}
 
 	return categories, nil
+}
+
+func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []interface{}) {
+	var conditions []string
+	var args []interface{}
+	argIndex := 1
+
+	if filters.Category != nil {
+		conditions = append(conditions, "categoria_id = $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.Category)
+		argIndex++
+	}
+	if filters.PriceMin != nil {
+		conditions = append(conditions, "preco >= $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.PriceMin)
+		argIndex++
+	}
+	if filters.PriceMax != nil {
+		conditions = append(conditions, "preco <= $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.PriceMax)
+		argIndex++
+	}
+	if filters.PrescriptionRequired != nil {
+		conditions = append(conditions, "prescription_required = $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.PrescriptionRequired)
+		argIndex++
+	}
+	if filters.CustomMadeAllowed != nil {
+		conditions = append(conditions, "custom_made_allowed = $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.CustomMadeAllowed)
+		argIndex++
+	}
+	if filters.Side != nil {
+		conditions = append(conditions, "side = $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.Side)
+		argIndex++
+	}
+	if filters.Size != nil {
+		conditions = append(conditions, "size = $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.Size)
+		argIndex++
+	}
+	if filters.Material != nil {
+		conditions = append(conditions, "material = $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.Material)
+		argIndex++
+	}
+	if filters.Rigidity != nil {
+		conditions = append(conditions, "rigidity = $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.Rigidity)
+		argIndex++
+	}
+	if filters.UsageIndication != nil {
+		conditions = append(conditions, "usage_indication = $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.UsageIndication)
+		argIndex++
+	}
+
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	return whereClause, args
 }

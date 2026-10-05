@@ -13,7 +13,7 @@ type GetCategoriesUseCase interface {
 }
 
 type repository interface {
-	GetAdvertisements(ctx context.Context, limit uint, offset uint) ([]*AdvertisementEntity, error)
+	GetAdvertisements(ctx context.Context, limit uint, offset uint, filters AdvertisementFilters) ([]*AdvertisementEntity, error)
 	CountAdvertisements(ctx context.Context) (uint, error)
 	GetCategories(ctx context.Context) ([]*CategoryEntity, error)
 }
@@ -45,7 +45,7 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 	}
 
 	offset := (page - 1) * limit
-	ads, err := s.repo.GetAdvertisements(ctx, limit, offset)
+	ads, err := s.repo.GetAdvertisements(ctx, limit, offset, *input.Filters)
 	if err != nil {
 		return AdvertisementPage{}, err
 	}

@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	httpconstants "github.com/caslumes/solado_certo_backend/internal/app/constants/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
 var (
@@ -16,8 +18,9 @@ var (
 )
 
 type getAdvertisementsQuery struct {
-	Page  uint
-	Limit uint
+	Page    uint
+	Limit   uint
+	Filters *catalog.AdvertisementFilters
 }
 
 type Handler struct {
@@ -42,8 +45,9 @@ func (h *Handler) GetAdvertisements(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ap, err := h.getAdvertisements.GetAdvertisements(r.Context(), catalog.GetAdvertisementsInput{
-		Page:  query.Page,
-		Limit: query.Limit,
+		Page:    query.Page,
+		Limit:   query.Limit,
+		Filters: query.Filters,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -67,26 +71,106 @@ func (h *Handler) GetCategories(w http.ResponseWriter, r *http.Request) {
 
 func parsePaginationParams(r *http.Request) (getAdvertisementsQuery, error) {
 	query := r.URL.Query()
-	page := uint64(1)
-	if value := query.Get("page"); value != "" {
-		parsed, err := strconv.ParseUint(value, 10, 0)
-		if err != nil || parsed == 0 {
-			return getAdvertisementsQuery{}, errInvalidPage
-		}
-		page = parsed
+
+	page, err := getUintQueryParam(query, "page", helpers.UintPtr(1))
+	if err != nil {
+		return getAdvertisementsQuery{}, errInvalidPage
 	}
 
-	limit := uint64(10)
-	if value := query.Get("limit"); value != "" {
-		parsed, err := strconv.ParseUint(value, 10, 0)
-		if err != nil || parsed == 0 || parsed > 100 {
-			return getAdvertisementsQuery{}, errInvalidLimit
-		}
-		limit = parsed
+	limit, err := getUintQueryParam(query, "limit", helpers.UintPtr(10))
+	if err != nil {
+		return getAdvertisementsQuery{}, errInvalidLimit
+	}
+
+	priceMin, err := getFloatQueryParam(query, "price_min", nil)
+	if err != nil {
+		return getAdvertisementsQuery{}, errors.New("price_min must be a valid float")
+	}
+
+	priceMax, err := getFloatQueryParam(query, "price_max", nil)
+	if err != nil {
+		return getAdvertisementsQuery{}, errors.New("price_max must be a valid float")
+	}
+
+	prescriptionRequired, err := getBoolQueryParam(query, "prescription_required", nil)
+	if err != nil {
+		return getAdvertisementsQuery{}, errors.New("prescription_required must be a valid boolean")
+	}
+
+	customMadeAllowed, err := getBoolQueryParam(query, "custom_made_allowed", nil)
+	if err != nil {
+		return getAdvertisementsQuery{}, errors.New("custom_made_allowed must be a valid boolean")
+	}
+
+	filters := &catalog.AdvertisementFilters{
+		Category:             getStringQueryParam(query, "category", nil),
+		PriceMin:             priceMin,
+		PriceMax:             priceMax,
+		PrescriptionRequired: prescriptionRequired,
+		CustomMadeAllowed:    customMadeAllowed,
+		Side:                 getStringQueryParam(query, "side", nil),
+		Size:                 getStringQueryParam(query, "size", nil),
+		Material:             getStringQueryParam(query, "material", nil),
+		Rigidity:             getStringQueryParam(query, "rigidity", nil),
+		UsageIndication:      getStringQueryParam(query, "usage_indication", nil),
 	}
 
 	return getAdvertisementsQuery{
-		Page:  uint(page),
-		Limit: uint(limit),
+		Page:    uint(*page),
+		Limit:   uint(*limit),
+		Filters: filters,
 	}, nil
+}
+
+func getUintQueryParam(query url.Values, key string, defaultValue *uint) (*uint, error) {
+	value := query.Get(key)
+	if value == "" {
+		return defaultValue, nil
+	}
+
+	parsed, err := strconv.ParseUint(value, 10, 0)
+	if err != nil || parsed == 0 {
+		return nil, errors.New(key + " must be a positive integer")
+	}
+
+	uintParsed := uint(parsed)
+
+	return &uintParsed, nil
+}
+
+func getFloatQueryParam(query url.Values, key string, defaultValue *float64) (*float64, error) {
+	value := query.Get(key)
+	if value == "" {
+		return defaultValue, nil
+	}
+
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return nil, errors.New(key + " must be a valid float")
+	}
+
+	return &parsed, nil
+}
+
+func getBoolQueryParam(query url.Values, key string, defaultValue *bool) (*bool, error) {
+	value := query.Get(key)
+	if value == "" {
+		return defaultValue, nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return nil, errors.New(key + " must be a valid boolean")
+	}
+
+	return &parsed, nil
+}
+
+func getStringQueryParam(query url.Values, key string, defaultValue *string) *string {
+	value := query.Get(key)
+	if value == "" {
+		return defaultValue
+	}
+
+	return &value
 }
