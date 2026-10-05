@@ -94,23 +94,23 @@ type AdvertisementCursor struct {
 }
 
 type CategoryEntity struct {
-	ID          string
+	ID               string
 	ParentCategoryID *string
-	Children    []*CategoryEntity
-	Name        string
-	Slug 	  string
-	Active bool
+	Children         []*CategoryEntity
+	Name             string
+	Slug             string
+	Active           bool
 }
 
 func (c *CategoryEntity) ToOutput() *CategoryOutput {
 	children := CategoriesEntity{Categories: c.Children}
 	return &CategoryOutput{
-		ID:          c.ID,
+		ID:               c.ID,
 		ParentCategoryID: c.ParentCategoryID,
-		Children: children.ToOutput().Categories,
-		Name:        c.Name,
-		Slug: 	  c.Slug,
-		Active: c.Active,
+		Children:         children.ToOutput().Categories,
+		Name:             c.Name,
+		Slug:             c.Slug,
+		Active:           c.Active,
 	}
 }
 

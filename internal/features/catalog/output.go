@@ -35,12 +35,12 @@ type AdvertisementPageOutput struct {
 }
 
 type CategoryOutput struct {
-	ID          string  `json:"id"`
-	ParentCategoryID *string `json:"parent_category_id,omitempty"`
-	Children	[]*CategoryOutput `json:"children,omitempty"`
-	Name        string  `json:"name"`
-	Slug        string  `json:"slug"`
-	Active      bool    `json:"active"`
+	ID               string            `json:"id"`
+	ParentCategoryID *string           `json:"parent_category_id,omitempty"`
+	Children         []*CategoryOutput `json:"children,omitempty"`
+	Name             string            `json:"name"`
+	Slug             string            `json:"slug"`
+	Active           bool              `json:"active"`
 }
 
 type CategoriesOutput struct {
