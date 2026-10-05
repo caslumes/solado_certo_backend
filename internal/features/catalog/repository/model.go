@@ -77,3 +77,21 @@ func (m *AdvertisementModel) ToEntity() *catalog.AdvertisementEntity {
 		RemovedAt:            m.RemovedAt,
 	}
 }
+
+type CategoryModel struct {
+	ID               string
+	ParentCategoryID *string
+	Name             string
+	Slug             string
+	Active           bool
+}
+
+func (m *CategoryModel) ToEntity() *catalog.CategoryEntity {
+	return &catalog.CategoryEntity{
+		ID:               m.ID,
+		ParentCategoryID: m.ParentCategoryID,
+		Name:             m.Name,
+		Slug:             m.Slug,
+		Active:           m.Active,
+	}
+}

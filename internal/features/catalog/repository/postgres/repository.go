@@ -93,3 +93,36 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 
 	return ads, nil
 }
+
+func (r *postgresRepository) GetCategories(ctx context.Context) ([]*catalog.CategoryEntity, error) {
+	var categories []*catalog.CategoryEntity
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT id, categoria_pai_id, nome, slug, ativo FROM categorias",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var c catalog.CategoryEntity
+		err := rows.Scan(
+			&c.ID,
+			&c.ParentCategoryID,
+			&c.Name,
+			&c.Slug,
+			&c.Active,
+		)
+		if err != nil {
+			return nil, err
+		}
+		categories = append(categories, &c)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return categories, nil
+}

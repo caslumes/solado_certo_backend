@@ -92,3 +92,38 @@ type AdvertisementCursor struct {
 	CreatedAt time.Time
 	ID        string
 }
+
+type CategoryEntity struct {
+	ID          string
+	ParentCategoryID *string
+	Children    []*CategoryEntity
+	Name        string
+	Slug 	  string
+	Active bool
+}
+
+func (c *CategoryEntity) ToOutput() *CategoryOutput {
+	children := CategoriesEntity{Categories: c.Children}
+	return &CategoryOutput{
+		ID:          c.ID,
+		ParentCategoryID: c.ParentCategoryID,
+		Children: children.ToOutput().Categories,
+		Name:        c.Name,
+		Slug: 	  c.Slug,
+		Active: c.Active,
+	}
+}
+
+type CategoriesEntity struct {
+	Categories []*CategoryEntity
+}
+
+func (c *CategoriesEntity) ToOutput() *CategoriesOutput {
+	categories := make([]*CategoryOutput, len(c.Categories))
+	for i, category := range c.Categories {
+		categories[i] = category.ToOutput()
+	}
+	return &CategoriesOutput{
+		Categories: categories,
+	}
+}

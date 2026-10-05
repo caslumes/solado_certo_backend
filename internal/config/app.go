@@ -25,6 +25,7 @@ type App struct {
 	GetOnboarding          me.GetOnboardingUseCase
 	ChangeOnboardingStep   me.ChangeOnboardingStepUseCase
 	GetAdvertisements      catalog.GetAdvertisementsUseCase
+	GetCategories		   catalog.GetCategoriesUseCase
 }
 
 func InitApp() *App {
@@ -48,5 +49,6 @@ func InitApp() *App {
 		GetOnboarding:          dependencies.getOnboarding,
 		ChangeOnboardingStep:   dependencies.changeOnboardingStep,
 		GetAdvertisements:      dependencies.getAdvertisements,
+		GetCategories:		   dependencies.getCategories,
 	}
 }

@@ -10,8 +10,13 @@ type GetAdvertisementsUseCase interface {
 	GetAdvertisements(ctx context.Context, input GetAdvertisementsInput) (AdvertisementPage, error)
 }
 
+type GetCategoriesUseCase interface {
+	GetCategories(ctx context.Context) (*CategoriesEntity, error)
+}
+
 type repository interface {
 	GetAdvertisements(ctx context.Context, limit uint, cursor *AdvertisementCursor) ([]*AdvertisementEntity, error)
+	GetCategories(ctx context.Context) ([]*CategoryEntity, error)
 }
 
 type service struct {
@@ -65,6 +70,17 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 	}, nil
 }
 
+func (s *service) GetCategories(ctx context.Context) (*CategoriesEntity, error) {
+	categories, err := s.repo.GetCategories(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CategoriesEntity{
+		Categories: groupCategories(categories),
+	}, nil
+}
+
 func encodeCursor(ac AdvertisementCursor) string {
 	payload, _ := json.Marshal(AdvertisementCursor{
 		CreatedAt: ac.CreatedAt,
@@ -87,4 +103,27 @@ func decodeCursor(encoded string) (AdvertisementCursor, error) {
 	}
 
 	return ac, nil
+}
+
+func groupCategories(categories []*CategoryEntity) []*CategoryEntity {
+	categoryMap := make(map[string]*CategoryEntity)
+	var rootCategories []*CategoryEntity
+
+	for _, category := range categories {
+		category.Children = []*CategoryEntity{}
+		categoryMap[category.ID] = category
+	}
+
+	for _, category := range categories {
+		if category.ParentCategoryID != nil {
+			parent, exists := categoryMap[*category.ParentCategoryID]
+			if exists {
+				parent.Children = append(parent.Children, category)
+			}
+		} else {
+			rootCategories = append(rootCategories, category)
+		}
+	}
+
+	return rootCategories
 }

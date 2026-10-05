@@ -16,11 +16,13 @@ type getAdvertisementsQuery struct {
 
 type Handler struct {
 	getAdvertisements catalog.GetAdvertisementsUseCase
+	getCategories     catalog.GetCategoriesUseCase
 }
 
-func NewHandler(getAdvertisements catalog.GetAdvertisementsUseCase) *Handler {
+func NewHandler(getAdvertisements catalog.GetAdvertisementsUseCase, getCategories catalog.GetCategoriesUseCase) *Handler {
 	return &Handler{
 		getAdvertisements: getAdvertisements,
+		getCategories:     getCategories,
 	}
 }
 
@@ -43,6 +45,18 @@ func (h *Handler) GetAdvertisements(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(ap.ToOutput())
+}
+
+func (h *Handler) GetCategories(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	categories, err := h.getCategories.GetCategories(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(categories.ToOutput())
 }
 
 func parsePaginationParams(r *http.Request) (getAdvertisementsQuery, error) {
