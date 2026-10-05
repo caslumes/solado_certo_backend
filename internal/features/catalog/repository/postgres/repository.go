@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -196,6 +197,8 @@ func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []int
 		args = append(args, *filters.UsageIndication)
 		argIndex++
 	}
+
+	conditions = append(conditions, fmt.Sprintf("status = '%s'", catalog.AdvertisementStatusPublished))
 
 	whereClause := ""
 	if len(conditions) > 0 {
