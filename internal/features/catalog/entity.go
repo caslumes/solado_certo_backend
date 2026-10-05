@@ -130,6 +130,7 @@ func (c *CategoriesEntity) ToOutput() *CategoriesOutput {
 }
 
 type AdvertisementFilters struct {
+	Query                *string
 	Category             *string
 	PriceMin             *float64
 	PriceMax             *float64

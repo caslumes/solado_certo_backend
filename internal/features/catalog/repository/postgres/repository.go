@@ -220,6 +220,11 @@ func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []int
 	var args []interface{}
 	argIndex := 1
 
+	if filters.Query != nil {
+		conditions = append(conditions, "(titulo ILIKE $"+strconv.Itoa(argIndex)+" OR descricao ILIKE $"+strconv.Itoa(argIndex)+")")
+		args = append(args, "%"+*filters.Query+"%")
+		argIndex++
+	}
 	if filters.Category != nil {
 		conditions = append(conditions, "categoria_id = $"+strconv.Itoa(argIndex))
 		args = append(args, *filters.Category)

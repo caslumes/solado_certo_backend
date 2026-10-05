@@ -26,14 +26,14 @@ type getAdvertisementsQuery struct {
 
 type Handler struct {
 	getAdvertisements catalog.GetAdvertisementsUseCase
-	getAdvertisement    catalog.GetAdvertisementUseCase
+	getAdvertisement  catalog.GetAdvertisementUseCase
 	getCategories     catalog.GetCategoriesUseCase
 }
 
 func NewHandler(getAdvertisements catalog.GetAdvertisementsUseCase, getAdvertisement catalog.GetAdvertisementUseCase, getCategories catalog.GetCategoriesUseCase) *Handler {
 	return &Handler{
 		getAdvertisements: getAdvertisements,
-		getAdvertisement: getAdvertisement,
+		getAdvertisement:  getAdvertisement,
 		getCategories:     getCategories,
 	}
 }
@@ -129,6 +129,7 @@ func parsePaginationParams(r *http.Request) (getAdvertisementsQuery, error) {
 	}
 
 	filters := &catalog.AdvertisementFilters{
+		Query:                getStringQueryParam(query, "q", nil),
 		Category:             getStringQueryParam(query, "category", nil),
 		PriceMin:             priceMin,
 		PriceMax:             priceMax,
