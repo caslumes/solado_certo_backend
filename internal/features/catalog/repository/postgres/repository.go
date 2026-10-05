@@ -2,12 +2,15 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog/repository"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -97,6 +100,76 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 	}
 
 	return ads, nil
+}
+
+func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string) (*catalog.AdvertisementEntity, error) {
+	var m repository.AdvertisementModel
+	var images []*repository.AdvertisementImageModel
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT id, vendedor_id, titulo, descricao, preco, estoque, status, prescription_required, custom_made_allowed, "+
+			"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, "+
+			"updated_at, removed_at FROM anuncios WHERE id = $1",
+		id,
+	).Scan(
+		&m.ID,
+		&m.SellerID,
+		&m.Title,
+		&m.Description,
+		&m.Price,
+		&m.Stock,
+		&m.Status,
+		&m.PrescriptionRequired,
+		&m.CustomMadeAllowed,
+		&m.Side,
+		&m.Size,
+		&m.Material,
+		&m.Rigidity,
+		&m.UsageIndication,
+		&m.SafetyAlerts,
+		&m.Contraindications,
+		&m.ShippingNotes,
+		&m.CreatedAt,
+		&m.UpdatedAt,
+		&m.RemovedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrAdvertisementNotFound
+		}
+
+		return nil, err
+	}
+
+	imageRows, err := r.pool.Query(
+		ctx,
+		"SELECT url, alt_text, ordem, is_cover FROM anuncio_imagens WHERE anuncio_id = $1 ORDER BY ordem",
+		m.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer imageRows.Close()
+
+	for imageRows.Next() {
+		image := &repository.AdvertisementImageModel{}
+		if err := imageRows.Scan(
+			&image.URL,
+			&image.AltText,
+			&image.Order,
+			&image.IsCover,
+		); err != nil {
+			return nil, err
+		}
+		images = append(images, image)
+	}
+
+	if err := imageRows.Err(); err != nil {
+		return nil, err
+	}
+
+	m.Images = images
+	return m.ToEntity(), nil
 }
 
 func (r *postgresRepository) CountAdvertisements(ctx context.Context) (uint, error) {

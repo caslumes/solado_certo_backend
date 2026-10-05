@@ -32,6 +32,7 @@ type Dependencies struct {
 	getOnboarding          me.GetOnboardingUseCase
 	changeOnboardingStep   me.ChangeOnboardingStepUseCase
 	getAdvertisements      catalog.GetAdvertisementsUseCase
+	getAdvertisement        catalog.GetAdvertisementUseCase
 	getCategories          catalog.GetCategoriesUseCase
 }
 
@@ -71,6 +72,7 @@ func InitDependencies() *Dependencies {
 		getOnboarding:          meService,
 		changeOnboardingStep:   meService,
 		getAdvertisements:      catalogService,
+		getAdvertisement: catalogService,
 		getCategories:          catalogService,
 	}
 }

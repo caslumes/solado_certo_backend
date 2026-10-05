@@ -25,7 +25,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		a.GetOnboarding,
 		a.ChangeOnboardingStep,
 	)
-	catalogHandler := httpcatalog.NewHandler(a.GetAdvertisements, a.GetCategories)
+	catalogHandler := httpcatalog.NewHandler(a.GetAdvertisements, a.GetAdvertisement, a.GetCategories)
 
 	authGroup := r.Group("/auth")
 	{
@@ -62,6 +62,10 @@ func initRoutes(r *gin.Engine, a *config.App) {
 	catalogGroup := r.Group("/catalog")
 	{
 		catalogGroup.GET("", gin.WrapH(http.HandlerFunc(catalogHandler.GetAdvertisements)))
+		catalogGroup.GET("/items/:advertisementID", func(c *gin.Context) {
+			c.Request.SetPathValue("advertisementID", c.Param("advertisementID"))
+			catalogHandler.GetAdvertisement(c.Writer, c.Request)
+		})
 		catalogGroup.GET("/categories", gin.WrapH(http.HandlerFunc(catalogHandler.GetCategories)))
 	}
 }

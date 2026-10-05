@@ -8,12 +8,17 @@ type GetAdvertisementsUseCase interface {
 	GetAdvertisements(ctx context.Context, input GetAdvertisementsInput) (AdvertisementPage, error)
 }
 
+type GetAdvertisementUseCase interface {
+	GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error)
+}
+
 type GetCategoriesUseCase interface {
 	GetCategories(ctx context.Context) (*CategoriesEntity, error)
 }
 
 type repository interface {
 	GetAdvertisements(ctx context.Context, limit uint, offset uint, filters AdvertisementFilters) ([]*AdvertisementEntity, error)
+	GetAdvertisementByID(ctx context.Context, id string) (*AdvertisementEntity, error)
 	CountAdvertisements(ctx context.Context) (uint, error)
 	GetCategories(ctx context.Context) ([]*CategoryEntity, error)
 }
@@ -66,6 +71,15 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 		HasNext:     page < totalPages,
 		HasPrevious: page > 1,
 	}, nil
+}
+
+func (s *service) GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error) {
+	ad, err := s.repo.GetAdvertisementByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return ad, nil
 }
 
 func (s *service) GetCategories(ctx context.Context) (*CategoriesEntity, error) {

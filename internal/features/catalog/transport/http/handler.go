@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	httpconstants "github.com/caslumes/solado_certo_backend/internal/app/constants/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
@@ -25,12 +26,14 @@ type getAdvertisementsQuery struct {
 
 type Handler struct {
 	getAdvertisements catalog.GetAdvertisementsUseCase
+	getAdvertisement    catalog.GetAdvertisementUseCase
 	getCategories     catalog.GetCategoriesUseCase
 }
 
-func NewHandler(getAdvertisements catalog.GetAdvertisementsUseCase, getCategories catalog.GetCategoriesUseCase) *Handler {
+func NewHandler(getAdvertisements catalog.GetAdvertisementsUseCase, getAdvertisement catalog.GetAdvertisementUseCase, getCategories catalog.GetCategoriesUseCase) *Handler {
 	return &Handler{
 		getAdvertisements: getAdvertisements,
+		getAdvertisement: getAdvertisement,
 		getCategories:     getCategories,
 	}
 }
@@ -55,6 +58,29 @@ func (h *Handler) GetAdvertisements(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(ap.ToOutput())
+}
+
+func (h *Handler) GetAdvertisement(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+
+	id := r.PathValue("advertisementID")
+	if id == "" {
+		http.Error(w, "advertisementID is required", http.StatusBadRequest)
+		return
+	}
+
+	ad, err := h.getAdvertisement.GetAdvertisement(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, app.ErrAdvertisementNotFound) {
+			http.Error(w, "Advertisement not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(ad.ToOutput())
 }
 
 func (h *Handler) GetCategories(w http.ResponseWriter, r *http.Request) {
