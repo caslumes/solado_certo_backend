@@ -1,27 +1,29 @@
 package httpcatalog
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
-	httpconstants "github.com/caslumes/solado_certo_backend/internal/app/constants/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
-	"github.com/caslumes/solado_certo_backend/internal/helpers"
-)
-
-var (
-	errInvalidPage  = errors.New("page must be a positive integer")
-	errInvalidLimit = errors.New("limit must be between 1 and 100")
+	"github.com/gin-gonic/gin"
 )
 
 type getAdvertisementsQuery struct {
-	Page    uint
-	Limit   uint
-	Filters *catalog.AdvertisementFilters
+	Page                 uint     `form:"page,default=1" binding:"min=1"`
+	Limit                uint     `form:"limit,default=10" binding:"min=1,max=100"`
+	Query                *string  `form:"q"`
+	Category             *string  `form:"category"`
+	PriceMin             *float64 `form:"price_min"`
+	PriceMax             *float64 `form:"price_max"`
+	PrescriptionRequired *bool    `form:"prescription_required"`
+	CustomMadeAllowed    *bool    `form:"custom_made_allowed"`
+	Side                 *string  `form:"side"`
+	Size                 *string  `form:"size"`
+	Material             *string  `form:"material"`
+	Rigidity             *string  `form:"rigidity"`
+	UsageIndication      *string  `form:"usage_indication"`
 }
 
 type Handler struct {
@@ -38,166 +40,70 @@ func NewHandler(getAdvertisements catalog.GetAdvertisementsUseCase, getAdvertise
 	}
 }
 
-func (h *Handler) GetAdvertisements(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
+func (h *Handler) GetAdvertisements(c *gin.Context) {
+	c.Request.URL.RawQuery = withoutEmptyParams(c.Request.URL.Query()).Encode()
 
-	query, err := parsePaginationParams(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	var query getAdvertisementsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters: page and limit must be positive integers (limit at most 100), prices must be numbers and flags must be booleans"})
 		return
 	}
 
-	ap, err := h.getAdvertisements.GetAdvertisements(r.Context(), catalog.GetAdvertisementsInput{
-		Page:    query.Page,
-		Limit:   query.Limit,
-		Filters: query.Filters,
+	ap, err := h.getAdvertisements.GetAdvertisements(c.Request.Context(), catalog.GetAdvertisementsInput{
+		Page:  query.Page,
+		Limit: query.Limit,
+		Filters: &catalog.AdvertisementFilters{
+			Query:                query.Query,
+			Category:             query.Category,
+			PriceMin:             query.PriceMin,
+			PriceMax:             query.PriceMax,
+			PrescriptionRequired: query.PrescriptionRequired,
+			CustomMadeAllowed:    query.CustomMadeAllowed,
+			Side:                 query.Side,
+			Size:                 query.Size,
+			Material:             query.Material,
+			Rigidity:             query.Rigidity,
+			UsageIndication:      query.UsageIndication,
+		},
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get advertisements"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(ap.ToOutput())
+	c.JSON(http.StatusOK, ap.ToOutput())
 }
 
-func (h *Handler) GetAdvertisement(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	id := r.PathValue("advertisementID")
-	if id == "" {
-		http.Error(w, "advertisementID is required", http.StatusBadRequest)
-		return
-	}
-
-	ad, err := h.getAdvertisement.GetAdvertisement(r.Context(), id)
+func (h *Handler) GetAdvertisement(c *gin.Context) {
+	ad, err := h.getAdvertisement.GetAdvertisement(c.Request.Context(), c.Param("advertisementID"))
 	if err != nil {
 		if errors.Is(err, app.ErrAdvertisementNotFound) {
-			http.Error(w, "Advertisement not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"error": "advertisement not found"})
 			return
 		}
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get advertisement"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(ad.ToOutput())
+	c.JSON(http.StatusOK, ad.ToOutput())
 }
 
-func (h *Handler) GetCategories(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	categories, err := h.getCategories.GetCategories(r.Context())
+func (h *Handler) GetCategories(c *gin.Context) {
+	categories, err := h.getCategories.GetCategories(c.Request.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get categories"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(categories.ToOutput())
+	c.JSON(http.StatusOK, categories.ToOutput())
 }
 
-func parsePaginationParams(r *http.Request) (getAdvertisementsQuery, error) {
-	query := r.URL.Query()
-
-	page, err := getUintQueryParam(query, "page", helpers.UintPtr(1))
-	if err != nil {
-		return getAdvertisementsQuery{}, errInvalidPage
+func withoutEmptyParams(values url.Values) url.Values {
+	for key, vs := range values {
+		if len(vs) == 1 && vs[0] == "" {
+			delete(values, key)
+		}
 	}
-
-	limit, err := getUintQueryParam(query, "limit", helpers.UintPtr(10))
-	if err != nil {
-		return getAdvertisementsQuery{}, errInvalidLimit
-	}
-
-	priceMin, err := getFloatQueryParam(query, "price_min", nil)
-	if err != nil {
-		return getAdvertisementsQuery{}, errors.New("price_min must be a valid float")
-	}
-
-	priceMax, err := getFloatQueryParam(query, "price_max", nil)
-	if err != nil {
-		return getAdvertisementsQuery{}, errors.New("price_max must be a valid float")
-	}
-
-	prescriptionRequired, err := getBoolQueryParam(query, "prescription_required", nil)
-	if err != nil {
-		return getAdvertisementsQuery{}, errors.New("prescription_required must be a valid boolean")
-	}
-
-	customMadeAllowed, err := getBoolQueryParam(query, "custom_made_allowed", nil)
-	if err != nil {
-		return getAdvertisementsQuery{}, errors.New("custom_made_allowed must be a valid boolean")
-	}
-
-	filters := &catalog.AdvertisementFilters{
-		Query:                getStringQueryParam(query, "q", nil),
-		Category:             getStringQueryParam(query, "category", nil),
-		PriceMin:             priceMin,
-		PriceMax:             priceMax,
-		PrescriptionRequired: prescriptionRequired,
-		CustomMadeAllowed:    customMadeAllowed,
-		Side:                 getStringQueryParam(query, "side", nil),
-		Size:                 getStringQueryParam(query, "size", nil),
-		Material:             getStringQueryParam(query, "material", nil),
-		Rigidity:             getStringQueryParam(query, "rigidity", nil),
-		UsageIndication:      getStringQueryParam(query, "usage_indication", nil),
-	}
-
-	return getAdvertisementsQuery{
-		Page:    uint(*page),
-		Limit:   uint(*limit),
-		Filters: filters,
-	}, nil
-}
-
-func getUintQueryParam(query url.Values, key string, defaultValue *uint) (*uint, error) {
-	value := query.Get(key)
-	if value == "" {
-		return defaultValue, nil
-	}
-
-	parsed, err := strconv.ParseUint(value, 10, 0)
-	if err != nil || parsed == 0 {
-		return nil, errors.New(key + " must be a positive integer")
-	}
-
-	uintParsed := uint(parsed)
-
-	return &uintParsed, nil
-}
-
-func getFloatQueryParam(query url.Values, key string, defaultValue *float64) (*float64, error) {
-	value := query.Get(key)
-	if value == "" {
-		return defaultValue, nil
-	}
-
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return nil, errors.New(key + " must be a valid float")
-	}
-
-	return &parsed, nil
-}
-
-func getBoolQueryParam(query url.Values, key string, defaultValue *bool) (*bool, error) {
-	value := query.Get(key)
-	if value == "" {
-		return defaultValue, nil
-	}
-
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return nil, errors.New(key + " must be a valid boolean")
-	}
-
-	return &parsed, nil
-}
-
-func getStringQueryParam(query url.Values, key string, defaultValue *string) *string {
-	value := query.Get(key)
-	if value == "" {
-		return defaultValue
-	}
-
-	return &value
+	return values
 }

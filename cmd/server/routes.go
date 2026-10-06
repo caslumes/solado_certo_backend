@@ -1,14 +1,12 @@
 package main
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/config"
 	httpauth "github.com/caslumes/solado_certo_backend/internal/features/auth/transport/http"
 	httpcatalog "github.com/caslumes/solado_certo_backend/internal/features/catalog/transport/http"
 	httpme "github.com/caslumes/solado_certo_backend/internal/features/me/transport/http"
-	middleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	"github.com/caslumes/solado_certo_backend/internal/middleware/ratelimit"
 	"github.com/gin-gonic/gin"
 )
@@ -34,43 +32,33 @@ func initRoutes(r *gin.Engine, a *config.App) {
 
 	authGroup := r.Group("/auth")
 	{
-		authGroup.POST("/register", gin.WrapH(registerLimiter.Middleware(http.HandlerFunc(authHandler.Register))))
-		authGroup.POST("/login", gin.WrapH(loginLimiter.Middleware(http.HandlerFunc(authHandler.Login))))
-		authGroup.POST("/logout", gin.WrapH(http.HandlerFunc(authHandler.Logout)))
-		authGroup.POST("/refresh-token", gin.WrapH(http.HandlerFunc(authHandler.RefreshToken)))
+		authGroup.POST("/register", registerLimiter.Middleware(), authHandler.Register)
+		authGroup.POST("/login", loginLimiter.Middleware(), authHandler.Login)
+		authGroup.POST("/logout", authHandler.Logout)
+		authGroup.POST("/refresh-token", authHandler.RefreshToken)
 	}
 
-	meGroup := r.Group("/me")
-	meGroup.Use(middleware.GinAuthAdapter(a.AuthMiddleware))
+	meGroup := r.Group("/me", a.AuthMiddleware.Middleware())
 	{
-		meGroup.GET("/profile", gin.WrapH(http.HandlerFunc(meHandler.GetProfile)))
-		meGroup.PATCH("/profile", gin.WrapH(http.HandlerFunc(meHandler.EditProfile)))
+		meGroup.GET("/profile", meHandler.GetProfile)
+		meGroup.PATCH("/profile", meHandler.EditProfile)
 
-		meGroup.GET("/addresses", gin.WrapH(http.HandlerFunc(meHandler.GetAddresses)))
-		meGroup.POST("/addresses", gin.WrapH(http.HandlerFunc(meHandler.AddAddress)))
-		meGroup.PATCH("/addresses/:addressID", func(c *gin.Context) {
-			c.Request.SetPathValue("addressID", c.Param("addressID"))
-			meHandler.EditAddress(c.Writer, c.Request)
-		})
-		meGroup.DELETE("/addresses/:addressID", func(c *gin.Context) {
-			c.Request.SetPathValue("addressID", c.Param("addressID"))
-			meHandler.DeleteAddress(c.Writer, c.Request)
-		})
+		meGroup.GET("/addresses", meHandler.GetAddresses)
+		meGroup.POST("/addresses", meHandler.AddAddress)
+		meGroup.PATCH("/addresses/:addressID", meHandler.EditAddress)
+		meGroup.DELETE("/addresses/:addressID", meHandler.DeleteAddress)
 
-		meGroup.GET("/podological-profile", gin.WrapH(http.HandlerFunc(meHandler.GetPodologicalProfile)))
-		meGroup.PUT("/podological-profile", gin.WrapH(http.HandlerFunc(meHandler.EditPodologicalProfile)))
+		meGroup.GET("/podological-profile", meHandler.GetPodologicalProfile)
+		meGroup.PUT("/podological-profile", meHandler.EditPodologicalProfile)
 
-		meGroup.GET("/onboarding", gin.WrapH(http.HandlerFunc(meHandler.GetOnboarding)))
-		meGroup.PUT("/onboarding", gin.WrapH(http.HandlerFunc(meHandler.ChangeOnboardingStep)))
+		meGroup.GET("/onboarding", meHandler.GetOnboarding)
+		meGroup.PUT("/onboarding", meHandler.ChangeOnboardingStep)
 	}
 
 	catalogGroup := r.Group("/catalog")
 	{
-		catalogGroup.GET("", gin.WrapH(http.HandlerFunc(catalogHandler.GetAdvertisements)))
-		catalogGroup.GET("/items/:advertisementID", func(c *gin.Context) {
-			c.Request.SetPathValue("advertisementID", c.Param("advertisementID"))
-			catalogHandler.GetAdvertisement(c.Writer, c.Request)
-		})
-		catalogGroup.GET("/categories", gin.WrapH(http.HandlerFunc(catalogHandler.GetCategories)))
+		catalogGroup.GET("", catalogHandler.GetAdvertisements)
+		catalogGroup.GET("/items/:advertisementID", catalogHandler.GetAdvertisement)
+		catalogGroup.GET("/categories", catalogHandler.GetCategories)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 type userIDKey struct{}
@@ -31,25 +33,26 @@ func NewAuthMiddleware(authService service) *AuthMiddleware {
 	}
 }
 
-func (a *AuthMiddleware) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authorization := r.Header.Get("Authorization")
+func (a *AuthMiddleware) Middleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authorization := c.GetHeader("Authorization")
 		if !strings.HasPrefix(authorization, "Bearer ") {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 		token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
 		if token == "" {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 
 		userID, err := a.authService.ParseToken(token)
 		if err != nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), userID)))
-	})
+		c.Request = c.Request.WithContext(WithUserID(c.Request.Context(), userID))
+		c.Next()
+	}
 }

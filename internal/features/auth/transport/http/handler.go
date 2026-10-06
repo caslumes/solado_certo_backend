@@ -1,13 +1,12 @@
 package httpauth
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
-	httpconstants "github.com/caslumes/solado_certo_backend/internal/app/constants/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
@@ -33,14 +32,23 @@ type registerRequest struct {
 	Password string `json:"password"`
 }
 
-func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type refreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+func (h *Handler) Register(c *gin.Context) {
 	var request registerRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
-	err := h.register.Register(r.Context(), &auth.RegisterInput{
+	err := h.register.Register(c.Request.Context(), &auth.RegisterInput{
 		Name:     request.Name,
 		Email:    request.Email,
 		Phone:    request.Phone,
@@ -48,123 +56,100 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		http.Error(w, "could not register user", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register user"})
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	c.Status(http.StatusCreated)
 }
 
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+func (h *Handler) Login(c *gin.Context) {
+	var request loginRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
-	tokenPair, err := h.login.Login(r.Context(), &auth.LoginInput{
+	tokenPair, err := h.login.Login(c.Request.Context(), &auth.LoginInput{
 		Email:    request.Email,
 		Password: request.Password,
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		if errors.Is(err, app.ErrInvalidCredentials) {
-			http.Error(w, "invalid email or password", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"error": "invalid email or password"})
 			return
 		}
-		http.Error(w, "could not login user", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not login user"})
 		return
 	}
 
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"access_token": tokenPair.AccessToken, "refresh_token": tokenPair.RefreshToken})
+	c.JSON(http.StatusOK, gin.H{"access_token": tokenPair.AccessToken, "refresh_token": tokenPair.RefreshToken})
 }
 
-func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-	var request struct {
-		RefreshToken string `json:"refresh_token"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+func (h *Handler) Logout(c *gin.Context) {
+	var request refreshTokenRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "refresh token is required"})
 		return
 	}
 
-	if request.RefreshToken == "" {
-		http.Error(w, "refresh token is required", http.StatusBadRequest)
-		return
-	}
-
-	err := h.logout.Logout(r.Context(), request.RefreshToken)
+	err := h.logout.Logout(c.Request.Context(), request.RefreshToken)
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		if errors.Is(err, app.ErrInvalidToken) || errors.Is(err, app.ErrTokenExpired) {
-			http.Error(w, "invalid or expired refresh token", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired refresh token"})
 			return
 		}
 		if errors.Is(err, app.ErrTokenNotFound) {
-			http.Error(w, "refresh token not found or does not match user", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"error": "refresh token not found or does not match user"})
 			return
 		}
 		if errors.Is(err, app.ErrTokenRevoked) {
-			http.Error(w, "refresh token has already been revoked", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token has already been revoked"})
 			return
 		}
-		http.Error(w, "could not revoke refresh token", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not revoke refresh token"})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "refresh token revoked successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "refresh token revoked successfully"})
 }
 
-func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-	var request struct {
-		RefreshToken string `json:"refresh_token"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+func (h *Handler) RefreshToken(c *gin.Context) {
+	var request refreshTokenRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "refresh token is required"})
 		return
 	}
 
-	if request.RefreshToken == "" {
-		http.Error(w, "refresh token is required", http.StatusBadRequest)
-		return
-	}
-
-	tokenPair, err := h.refreshToken.RefreshToken(r.Context(), request.RefreshToken)
+	tokenPair, err := h.refreshToken.RefreshToken(c.Request.Context(), request.RefreshToken)
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		if errors.Is(err, app.ErrInvalidToken) || errors.Is(err, app.ErrTokenExpired) || errors.Is(err, app.ErrTokenNotFound) {
-			http.Error(w, "invalid or expired refresh token", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired refresh token"})
 			return
 		}
 		if errors.Is(err, app.ErrTokenRevoked) {
-			http.Error(w, "refresh token has been revoked", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token has been revoked"})
 			return
 		}
-		http.Error(w, "could not refresh token", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not refresh token"})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"access_token": tokenPair.AccessToken, "refresh_token": tokenPair.RefreshToken})
+	c.JSON(http.StatusOK, gin.H{"access_token": tokenPair.AccessToken, "refresh_token": tokenPair.RefreshToken})
 }

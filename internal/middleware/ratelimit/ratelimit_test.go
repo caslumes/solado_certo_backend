@@ -5,7 +5,19 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
+func newTestHandler(l *Limiter) http.Handler {
+	router := gin.New()
+	router.POST("/auth/login", l.Middleware(), func(*gin.Context) {})
+	return router
+}
 
 func newTestLimiter(now *time.Time) *Limiter {
 	l := New(3, time.Minute)
@@ -26,7 +38,7 @@ func request(t *testing.T, handler http.Handler, remoteAddr string) *httptest.Re
 
 func TestLimiterBlocksAfterBurstPerIP(t *testing.T) {
 	now := time.Now()
-	handler := newTestLimiter(&now).Middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	handler := newTestHandler(newTestLimiter(&now))
 
 	for i := range 3 {
 		if code := request(t, handler, "10.0.0.1:1234").Code; code != http.StatusOK {
@@ -49,7 +61,7 @@ func TestLimiterBlocksAfterBurstPerIP(t *testing.T) {
 
 func TestLimiterIgnoresForwardedFor(t *testing.T) {
 	now := time.Now()
-	handler := newTestLimiter(&now).Middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	handler := newTestHandler(newTestLimiter(&now))
 
 	for i := range 4 {
 		r := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
@@ -66,7 +78,7 @@ func TestLimiterIgnoresForwardedFor(t *testing.T) {
 
 func TestLimiterRefillsOverTime(t *testing.T) {
 	now := time.Now()
-	handler := newTestLimiter(&now).Middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	handler := newTestHandler(newTestLimiter(&now))
 
 	for range 3 {
 		request(t, handler, "10.0.0.1:1234")

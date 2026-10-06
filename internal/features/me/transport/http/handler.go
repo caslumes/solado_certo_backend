@@ -1,14 +1,13 @@
 package httpme
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
-	httpconstants "github.com/caslumes/solado_certo_backend/internal/app/constants/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	"github.com/gin-gonic/gin"
 )
 
 type editProfileRequest struct {
@@ -30,6 +29,22 @@ type addressRequest struct {
 	State      string  `json:"state"`
 	Country    string  `json:"country"`
 	IsDefault  bool    `json:"is_default"`
+}
+
+func (r addressRequest) toInput() me.AddressInput {
+	return me.AddressInput{
+		Label:      r.Label,
+		Receiver:   r.Receiver,
+		ZIPCode:    r.ZIPCode,
+		Street:     r.Street,
+		Number:     r.Number,
+		Complement: r.Complement,
+		District:   r.District,
+		City:       r.City,
+		State:      r.State,
+		Country:    r.Country,
+		IsDefault:  r.IsDefault,
+	}
 }
 
 type podologicalProfileRequest struct {
@@ -82,36 +97,38 @@ func NewHandler(
 	}
 }
 
-func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func requireUserID(c *gin.Context) (string, bool) {
+	id, ok := authmiddleware.UserIDFrom(c.Request.Context())
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
-		return
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "could not get user ID"})
 	}
-	profile, err := h.getProfile.GetProfileByUserID(r.Context(), userID)
-	if err != nil {
-		http.Error(w, "could not get profile", http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(profile.ToOutput())
+	return id, ok
 }
 
-func (h *Handler) EditProfile(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) GetProfile(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
+		return
+	}
+
+	profile, err := h.getProfile.GetProfileByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, profile.ToOutput())
+}
+
+func (h *Handler) EditProfile(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
 		return
 	}
 
 	var request editProfileRequest
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, "could not decode input", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
 		return
 	}
 
@@ -122,188 +139,127 @@ func (h *Handler) EditProfile(w http.ResponseWriter, r *http.Request) {
 		AvatarURL: request.AvatarURL,
 	}
 
-	profile, err := h.editProfile.EditProfile(r.Context(), userID, input)
+	profile, err := h.editProfile.EditProfile(c.Request.Context(), userID, input)
 	if errors.Is(err, app.ErrInvalidInput) {
-		http.Error(w, "invalid name, email or phone", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid name, email or phone"})
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not edit profile", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not edit profile"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(profile.ToOutput())
+	c.JSON(http.StatusOK, profile.ToOutput())
 }
 
-func (h *Handler) GetAddresses(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) GetAddresses(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
 	}
 
-	addresses, err := h.getAddresses.GetAddressesByUserID(r.Context(), userID)
+	addresses, err := h.getAddresses.GetAddressesByUserID(c.Request.Context(), userID)
 	if err != nil {
-		http.Error(w, "could not get addresses", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get addresses"})
 		return
 	}
 
 	var output me.AddressesOutput
 	output = output.FromEntities(addresses)
-	json.NewEncoder(w).Encode(output)
+	c.JSON(http.StatusOK, output)
 }
 
-func (h *Handler) AddAddress(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) AddAddress(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
 	}
 
 	var request addressRequest
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, "could not decode input", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
 		return
 	}
 
-	input := me.AddressInput{
-		Label:      request.Label,
-		Receiver:   request.Receiver,
-		ZIPCode:    request.ZIPCode,
-		Street:     request.Street,
-		Number:     request.Number,
-		Complement: request.Complement,
-		District:   request.District,
-		City:       request.City,
-		State:      request.State,
-		Country:    request.Country,
-		IsDefault:  request.IsDefault,
-	}
-
-	address, err := h.addAddress.AddAddress(r.Context(), userID, input)
+	address, err := h.addAddress.AddAddress(c.Request.Context(), userID, request.toInput())
 	if err != nil {
-		http.Error(w, "could not add address", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add address"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(address.ToOutput())
+	c.JSON(http.StatusOK, address.ToOutput())
 }
 
-func (h *Handler) EditAddress(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) EditAddress(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
-		return
-	}
-
-	addressID := r.PathValue("addressID")
-	if addressID == "" {
-		http.Error(w, "could not get address ID", http.StatusBadRequest)
 		return
 	}
 
 	var request addressRequest
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, "could not decode input", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
 		return
 	}
 
-	input := me.AddressInput{
-		Label:      request.Label,
-		Receiver:   request.Receiver,
-		ZIPCode:    request.ZIPCode,
-		Street:     request.Street,
-		Number:     request.Number,
-		Complement: request.Complement,
-		District:   request.District,
-		City:       request.City,
-		State:      request.State,
-		Country:    request.Country,
-		IsDefault:  request.IsDefault,
-	}
-
-	address, err := h.editAddress.EditAddress(r.Context(), userID, addressID, input)
+	address, err := h.editAddress.EditAddress(c.Request.Context(), userID, c.Param("addressID"), request.toInput())
 	if err != nil {
 		if errors.Is(err, app.ErrAddressNotFound) {
-			http.Error(w, "address not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"error": "address not found"})
 			return
 		}
 
-		http.Error(w, "could not edit address", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not edit address"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(address.ToOutput())
+	c.JSON(http.StatusOK, address.ToOutput())
 }
 
-func (h *Handler) DeleteAddress(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) DeleteAddress(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
 	}
 
-	addressID := r.PathValue("addressID")
-	if addressID == "" {
-		http.Error(w, "could not get address ID", http.StatusBadRequest)
-		return
-	}
-
-	err := h.deleteAddress.DeleteAddress(r.Context(), userID, addressID)
+	err := h.deleteAddress.DeleteAddress(c.Request.Context(), userID, c.Param("addressID"))
 	if err != nil {
 		if errors.Is(err, app.ErrAddressNotFound) {
-			http.Error(w, "address not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"error": "address not found"})
 			return
 		}
 
-		http.Error(w, "could not delete address", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete address"})
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *Handler) GetPodologicalProfile(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) GetPodologicalProfile(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
 	}
 
-	profile, err := h.getPodologicalProfile.GetPodologicalProfileByUserID(r.Context(), userID)
+	profile, err := h.getPodologicalProfile.GetPodologicalProfileByUserID(c.Request.Context(), userID)
 	if err != nil {
-		http.Error(w, "could not get podological profile", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get podological profile"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(profile.ToOutput())
+	c.JSON(http.StatusOK, profile.ToOutput())
 }
 
-func (h *Handler) EditPodologicalProfile(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) EditPodologicalProfile(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
 	}
 
 	var request podologicalProfileRequest
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, "could not decode input", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
 		return
 	}
 
@@ -313,46 +269,39 @@ func (h *Handler) EditPodologicalProfile(w http.ResponseWriter, r *http.Request)
 		Obs:               request.Obs,
 	}
 
-	profile, err := h.editPodologicalProfile.EditPodologicalProfile(r.Context(), userID, input)
+	profile, err := h.editPodologicalProfile.EditPodologicalProfile(c.Request.Context(), userID, input)
 	if err != nil {
-		http.Error(w, "could not edit podological profile", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not edit podological profile"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(profile.ToOutput())
+	c.JSON(http.StatusOK, profile.ToOutput())
 }
 
-func (h *Handler) GetOnboarding(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) GetOnboarding(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
 	}
 
-	onboarding, err := h.getOnboarding.GetOnboardingByUserID(r.Context(), userID)
+	onboarding, err := h.getOnboarding.GetOnboardingByUserID(c.Request.Context(), userID)
 	if err != nil {
-		http.Error(w, "could not get onboarding", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get onboarding"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(onboarding.ToOutput())
+	c.JSON(http.StatusOK, onboarding.ToOutput())
 }
 
-func (h *Handler) ChangeOnboardingStep(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
-
-	userID, ok := authmiddleware.UserIDFrom(r.Context())
+func (h *Handler) ChangeOnboardingStep(c *gin.Context) {
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
 	}
 
 	var request onboardingRequest
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, "could not decode input", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
 		return
 	}
 
@@ -361,24 +310,24 @@ func (h *Handler) ChangeOnboardingStep(w http.ResponseWriter, r *http.Request) {
 		Action: request.Action,
 	}
 
-	err = h.changeOnboardingStep.ChangeOnboardingStep(r.Context(), userID, input)
+	err := h.changeOnboardingStep.ChangeOnboardingStep(c.Request.Context(), userID, input)
 	if err != nil {
 		if errors.Is(err, app.ErrOnboardingNotFound) {
-			http.Error(w, "onboarding not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"error": "onboarding not found"})
 			return
 		}
 		if errors.Is(err, app.ErrOnboardingStepNotFound) {
-			http.Error(w, "onboarding step not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"error": "onboarding step not found"})
 			return
 		}
 		if errors.Is(err, app.ErrOnboardingAlreadyCompleted) {
-			http.Error(w, "onboarding already completed", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "onboarding already completed"})
 			return
 		}
 
-		http.Error(w, "could not change onboarding step", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not change onboarding step"})
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }

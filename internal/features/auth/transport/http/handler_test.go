@@ -10,7 +10,22 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
+	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
+func serve(handler *Handler, request *http.Request) *httptest.ResponseRecorder {
+	router := gin.New()
+	router.POST("/auth/register", handler.Register)
+	router.POST("/auth/refresh-token", handler.RefreshToken)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
 
 type registerUseCaseFunc func(context.Context, *auth.RegisterInput) error
 type loginUseCaseFunc func(context.Context, *auth.LoginInput) (auth.TokenPair, error)
@@ -66,10 +81,8 @@ func TestRegisterDecodesRequestAndPassesContext(t *testing.T) {
 		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
 	)
 
-	request := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`)).WithContext(requestContext)
-	recorder := httptest.NewRecorder()
-
-	handler.Register(recorder, request)
+	request := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"name":"Ana","email":"ana@example.com","phone":"123","password":"password"}`)).WithContext(requestContext)
+	recorder := serve(handler, request)
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
@@ -90,9 +103,8 @@ func TestRegisterRejectsMalformedJSON(t *testing.T) {
 		logoutUseCaseFunc(nilLogoutUseCaseFunc),
 		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
 	)
-	recorder := httptest.NewRecorder()
 
-	handler.Register(recorder, httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader("{")))
+	recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader("{")))
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
@@ -111,10 +123,9 @@ func TestRegisterMapsApplicationErrors(t *testing.T) {
 		logoutUseCaseFunc(nilLogoutUseCaseFunc),
 		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
 	)
-	recorder := httptest.NewRecorder()
-	body := `{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`
+	body := `{"name":"Ana","email":"ana@example.com","phone":"123","password":"password"}`
 
-	handler.Register(recorder, httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body)))
+	recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body)))
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
@@ -130,10 +141,9 @@ func TestRegisterMapsUnexpectedErrors(t *testing.T) {
 		logoutUseCaseFunc(nilLogoutUseCaseFunc),
 		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
 	)
-	recorder := httptest.NewRecorder()
-	body := `{"nome":"Ana","email":"ana@example.com","phone":"123","password":"password"}`
+	body := `{"name":"Ana","email":"ana@example.com","phone":"123","password":"password"}`
 
-	handler.Register(recorder, httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body)))
+	recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body)))
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
@@ -153,9 +163,7 @@ func TestRefreshTokenMapsTokenErrorsToUnauthorized(t *testing.T) {
 			)
 
 			request := httptest.NewRequest(http.MethodPost, "/auth/refresh-token", strings.NewReader(`{"refresh_token":"token"}`))
-			recorder := httptest.NewRecorder()
-
-			handler.RefreshToken(recorder, request)
+			recorder := serve(handler, request)
 
 			if recorder.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
@@ -175,14 +183,36 @@ func TestRefreshTokenReturnsRotatedTokens(t *testing.T) {
 	)
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/refresh-token", strings.NewReader(`{"refresh_token":"old-refresh"}`))
-	recorder := httptest.NewRecorder()
-
-	handler.RefreshToken(recorder, request)
+	recorder := serve(handler, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 	if body := recorder.Body.String(); !strings.Contains(body, `"refresh_token":"new-refresh"`) {
 		t.Fatalf("body = %s, want the rotated refresh token", body)
+	}
+}
+
+func TestRefreshTokenRequiresToken(t *testing.T) {
+	called := false
+	handler := NewHandler(
+		registerUseCaseFunc(nilRegisterUseCaseFunc),
+		loginUseCaseFunc(nilLoginUseCaseFunc),
+		logoutUseCaseFunc(nilLogoutUseCaseFunc),
+		refreshTokenUseCaseFunc(func(context.Context, string) (auth.TokenPair, error) {
+			called = true
+			return auth.TokenPair{}, nil
+		}),
+	)
+
+	for _, body := range []string{`{}`, `{"refresh_token":""}`} {
+		recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/auth/refresh-token", strings.NewReader(body)))
+
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d, want %d", body, recorder.Code, http.StatusBadRequest)
+		}
+	}
+	if called {
+		t.Fatal("use case was called without a refresh token")
 	}
 }

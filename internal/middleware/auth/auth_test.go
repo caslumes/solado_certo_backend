@@ -5,7 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	gin.SetMode(gin.TestMode)
+}
 
 type fakeService map[string]string
 
@@ -35,8 +41,9 @@ func TestMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotUserID string
-			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotUserID, _ = UserIDFrom(r.Context())
+			router := gin.New()
+			router.GET("/me/profile", middleware.Middleware(), func(c *gin.Context) {
+				gotUserID, _ = UserIDFrom(c.Request.Context())
 			})
 
 			request := httptest.NewRequest(http.MethodGet, "/me/profile", nil)
@@ -45,7 +52,7 @@ func TestMiddleware(t *testing.T) {
 			}
 			recorder := httptest.NewRecorder()
 
-			middleware.Middleware(next).ServeHTTP(recorder, request)
+			router.ServeHTTP(recorder, request)
 
 			if recorder.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)

@@ -8,11 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 )
 
 const (
-	idleTimeout = 10 * time.Minute
+	idleTimeout   = 10 * time.Minute
 	sweepInterval = time.Minute
 )
 
@@ -43,16 +44,16 @@ func New(requests int, window time.Duration) *Limiter {
 	}
 }
 
-func (l *Limiter) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !l.allow(clientIP(r)) {
-			w.Header().Set("Retry-After", l.retryAfter)
-			http.Error(w, "too many requests", http.StatusTooManyRequests)
+func (l *Limiter) Middleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !l.allow(clientIP(c.Request)) {
+			c.Header("Retry-After", l.retryAfter)
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "too many requests"})
 			return
 		}
 
-		next.ServeHTTP(w, r)
-	})
+		c.Next()
+	}
 }
 
 func (l *Limiter) allow(ip string) bool {
