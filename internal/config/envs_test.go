@@ -37,7 +37,7 @@ func TestLoadEnvs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadEnvs: %v", err)
 			}
-			if envs.SecretKey != tt.secretKey || envs.DatabaseURL != tt.databaseURL || envs.ServerPort != "8080" {
+			if envs.SecretKey != tt.secretKey || envs.DatabaseURL != tt.databaseURL || envs.ServerPort != defaultServerPort {
 				t.Fatalf("envs = %+v", envs)
 			}
 		})

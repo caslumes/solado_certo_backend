@@ -34,6 +34,6 @@ REST API for the Solado Certo app, written in Go with Gin and PostgreSQL.
 
 | Variable | Required | Description |
 |---|---|---|
-| `SERVER_PORT` | No (default `8080`) | HTTP port |
+| `SERVER_PORT` | No (default `3000`) | HTTP port |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `SECRET_KEY` | Yes | JWT signing key, at least 32 bytes |

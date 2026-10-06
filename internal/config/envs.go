@@ -3,15 +3,17 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 )
 
-const minSecretKeyLength = 32
+const (
+	minSecretKeyLength = 32
+	defaultServerPort  = "3000"
+)
 
 type Envs struct {
-	ServerPort  string `env:"SERVER_PORT" envDefault:"8080"`
-	DatabaseURL string `env:"DATABASE_URL,required"`
-	SecretKey   string `env:"SECRET_KEY,required"`
+	ServerPort  string
+	DatabaseURL string
+	SecretKey   string
 }
 
 func LoadEnvs() (*Envs, error) {
@@ -29,7 +31,7 @@ func LoadEnvs() (*Envs, error) {
 	}
 
 	return &Envs{
-		ServerPort:  getString("SERVER_PORT", "8080"),
+		ServerPort:  getString("SERVER_PORT", defaultServerPort),
 		DatabaseURL: databaseURL,
 		SecretKey:   secretKey,
 	}, nil
@@ -47,16 +49,6 @@ func getString(envVar string, defaultValue string) string {
 	value := os.Getenv(envVar)
 	if value != "" {
 		return value
-	}
-	return defaultValue
-}
-
-func getInt64(envVar string, defaultValue int64) int64 {
-	value := os.Getenv(envVar)
-	if value != "" {
-		if intValue, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return intValue
-		}
 	}
 	return defaultValue
 }
