@@ -9,20 +9,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type Handler struct {
-	register     auth.RegisterUseCase
-	login        auth.LoginUseCase
-	logout       auth.LogoutUseCase
-	refreshToken auth.RefreshTokenUseCase
+type Service interface {
+	auth.RegisterUseCase
+	auth.LoginUseCase
+	auth.LogoutUseCase
+	auth.RefreshTokenUseCase
 }
 
-func NewHandler(
-	register auth.RegisterUseCase,
-	login auth.LoginUseCase,
-	logout auth.LogoutUseCase,
-	refreshToken auth.RefreshTokenUseCase,
-) *Handler {
-	return &Handler{register: register, login: login, refreshToken: refreshToken, logout: logout}
+type Handler struct {
+	service Service
+}
+
+func NewHandler(service Service) *Handler {
+	return &Handler{service: service}
 }
 
 type registerRequest struct {
@@ -48,7 +47,7 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	err := h.register.Register(c.Request.Context(), &auth.RegisterInput{
+	err := h.service.Register(c.Request.Context(), &auth.RegisterInput{
 		Name:     request.Name,
 		Email:    request.Email,
 		Phone:    request.Phone,
@@ -74,7 +73,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	tokenPair, err := h.login.Login(c.Request.Context(), &auth.LoginInput{
+	tokenPair, err := h.service.Login(c.Request.Context(), &auth.LoginInput{
 		Email:    request.Email,
 		Password: request.Password,
 	})
@@ -101,7 +100,7 @@ func (h *Handler) Logout(c *gin.Context) {
 		return
 	}
 
-	err := h.logout.Logout(c.Request.Context(), request.RefreshToken)
+	err := h.service.Logout(c.Request.Context(), request.RefreshToken)
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -133,7 +132,7 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	tokenPair, err := h.refreshToken.RefreshToken(c.Request.Context(), request.RefreshToken)
+	tokenPair, err := h.service.RefreshToken(c.Request.Context(), request.RefreshToken)
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

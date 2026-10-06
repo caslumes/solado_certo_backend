@@ -26,18 +26,18 @@ type getAdvertisementsQuery struct {
 	UsageIndication      *string  `form:"usage_indication"`
 }
 
-type Handler struct {
-	getAdvertisements catalog.GetAdvertisementsUseCase
-	getAdvertisement  catalog.GetAdvertisementUseCase
-	getCategories     catalog.GetCategoriesUseCase
+type Service interface {
+	catalog.GetAdvertisementsUseCase
+	catalog.GetAdvertisementUseCase
+	catalog.GetCategoriesUseCase
 }
 
-func NewHandler(getAdvertisements catalog.GetAdvertisementsUseCase, getAdvertisement catalog.GetAdvertisementUseCase, getCategories catalog.GetCategoriesUseCase) *Handler {
-	return &Handler{
-		getAdvertisements: getAdvertisements,
-		getAdvertisement:  getAdvertisement,
-		getCategories:     getCategories,
-	}
+type Handler struct {
+	service Service
+}
+
+func NewHandler(service Service) *Handler {
+	return &Handler{service: service}
 }
 
 func (h *Handler) GetAdvertisements(c *gin.Context) {
@@ -49,7 +49,7 @@ func (h *Handler) GetAdvertisements(c *gin.Context) {
 		return
 	}
 
-	ap, err := h.getAdvertisements.GetAdvertisements(c.Request.Context(), catalog.GetAdvertisementsInput{
+	ap, err := h.service.GetAdvertisements(c.Request.Context(), catalog.GetAdvertisementsInput{
 		Page:  query.Page,
 		Limit: query.Limit,
 		Filters: &catalog.AdvertisementFilters{
@@ -75,7 +75,7 @@ func (h *Handler) GetAdvertisements(c *gin.Context) {
 }
 
 func (h *Handler) GetAdvertisement(c *gin.Context) {
-	ad, err := h.getAdvertisement.GetAdvertisement(c.Request.Context(), c.Param("advertisementID"))
+	ad, err := h.service.GetAdvertisement(c.Request.Context(), c.Param("advertisementID"))
 	if err != nil {
 		if errors.Is(err, app.ErrAdvertisementNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "advertisement not found"})
@@ -90,7 +90,7 @@ func (h *Handler) GetAdvertisement(c *gin.Context) {
 }
 
 func (h *Handler) GetCategories(c *gin.Context) {
-	categories, err := h.getCategories.GetCategories(c.Request.Context())
+	categories, err := h.service.GetCategories(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get categories"})
 		return

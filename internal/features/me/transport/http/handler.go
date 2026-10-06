@@ -58,43 +58,25 @@ type onboardingRequest struct {
 	Action string `json:"action"`
 }
 
-type Handler struct {
-	getProfile             me.GetProfileUseCase
-	editProfile            me.EditProfileUseCase
-	getAddresses           me.GetAddressesUseCase
-	addAddress             me.AddAddressUseCase
-	editAddress            me.EditAddressUseCase
-	deleteAddress          me.DeleteAddressUseCase
-	getPodologicalProfile  me.GetPodologicalProfileUseCase
-	editPodologicalProfile me.EditPodologicalProfileUseCase
-	getOnboarding          me.GetOnboardingUseCase
-	changeOnboardingStep   me.ChangeOnboardingStepUseCase
+type Service interface {
+	me.GetProfileUseCase
+	me.EditProfileUseCase
+	me.GetAddressesUseCase
+	me.AddAddressUseCase
+	me.EditAddressUseCase
+	me.DeleteAddressUseCase
+	me.GetPodologicalProfileUseCase
+	me.EditPodologicalProfileUseCase
+	me.GetOnboardingUseCase
+	me.ChangeOnboardingStepUseCase
 }
 
-func NewHandler(
-	getProfile me.GetProfileUseCase,
-	editProfile me.EditProfileUseCase,
-	getAddresses me.GetAddressesUseCase,
-	addAddress me.AddAddressUseCase,
-	editAddress me.EditAddressUseCase,
-	deleteAddress me.DeleteAddressUseCase,
-	getPodologicalProfile me.GetPodologicalProfileUseCase,
-	editPodologicalProfile me.EditPodologicalProfileUseCase,
-	getOnboarding me.GetOnboardingUseCase,
-	changeOnboardingStep me.ChangeOnboardingStepUseCase,
-) *Handler {
-	return &Handler{
-		getProfile:             getProfile,
-		editProfile:            editProfile,
-		getAddresses:           getAddresses,
-		addAddress:             addAddress,
-		editAddress:            editAddress,
-		deleteAddress:          deleteAddress,
-		getPodologicalProfile:  getPodologicalProfile,
-		editPodologicalProfile: editPodologicalProfile,
-		getOnboarding:          getOnboarding,
-		changeOnboardingStep:   changeOnboardingStep,
-	}
+type Handler struct {
+	service Service
+}
+
+func NewHandler(service Service) *Handler {
+	return &Handler{service: service}
 }
 
 func requireUserID(c *gin.Context) (string, bool) {
@@ -111,7 +93,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.getProfile.GetProfileByUserID(c.Request.Context(), userID)
+	profile, err := h.service.GetProfileByUserID(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get profile"})
 		return
@@ -139,7 +121,7 @@ func (h *Handler) EditProfile(c *gin.Context) {
 		AvatarURL: request.AvatarURL,
 	}
 
-	profile, err := h.editProfile.EditProfile(c.Request.Context(), userID, input)
+	profile, err := h.service.EditProfile(c.Request.Context(), userID, input)
 	if errors.Is(err, app.ErrInvalidInput) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid name, email or phone"})
 		return
@@ -158,7 +140,7 @@ func (h *Handler) GetAddresses(c *gin.Context) {
 		return
 	}
 
-	addresses, err := h.getAddresses.GetAddressesByUserID(c.Request.Context(), userID)
+	addresses, err := h.service.GetAddressesByUserID(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get addresses"})
 		return
@@ -181,7 +163,7 @@ func (h *Handler) AddAddress(c *gin.Context) {
 		return
 	}
 
-	address, err := h.addAddress.AddAddress(c.Request.Context(), userID, request.toInput())
+	address, err := h.service.AddAddress(c.Request.Context(), userID, request.toInput())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add address"})
 		return
@@ -202,7 +184,7 @@ func (h *Handler) EditAddress(c *gin.Context) {
 		return
 	}
 
-	address, err := h.editAddress.EditAddress(c.Request.Context(), userID, c.Param("addressID"), request.toInput())
+	address, err := h.service.EditAddress(c.Request.Context(), userID, c.Param("addressID"), request.toInput())
 	if err != nil {
 		if errors.Is(err, app.ErrAddressNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "address not found"})
@@ -222,7 +204,7 @@ func (h *Handler) DeleteAddress(c *gin.Context) {
 		return
 	}
 
-	err := h.deleteAddress.DeleteAddress(c.Request.Context(), userID, c.Param("addressID"))
+	err := h.service.DeleteAddress(c.Request.Context(), userID, c.Param("addressID"))
 	if err != nil {
 		if errors.Is(err, app.ErrAddressNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "address not found"})
@@ -242,7 +224,7 @@ func (h *Handler) GetPodologicalProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.getPodologicalProfile.GetPodologicalProfileByUserID(c.Request.Context(), userID)
+	profile, err := h.service.GetPodologicalProfileByUserID(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get podological profile"})
 		return
@@ -269,7 +251,7 @@ func (h *Handler) EditPodologicalProfile(c *gin.Context) {
 		Obs:               request.Obs,
 	}
 
-	profile, err := h.editPodologicalProfile.EditPodologicalProfile(c.Request.Context(), userID, input)
+	profile, err := h.service.EditPodologicalProfile(c.Request.Context(), userID, input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not edit podological profile"})
 		return
@@ -284,7 +266,7 @@ func (h *Handler) GetOnboarding(c *gin.Context) {
 		return
 	}
 
-	onboarding, err := h.getOnboarding.GetOnboardingByUserID(c.Request.Context(), userID)
+	onboarding, err := h.service.GetOnboardingByUserID(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get onboarding"})
 		return
@@ -310,7 +292,7 @@ func (h *Handler) ChangeOnboardingStep(c *gin.Context) {
 		Action: request.Action,
 	}
 
-	err := h.changeOnboardingStep.ChangeOnboardingStep(c.Request.Context(), userID, input)
+	err := h.service.ChangeOnboardingStep(c.Request.Context(), userID, input)
 	if err != nil {
 		if errors.Is(err, app.ErrOnboardingNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "onboarding not found"})

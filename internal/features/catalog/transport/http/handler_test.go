@@ -14,24 +14,32 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-type getAdvertisementsUseCaseFunc func(context.Context, catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error)
+type fakeService struct {
+	getAdvertisements func(context.Context, catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error)
+}
 
-func (f getAdvertisementsUseCaseFunc) GetAdvertisements(ctx context.Context, input catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error) {
-	return f(ctx, input)
+func (f fakeService) GetAdvertisements(ctx context.Context, input catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error) {
+	return f.getAdvertisements(ctx, input)
+}
+
+func (fakeService) GetAdvertisement(context.Context, string) (*catalog.AdvertisementEntity, error) {
+	panic("not implemented")
+}
+
+func (fakeService) GetCategories(context.Context) (*catalog.CategoriesEntity, error) {
+	panic("not implemented")
 }
 
 func getAdvertisements(t *testing.T, query string) (int, *catalog.GetAdvertisementsInput) {
 	t.Helper()
 
 	var received *catalog.GetAdvertisementsInput
-	handler := NewHandler(
-		getAdvertisementsUseCaseFunc(func(_ context.Context, input catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error) {
+	handler := NewHandler(fakeService{
+		getAdvertisements: func(_ context.Context, input catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error) {
 			received = &input
 			return catalog.AdvertisementPage{}, nil
-		}),
-		nil,
-		nil,
-	)
+		},
+	})
 	router := gin.New()
 	router.GET("/catalog", handler.GetAdvertisements)
 
