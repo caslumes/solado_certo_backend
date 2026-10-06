@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE usuarios IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS usuarios (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     nome varchar(120) NOT NULL,
     email varchar(255) NOT NULL UNIQUE,
@@ -14,14 +14,14 @@ CREATE TABLE usuarios IF NOT EXISTS (
     CONSTRAINT usuarios_status_check CHECK (status IN ('ativo', 'inativo', 'bloqueado', 'pendente'))
 );
 
-CREATE TABLE papeis IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS papeis (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     codigo varchar(30) NOT NULL UNIQUE,
     nome varchar(60) NOT NULL,
     descricao text
 );
 
-CREATE TABLE usuario_papeis IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS usuario_papeis (
     usuario_id uuid NOT NULL,
     papel_id uuid NOT NULL,
     PRIMARY KEY (usuario_id, papel_id),
@@ -29,7 +29,7 @@ CREATE TABLE usuario_papeis IF NOT EXISTS (
     CONSTRAINT usuario_papeis_papel_fk FOREIGN KEY (papel_id) REFERENCES papeis (id)
 );
 
-CREATE TABLE enderecos IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS enderecos (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id uuid NOT NULL,
     apelido varchar(80),
@@ -51,7 +51,7 @@ CREATE TABLE enderecos IF NOT EXISTS (
     CONSTRAINT enderecos_pais_check CHECK (pais ~ '^[A-Z]{2}$')
 );
 
-CREATE TABLE perfis_podologicos IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS perfis_podologicos (
     usuario_id uuid PRIMARY KEY,
     tipo_pisada varchar(40) NOT NULL,
     condicao_clinica varchar(120) NOT NULL,
@@ -60,13 +60,13 @@ CREATE TABLE perfis_podologicos IF NOT EXISTS (
     CONSTRAINT perfis_podologicos_usuario_fk FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
 );
 
-CREATE TABLE pontos_dor IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS pontos_dor (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     nome varchar(80) NOT NULL UNIQUE,
     descricao text
 );
 
-CREATE TABLE perfil_pontos_dor IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS perfil_pontos_dor (
     perfil_usuario_id uuid NOT NULL,
     ponto_dor_id uuid NOT NULL,
     PRIMARY KEY (perfil_usuario_id, ponto_dor_id),
@@ -74,7 +74,7 @@ CREATE TABLE perfil_pontos_dor IF NOT EXISTS (
     CONSTRAINT perfil_pontos_dor_ponto_fk FOREIGN KEY (ponto_dor_id) REFERENCES pontos_dor (id)
 );
 
-CREATE TABLE tokens_redefinicao_senha IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS tokens_redefinicao_senha (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id uuid NOT NULL,
     token_hash varchar(255) NOT NULL UNIQUE,
@@ -84,7 +84,7 @@ CREATE TABLE tokens_redefinicao_senha IF NOT EXISTS (
     CONSTRAINT tokens_redefinicao_senha_usuario_fk FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
 );
 
-CREATE TABLE refresh_tokens IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS refresh_tokens (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id uuid NOT NULL,
     token_hash varchar(255) NOT NULL UNIQUE,
@@ -95,7 +95,7 @@ CREATE TABLE refresh_tokens IF NOT EXISTS (
     CONSTRAINT refresh_tokens_usuario_fk FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
 );
 
-CREATE TABLE categorias IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS categorias (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     categoria_pai_id uuid,
     nome varchar(100) NOT NULL,
@@ -104,21 +104,21 @@ CREATE TABLE categorias IF NOT EXISTS (
     CONSTRAINT categorias_categoria_pai_fk FOREIGN KEY (categoria_pai_id) REFERENCES categorias (id)
 );
 
-CREATE TABLE finalidades_podologicas IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS finalidades_podologicas (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     codigo varchar(40) NOT NULL UNIQUE,
     nome varchar(100) NOT NULL,
     descricao text
 );
 
-CREATE TABLE condicoes_podologicas IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS condicoes_podologicas (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     nome varchar(100) NOT NULL UNIQUE,
     descricao text,
     ativa boolean NOT NULL DEFAULT true
 );
 
-CREATE TABLE anuncios IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS anuncios (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     vendedor_id uuid NOT NULL,
     categoria_id uuid NOT NULL,
@@ -147,7 +147,7 @@ CREATE TABLE anuncios IF NOT EXISTS (
     CONSTRAINT anuncios_estoque_check CHECK (estoque >= 0)
 );
 
-CREATE TABLE anuncio_imagens IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS anuncio_imagens (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     anuncio_id uuid NOT NULL,
     url text NOT NULL,
@@ -158,7 +158,7 @@ CREATE TABLE anuncio_imagens IF NOT EXISTS (
     CONSTRAINT anuncio_imagens_ordem_check CHECK (ordem >= 1)
 );
 
-CREATE TABLE anuncio_finalidades IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS anuncio_finalidades (
     anuncio_id uuid NOT NULL,
     finalidade_id uuid NOT NULL,
     PRIMARY KEY (anuncio_id, finalidade_id),
@@ -166,7 +166,7 @@ CREATE TABLE anuncio_finalidades IF NOT EXISTS (
     CONSTRAINT anuncio_finalidades_finalidade_fk FOREIGN KEY (finalidade_id) REFERENCES finalidades_podologicas (id)
 );
 
-CREATE TABLE anuncio_condicoes IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS anuncio_condicoes (
     anuncio_id uuid NOT NULL,
     condicao_id uuid NOT NULL,
     PRIMARY KEY (anuncio_id, condicao_id),
@@ -174,7 +174,7 @@ CREATE TABLE anuncio_condicoes IF NOT EXISTS (
     CONSTRAINT anuncio_condicoes_condicao_fk FOREIGN KEY (condicao_id) REFERENCES condicoes_podologicas (id)
 );
 
-CREATE TABLE opcoes_frete IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS opcoes_frete (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     anuncio_id uuid NOT NULL,
     nome varchar(80) NOT NULL,
@@ -188,7 +188,7 @@ CREATE TABLE opcoes_frete IF NOT EXISTS (
     CONSTRAINT opcoes_frete_prazo_check CHECK (prazo_dias >= 0)
 );
 
-CREATE TABLE carrinhos IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS carrinhos (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id uuid NOT NULL,
     status varchar(20) NOT NULL,
@@ -198,7 +198,7 @@ CREATE TABLE carrinhos IF NOT EXISTS (
     CONSTRAINT carrinhos_status_check CHECK (status IN ('ativo', 'abandonado', 'finalizado', 'convertido'))
 );
 
-CREATE TABLE item_carrinho IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS item_carrinho (
     carrinho_id uuid NOT NULL,
     anuncio_id uuid NOT NULL,
     quantidade integer NOT NULL,
@@ -212,7 +212,7 @@ CREATE TABLE item_carrinho IF NOT EXISTS (
     CONSTRAINT item_carrinho_subtotal_check CHECK (subtotal >= 0)
 );
 
-CREATE TABLE pedidos IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS pedidos (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     comprador_id uuid NOT NULL,
     endereco_entrega_id uuid NOT NULL,
@@ -235,7 +235,7 @@ CREATE TABLE pedidos IF NOT EXISTS (
     CONSTRAINT pedidos_total_check CHECK (total = subtotal + frete_total - desconto_total)
 );
 
-CREATE TABLE item_pedido IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS item_pedido (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     pedido_id uuid NOT NULL,
     anuncio_id uuid NOT NULL,
@@ -253,7 +253,7 @@ CREATE TABLE item_pedido IF NOT EXISTS (
     CONSTRAINT item_pedido_subtotal_check CHECK (subtotal >= 0)
 );
 
-CREATE TABLE historico_status_pedido IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS historico_status_pedido (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     pedido_id uuid NOT NULL,
     alterado_por uuid,
@@ -266,7 +266,7 @@ CREATE TABLE historico_status_pedido IF NOT EXISTS (
     CONSTRAINT historico_status_pedido_status_check CHECK (status_anterior <> status_novo)
 );
 
-CREATE TABLE pagamentos IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS pagamentos (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     pedido_id uuid NOT NULL,
     gateway varchar(60) NOT NULL,
@@ -286,7 +286,7 @@ CREATE TABLE pagamentos IF NOT EXISTS (
     CONSTRAINT pagamentos_valor_check CHECK (valor >= 0)
 );
 
-CREATE TABLE documentos_pedido IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS documentos_pedido (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     pedido_id uuid NOT NULL,
     enviado_por uuid NOT NULL,
@@ -303,7 +303,7 @@ CREATE TABLE documentos_pedido IF NOT EXISTS (
     CONSTRAINT documentos_pedido_tipo_check CHECK (tipo_documento IN ('prescricao', 'laudo', 'autorizacao', 'outro'))
 );
 
-CREATE TABLE envios IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS envios (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     pedido_id uuid NOT NULL,
     opcao_frete_id uuid,
@@ -319,7 +319,7 @@ CREATE TABLE envios IF NOT EXISTS (
     CONSTRAINT envios_status_check CHECK (status IN ('pendente', 'postado', 'em_transito', 'entregue', 'extraviado', 'devolvido'))
 );
 
-CREATE TABLE avaliacoes IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS avaliacoes (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     item_pedido_id uuid NOT NULL UNIQUE,
     avaliador_id uuid NOT NULL,
@@ -335,7 +335,7 @@ CREATE TABLE avaliacoes IF NOT EXISTS (
     CONSTRAINT avaliacoes_nota_vendedor_check CHECK (nota_vendedor BETWEEN 1 AND 5)
 );
 
-CREATE TABLE solicitacoes_sob_medida IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS solicitacoes_sob_medida (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     comprador_id uuid NOT NULL,
     anuncio_id uuid NOT NULL,
@@ -352,7 +352,7 @@ CREATE TABLE solicitacoes_sob_medida IF NOT EXISTS (
     CONSTRAINT solicitacoes_sob_medida_status_check CHECK (status IN ('solicitada', 'em_analise', 'aprovada', 'rejeitada', 'em_producao', 'concluida', 'cancelada'))
 );
 
-CREATE TABLE historico_sob_medida IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS historico_sob_medida (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     solicitacao_id uuid NOT NULL,
     alterado_por uuid,
@@ -365,7 +365,7 @@ CREATE TABLE historico_sob_medida IF NOT EXISTS (
     CONSTRAINT historico_sob_medida_status_check CHECK (status_anterior <> status_novo)
 );
 
-CREATE TABLE suportes IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS suportes (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     pedido_id uuid,
     aberto_por uuid NOT NULL,
@@ -382,7 +382,7 @@ CREATE TABLE suportes IF NOT EXISTS (
     CONSTRAINT suportes_status_check CHECK (status IN ('aberto', 'em_atendimento', 'aguardando_cliente', 'resolvido', 'fechado'))
 );
 
-CREATE TABLE mensagens_suporte IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS mensagens_suporte (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     suporte_id uuid NOT NULL,
     remetente_id uuid NOT NULL,
@@ -393,7 +393,7 @@ CREATE TABLE mensagens_suporte IF NOT EXISTS (
     CONSTRAINT mensagens_suporte_remetente_fk FOREIGN KEY (remetente_id) REFERENCES usuarios (id)
 );
 
-CREATE TABLE auditoria IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS auditoria (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id uuid,
     entidade varchar(80) NOT NULL,

@@ -5,7 +5,7 @@ DUMP_FILE=data/dump.sql
 DB_USER?=postgres
 DB_NAME?=solado_certo
 
-.PHONY: up down dump restore restart logs format secret-key tidy audit
+.PHONY: up down dump restore restart logs test format secret-key tidy audit
 
 up:
 	docker compose up --build -d
@@ -21,6 +21,8 @@ restore:
 restart: down up
 logs:
 	docker compose logs -f
+test:
+	${EXEC} ${SERVER_CONTAINER} go test ./...
 format:
 	go fmt ./...
 secret-key:
