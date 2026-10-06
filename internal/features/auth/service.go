@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -124,7 +126,7 @@ func (s *service) Logout(context context.Context, refreshToken string) error {
 		return errors.New("failed to extract token ID")
 	}
 
-	err = s.r.RevokeToken(context, tokenID)
+	err = s.r.RevokeToken(context, hashTokenID(tokenID))
 	if err != nil {
 		return err
 	}
@@ -144,7 +146,8 @@ func (s *service) RefreshToken(context context.Context, refreshToken string) (To
 		return TokenPair{}, errors.New("failed to extract token ID")
 	}
 
-	savedRefreshToken, err := s.r.GetTokenByHash(context, tokenID)
+	tokenHash := hashTokenID(tokenID)
+	savedRefreshToken, err := s.r.GetTokenByHash(context, tokenHash)
 	if err != nil {
 		return TokenPair{}, err
 	}
@@ -163,7 +166,7 @@ func (s *service) RefreshToken(context context.Context, refreshToken string) (To
 			return TokenPair{}, err
 		}
 
-		s.r.RevokeToken(context, tokenID)
+		s.r.RevokeToken(context, tokenHash)
 
 		return newTokenPair, nil
 	}
@@ -233,14 +236,16 @@ func (s *service) createAccessToken(context context.Context, userID string) (str
 }
 
 func (s *service) createRefreshToken(context context.Context, userID string) (RefreshTokenEntity, string, error) {
-	tokenID := fmt.Sprintf("%d-%s", time.Now().UnixNano(), userID)
-	tokenHashBytes := sha256.Sum256([]byte(tokenID))
-	tokenHashString := hex.EncodeToString(tokenHashBytes[:])
+	tokenID, err := newTokenID()
+	if err != nil {
+		return RefreshTokenEntity{}, "", err
+	}
+
 	refreshClaims := &Claims{
 		UserID:    userID,
 		TokenType: refreshTokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        tokenHashString,
+			ID:        tokenID,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
@@ -253,10 +258,24 @@ func (s *service) createRefreshToken(context context.Context, userID string) (Re
 
 	return RefreshTokenEntity{
 		UsuarioID:  userID,
-		TokenHash:  tokenHashString,
+		TokenHash:  hashTokenID(tokenID),
 		DeviceName: "default",
 		ExpiresAt:  &refreshClaims.ExpiresAt.Time,
 	}, refreshTokenString, nil
+}
+
+func newTokenID() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func hashTokenID(tokenID string) string {
+	hash := sha256.Sum256([]byte(tokenID))
+	return hex.EncodeToString(hash[:])
 }
 
 func (s *service) ParseToken(tokenString string) (string, error) {

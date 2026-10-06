@@ -2,9 +2,12 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -147,5 +150,70 @@ func TestParseTokenRejectsInvalidTokens(t *testing.T) {
 				t.Fatal("token was accepted")
 			}
 		})
+	}
+}
+
+func refreshTokenID(t *testing.T, s *service, refreshToken string) string {
+	t.Helper()
+
+	claims, err := s.parseToken(refreshToken, refreshTokenType)
+	if err != nil {
+		t.Fatalf("parseToken: %v", err)
+	}
+
+	return claims.ID
+}
+
+func TestRefreshTokenIDIsRandom(t *testing.T) {
+	s := NewService(newFakeRepository(), testSecretKey)
+
+	first, err := s.createTokens("user-1")
+	if err != nil {
+		t.Fatalf("createTokens: %v", err)
+	}
+	second, err := s.createTokens("user-1")
+	if err != nil {
+		t.Fatalf("createTokens: %v", err)
+	}
+
+	firstID := refreshTokenID(t, s, first.RefreshToken)
+	secondID := refreshTokenID(t, s, second.RefreshToken)
+
+	if firstID == secondID {
+		t.Fatal("two refresh tokens share the same ID")
+	}
+	if strings.Contains(firstID, "user-1") {
+		t.Fatalf("token ID %q contains the user ID", firstID)
+	}
+}
+
+func TestRefreshTokenStoresHashOfID(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository, testSecretKey)
+
+	tokens, err := s.createTokens("user-1")
+	if err != nil {
+		t.Fatalf("createTokens: %v", err)
+	}
+	tokenID := refreshTokenID(t, s, tokens.RefreshToken)
+
+	if _, ok := repository.tokens[tokenID]; ok {
+		t.Fatal("database stores the raw token ID")
+	}
+	if _, ok := repository.tokens[hashTokenID(tokenID)]; !ok {
+		t.Fatal("database does not store the token ID hash")
+	}
+}
+
+func TestLogoutRevokesRefreshToken(t *testing.T) {
+	s, tokens := newTestService(t)
+
+	if err := s.Logout(context.Background(), tokens.RefreshToken); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+
+	_, err := s.RefreshToken(context.Background(), tokens.RefreshToken)
+	if !errors.Is(err, app.ErrTokenRevoked) {
+		t.Fatalf("err = %v, want %v", err, app.ErrTokenRevoked)
 	}
 }
