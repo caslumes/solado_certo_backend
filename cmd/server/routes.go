@@ -2,12 +2,14 @@ package main
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/config"
 	httpauth "github.com/caslumes/solado_certo_backend/internal/features/auth/transport/http"
 	httpcatalog "github.com/caslumes/solado_certo_backend/internal/features/catalog/transport/http"
 	httpme "github.com/caslumes/solado_certo_backend/internal/features/me/transport/http"
 	middleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	"github.com/caslumes/solado_certo_backend/internal/middleware/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,10 +29,13 @@ func initRoutes(r *gin.Engine, a *config.App) {
 	)
 	catalogHandler := httpcatalog.NewHandler(a.GetAdvertisements, a.GetAdvertisement, a.GetCategories)
 
+	registerLimiter := ratelimit.New(5, time.Minute)
+	loginLimiter := ratelimit.New(5, time.Minute)
+
 	authGroup := r.Group("/auth")
 	{
-		authGroup.POST("/register", gin.WrapH(http.HandlerFunc(authHandler.Register)))
-		authGroup.POST("/login", gin.WrapH(http.HandlerFunc(authHandler.Login)))
+		authGroup.POST("/register", gin.WrapH(registerLimiter.Middleware(http.HandlerFunc(authHandler.Register))))
+		authGroup.POST("/login", gin.WrapH(loginLimiter.Middleware(http.HandlerFunc(authHandler.Login))))
 		authGroup.POST("/logout", gin.WrapH(http.HandlerFunc(authHandler.Logout)))
 		authGroup.POST("/refresh-token", gin.WrapH(http.HandlerFunc(authHandler.RefreshToken)))
 	}
