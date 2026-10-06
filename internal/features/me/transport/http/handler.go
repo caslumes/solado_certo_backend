@@ -8,6 +8,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	httpconstants "github.com/caslumes/solado_certo_backend/internal/app/constants/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
+	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 )
 
 type editProfileRequest struct {
@@ -84,7 +85,7 @@ func NewHandler(
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -101,7 +102,7 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) EditProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -122,6 +123,10 @@ func (h *Handler) EditProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	profile, err := h.editProfile.EditProfile(r.Context(), userID, input)
+	if errors.Is(err, app.ErrInvalidInput) {
+		http.Error(w, "invalid name, email or phone", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, "could not edit profile", http.StatusInternalServerError)
 		return
@@ -133,7 +138,7 @@ func (h *Handler) EditProfile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetAddresses(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -153,7 +158,7 @@ func (h *Handler) GetAddresses(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) AddAddress(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -192,7 +197,7 @@ func (h *Handler) AddAddress(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) EditAddress(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -242,7 +247,7 @@ func (h *Handler) EditAddress(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteAddress(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -271,7 +276,7 @@ func (h *Handler) DeleteAddress(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetPodologicalProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -289,7 +294,7 @@ func (h *Handler) GetPodologicalProfile(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) EditPodologicalProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -320,7 +325,7 @@ func (h *Handler) EditPodologicalProfile(w http.ResponseWriter, r *http.Request)
 func (h *Handler) GetOnboarding(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return
@@ -338,7 +343,7 @@ func (h *Handler) GetOnboarding(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ChangeOnboardingStep(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(httpconstants.ContentTypeHeader, httpconstants.MimeTypeApplicationJSON)
 
-	userID, ok := r.Context().Value("userID").(string)
+	userID, ok := authmiddleware.UserIDFrom(r.Context())
 	if !ok {
 		http.Error(w, "could not get user ID", http.StatusUnauthorized)
 		return

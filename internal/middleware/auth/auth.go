@@ -6,6 +6,17 @@ import (
 	"strings"
 )
 
+type userIDKey struct{}
+
+func WithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, userIDKey{}, userID)
+}
+
+func UserIDFrom(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey{}).(string)
+	return userID, ok && userID != ""
+}
+
 type service interface {
 	ParseToken(token string) (string, error)
 }
@@ -39,7 +50,6 @@ func (a *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "userID", userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), userID)))
 	})
 }

@@ -34,9 +34,9 @@ func TestMiddleware(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gotUserID any
+			var gotUserID string
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotUserID = r.Context().Value("userID")
+				gotUserID, _ = UserIDFrom(r.Context())
 			})
 
 			request := httptest.NewRequest(http.MethodGet, "/me/profile", nil)
@@ -51,7 +51,7 @@ func TestMiddleware(t *testing.T) {
 				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
 			}
 			if tt.wantStatus == http.StatusOK && gotUserID != "user-1" {
-				t.Fatalf("userID = %v, want user-1", gotUserID)
+				t.Fatalf("userID = %q, want user-1", gotUserID)
 			}
 		})
 	}
