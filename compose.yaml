@@ -33,7 +33,7 @@ services:
     environment:
       SERVER_PORT: ${SERVER_PORT:-3000}
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/solado_certo?sslmode=disable}
-      SECRET_KEY: ${SECRET_KEY:-your-secret-key}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required (see README.md)}
     ports:
       - "3000:3000"
     volumes:

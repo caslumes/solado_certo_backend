@@ -1,22 +1,46 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 )
 
+const minSecretKeyLength = 32
+
 type Envs struct {
 	ServerPort  string `env:"SERVER_PORT" envDefault:"8080"`
-	DatabaseURL string `env:"DATABASE_URL"`
-	SecretKey   string `env:"SECRET_KEY" envDefault:"secret_key"`
+	DatabaseURL string `env:"DATABASE_URL,required"`
+	SecretKey   string `env:"SECRET_KEY,required"`
 }
 
-func LoadEnvs() *Envs {
+func LoadEnvs() (*Envs, error) {
+	databaseURL, err := getRequiredString("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+
+	secretKey, err := getRequiredString("SECRET_KEY")
+	if err != nil {
+		return nil, err
+	}
+	if len(secretKey) < minSecretKeyLength {
+		return nil, fmt.Errorf("SECRET_KEY must be at least %d bytes long", minSecretKeyLength)
+	}
+
 	return &Envs{
 		ServerPort:  getString("SERVER_PORT", "8080"),
-		DatabaseURL: getString("DATABASE_URL", "postgres://user:password@localhost:5432/dbname"),
-		SecretKey:   getString("SECRET_KEY", "secret_key"),
+		DatabaseURL: databaseURL,
+		SecretKey:   secretKey,
+	}, nil
+}
+
+func getRequiredString(envVar string) (string, error) {
+	value := os.Getenv(envVar)
+	if value == "" {
+		return "", fmt.Errorf("missing required environment variable %s", envVar)
 	}
+	return value, nil
 }
 
 func getString(envVar string, defaultValue string) string {

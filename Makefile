@@ -10,6 +10,8 @@ logs:
 	docker compose logs -f
 format:
 	go fmt ./...
+secret-key:
+	@openssl rand -base64 48
 tidy:
 	go mod tidy
 audit:

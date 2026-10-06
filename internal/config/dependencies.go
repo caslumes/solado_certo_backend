@@ -37,7 +37,10 @@ type Dependencies struct {
 }
 
 func InitDependencies() *Dependencies {
-	envs := LoadEnvs()
+	envs, err := LoadEnvs()
+	if err != nil {
+		panic(err)
+	}
 
 	dbPool, err := InitDatabase(envs.DatabaseURL)
 	if err != nil {
