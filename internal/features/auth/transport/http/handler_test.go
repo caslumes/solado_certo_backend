@@ -20,6 +20,7 @@ func init() {
 func serve(handler *Handler, request *http.Request) *httptest.ResponseRecorder {
 	router := gin.New()
 	router.POST("/auth/register", handler.Register)
+	router.POST("/auth/login", handler.Login)
 	router.POST("/auth/refresh-token", handler.RefreshToken)
 
 	recorder := httptest.NewRecorder()
@@ -214,5 +215,23 @@ func TestRefreshTokenRequiresToken(t *testing.T) {
 	}
 	if called {
 		t.Fatal("use case was called without a refresh token")
+	}
+}
+
+func TestLoginMapsInvalidCredentialsToUnauthorized(t *testing.T) {
+	handler := NewHandler(
+		registerUseCaseFunc(nilRegisterUseCaseFunc),
+		loginUseCaseFunc(func(context.Context, *auth.LoginInput) (auth.TokenPair, error) {
+			return auth.TokenPair{}, app.ErrInvalidCredentials
+		}),
+		logoutUseCaseFunc(nilLogoutUseCaseFunc),
+		refreshTokenUseCaseFunc(nilRefreshTokenUseCaseFunc),
+	)
+
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"ana@example.com","password":"wrong"}`))
+	recorder := serve(handler, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 	}
 }

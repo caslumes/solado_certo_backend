@@ -84,7 +84,7 @@ func (h *Handler) Login(c *gin.Context) {
 			return
 		}
 		if errors.Is(err, app.ErrInvalidCredentials) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "invalid email or password"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not login user"})
