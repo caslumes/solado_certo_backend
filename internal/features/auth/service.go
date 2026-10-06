@@ -37,8 +37,14 @@ type RefreshTokenUseCase interface {
 	RefreshToken(context context.Context, refreshToken string) (TokenPair, error)
 }
 
+const (
+	accessTokenType  = "access"
+	refreshTokenType = "refresh"
+)
+
 type Claims struct {
-	UserID string `json:"user_id"`
+	UserID    string `json:"user_id"`
+	TokenType string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
@@ -108,24 +114,13 @@ func (s *service) Login(context context.Context, input *LoginInput) (TokenPair, 
 }
 
 func (s *service) Logout(context context.Context, refreshToken string) error {
-	token, err := jwt.Parse(refreshToken, func(token *jwt.Token) (interface{}, error) {
-		return s.secretKey, nil
-	})
+	claims, err := s.parseToken(refreshToken, refreshTokenType)
 	if err != nil {
 		return err
 	}
 
-	if !token.Valid {
-		return errors.New("invalid refresh token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return errors.New("failed to extract claims")
-	}
-
-	tokenID, ok := claims["jti"].(string)
-	if !ok {
+	tokenID := claims.ID
+	if tokenID == "" {
 		return errors.New("failed to extract token ID")
 	}
 
@@ -138,29 +133,14 @@ func (s *service) Logout(context context.Context, refreshToken string) error {
 }
 
 func (s *service) RefreshToken(context context.Context, refreshToken string) (TokenPair, error) {
-	token, err := jwt.Parse(refreshToken, func(token *jwt.Token) (interface{}, error) {
-		return s.secretKey, nil
-	})
+	claims, err := s.parseToken(refreshToken, refreshTokenType)
 	if err != nil {
 		return TokenPair{}, err
 	}
 
-	if !token.Valid {
-		return TokenPair{}, errors.New("invalid refresh token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return TokenPair{}, errors.New("failed to extract claims")
-	}
-
-	userID, ok := claims["user_id"].(string)
-	if !ok {
-		return TokenPair{}, errors.New("failed to extract user ID")
-	}
-
-	tokenID, ok := claims["jti"].(string)
-	if !ok {
+	userID := claims.UserID
+	tokenID := claims.ID
+	if tokenID == "" {
 		return TokenPair{}, errors.New("failed to extract token ID")
 	}
 
@@ -236,7 +216,8 @@ func (s *service) createTokens(userID string) (TokenPair, error) {
 
 func (s *service) createAccessToken(context context.Context, userID string) (string, error) {
 	accessClaims := &Claims{
-		UserID: userID,
+		UserID:    userID,
+		TokenType: accessTokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 15)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -256,7 +237,8 @@ func (s *service) createRefreshToken(context context.Context, userID string) (Re
 	tokenHashBytes := sha256.Sum256([]byte(tokenID))
 	tokenHashString := hex.EncodeToString(tokenHashBytes[:])
 	refreshClaims := &Claims{
-		UserID: userID,
+		UserID:    userID,
+		TokenType: refreshTokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        tokenHashString,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
@@ -278,26 +260,34 @@ func (s *service) createRefreshToken(context context.Context, userID string) (Re
 }
 
 func (s *service) ParseToken(tokenString string) (string, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return []byte(s.secretKey), nil
-	})
+	claims, err := s.parseToken(tokenString, accessTokenType)
 	if err != nil {
 		return "", err
 	}
 
-	if !token.Valid {
-		return "", errors.New("invalid token")
+	return claims.UserID, nil
+}
+
+func (s *service) parseToken(tokenString, expectedType string) (*Claims, error) {
+	claims := &Claims{}
+	_, err := jwt.ParseWithClaims(tokenString, claims,
+		func(token *jwt.Token) (interface{}, error) {
+			return s.secretKey, nil
+		},
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithExpirationRequired(),
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", errors.New("failed to extract claims")
+	if claims.TokenType != expectedType {
+		return nil, errors.New("unexpected token type")
 	}
 
-	userID, ok := claims["user_id"].(string)
-	if !ok {
-		return "", errors.New("failed to extract user ID")
+	if claims.UserID == "" {
+		return nil, errors.New("failed to extract user ID")
 	}
 
-	return userID, nil
+	return claims, nil
 }
