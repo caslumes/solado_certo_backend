@@ -35,13 +35,40 @@ func (f *fakeRepository) SaveRefreshToken(_ context.Context, rt *RefreshTokenEnt
 }
 
 func (f *fakeRepository) GetTokenByHash(_ context.Context, tokenHash string) (*RefreshTokenEntity, error) {
-	return f.tokens[tokenHash], nil
+	rt, ok := f.tokens[tokenHash]
+	if !ok {
+		return nil, app.ErrTokenNotFound
+	}
+	return rt, nil
 }
 
 func (f *fakeRepository) RevokeToken(_ context.Context, tokenHash string) error {
-	if rt, ok := f.tokens[tokenHash]; ok {
-		now := time.Now()
-		rt.RevokedAt = &now
+	rt, ok := f.tokens[tokenHash]
+	if !ok || rt.IsRevoked() {
+		return app.ErrTokenNotFound
+	}
+	now := time.Now()
+	rt.RevokedAt = &now
+	return nil
+}
+
+func (f *fakeRepository) RotateRefreshToken(_ context.Context, oldTokenHash string, newToken *RefreshTokenEntity) error {
+	rt, ok := f.tokens[oldTokenHash]
+	if !ok || rt.IsRevoked() {
+		return app.ErrTokenRevoked
+	}
+	now := time.Now()
+	rt.RevokedAt = &now
+	f.tokens[newToken.TokenHash] = newToken
+	return nil
+}
+
+func (f *fakeRepository) RevokeUserTokens(_ context.Context, userID string) error {
+	now := time.Now()
+	for _, rt := range f.tokens {
+		if rt.UsuarioID == userID && !rt.IsRevoked() {
+			rt.RevokedAt = &now
+		}
 	}
 	return nil
 }
@@ -215,5 +242,87 @@ func TestLogoutRevokesRefreshToken(t *testing.T) {
 	_, err := s.RefreshToken(context.Background(), tokens.RefreshToken)
 	if !errors.Is(err, app.ErrTokenRevoked) {
 		t.Fatalf("err = %v, want %v", err, app.ErrTokenRevoked)
+	}
+}
+
+func TestRefreshTokenRotatesRefreshToken(t *testing.T) {
+	s, tokens := newTestService(t)
+
+	rotated, err := s.RefreshToken(context.Background(), tokens.RefreshToken)
+	if err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+	if rotated.RefreshToken == "" || rotated.RefreshToken == tokens.RefreshToken {
+		t.Fatal("refresh did not return a new refresh token")
+	}
+	if _, err := s.ParseToken(rotated.AccessToken); err != nil {
+		t.Fatalf("new access token is invalid: %v", err)
+	}
+
+	if _, err := s.RefreshToken(context.Background(), rotated.RefreshToken); err != nil {
+		t.Fatalf("rotated refresh token was rejected: %v", err)
+	}
+}
+
+func TestRefreshTokenReuseRevokesAllUserTokens(t *testing.T) {
+	s, tokens := newTestService(t)
+
+	rotated, err := s.RefreshToken(context.Background(), tokens.RefreshToken)
+	if err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+
+	_, err = s.RefreshToken(context.Background(), tokens.RefreshToken)
+	if !errors.Is(err, app.ErrTokenRevoked) {
+		t.Fatalf("reused token: err = %v, want %v", err, app.ErrTokenRevoked)
+	}
+
+	_, err = s.RefreshToken(context.Background(), rotated.RefreshToken)
+	if !errors.Is(err, app.ErrTokenRevoked) {
+		t.Fatalf("token issued before reuse: err = %v, want %v", err, app.ErrTokenRevoked)
+	}
+}
+
+func TestRefreshTokenRejectsExpiredJWT(t *testing.T) {
+	s := NewService(newFakeRepository(), testSecretKey)
+
+	claims := validClaims(refreshTokenType)
+	claims.ID = "token-id"
+	claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Minute))
+	token := signToken(t, jwt.SigningMethodHS256, []byte(testSecretKey), claims)
+
+	_, err := s.RefreshToken(context.Background(), token)
+	if !errors.Is(err, app.ErrTokenExpired) {
+		t.Fatalf("err = %v, want %v", err, app.ErrTokenExpired)
+	}
+}
+
+func TestRefreshTokenRejectsTokenExpiredInDatabase(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository, testSecretKey)
+
+	tokens, err := s.createTokens("user-1")
+	if err != nil {
+		t.Fatalf("createTokens: %v", err)
+	}
+	expiredAt := time.Now().Add(-time.Minute)
+	repository.tokens[hashTokenID(refreshTokenID(t, s, tokens.RefreshToken))].ExpiresAt = &expiredAt
+
+	_, err = s.RefreshToken(context.Background(), tokens.RefreshToken)
+	if !errors.Is(err, app.ErrTokenExpired) {
+		t.Fatalf("err = %v, want %v", err, app.ErrTokenExpired)
+	}
+}
+
+func TestRefreshTokenRejectsUnknownToken(t *testing.T) {
+	s := NewService(newFakeRepository(), testSecretKey)
+
+	claims := validClaims(refreshTokenType)
+	claims.ID = "unknown-token-id"
+	token := signToken(t, jwt.SigningMethodHS256, []byte(testSecretKey), claims)
+
+	_, err := s.RefreshToken(context.Background(), token)
+	if !errors.Is(err, app.ErrTokenNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrTokenNotFound)
 	}
 }

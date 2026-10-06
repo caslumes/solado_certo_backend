@@ -21,6 +21,8 @@ type repository interface {
 	SaveRefreshToken(context context.Context, rt *RefreshTokenEntity) error
 	GetTokenByHash(context context.Context, tokenHash string) (*RefreshTokenEntity, error)
 	RevokeToken(context context.Context, tokenHash string) error
+	RotateRefreshToken(context context.Context, oldTokenHash string, newToken *RefreshTokenEntity) error
+	RevokeUserTokens(context context.Context, userID string) error
 }
 
 type RegisterUseCase interface {
@@ -123,7 +125,7 @@ func (s *service) Logout(context context.Context, refreshToken string) error {
 
 	tokenID := claims.ID
 	if tokenID == "" {
-		return errors.New("failed to extract token ID")
+		return app.ErrInvalidToken
 	}
 
 	err = s.r.RevokeToken(context, hashTokenID(tokenID))
@@ -143,7 +145,7 @@ func (s *service) RefreshToken(context context.Context, refreshToken string) (To
 	userID := claims.UserID
 	tokenID := claims.ID
 	if tokenID == "" {
-		return TokenPair{}, errors.New("failed to extract token ID")
+		return TokenPair{}, app.ErrInvalidToken
 	}
 
 	tokenHash := hashTokenID(tokenID)
@@ -152,23 +154,20 @@ func (s *service) RefreshToken(context context.Context, refreshToken string) (To
 		return TokenPair{}, err
 	}
 
-	if savedRefreshToken == nil || savedRefreshToken.UsuarioID != userID {
-		return TokenPair{}, errors.New("refresh token not found or does not match user")
+	if savedRefreshToken.UsuarioID != userID {
+		return TokenPair{}, app.ErrInvalidToken
 	}
 
 	if savedRefreshToken.IsRevoked() {
+		if err := s.r.RevokeUserTokens(context, userID); err != nil {
+			return TokenPair{}, err
+		}
+
 		return TokenPair{}, app.ErrTokenRevoked
 	}
 
 	if savedRefreshToken.IsExpired() {
-		newTokenPair, err := s.createTokens(userID)
-		if err != nil {
-			return TokenPair{}, err
-		}
-
-		s.r.RevokeToken(context, tokenHash)
-
-		return newTokenPair, nil
+		return TokenPair{}, app.ErrTokenExpired
 	}
 
 	accessTokenString, err := s.createAccessToken(context, userID)
@@ -176,9 +175,19 @@ func (s *service) RefreshToken(context context.Context, refreshToken string) (To
 		return TokenPair{}, err
 	}
 
+	newRefreshToken, newRefreshTokenString, err := s.createRefreshToken(context, userID)
+	if err != nil {
+		return TokenPair{}, err
+	}
+
+	err = s.r.RotateRefreshToken(context, tokenHash, &newRefreshToken)
+	if err != nil {
+		return TokenPair{}, err
+	}
+
 	return TokenPair{
 		AccessToken:  accessTokenString,
-		RefreshToken: refreshToken,
+		RefreshToken: newRefreshTokenString,
 	}, nil
 }
 
@@ -296,16 +305,19 @@ func (s *service) parseToken(tokenString, expectedType string) (*Claims, error) 
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithExpirationRequired(),
 	)
+	if errors.Is(err, jwt.ErrTokenExpired) {
+		return nil, app.ErrTokenExpired
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", app.ErrInvalidToken, err)
 	}
 
 	if claims.TokenType != expectedType {
-		return nil, errors.New("unexpected token type")
+		return nil, fmt.Errorf("%w: unexpected token type", app.ErrInvalidToken)
 	}
 
 	if claims.UserID == "" {
-		return nil, errors.New("failed to extract user ID")
+		return nil, fmt.Errorf("%w: missing user ID", app.ErrInvalidToken)
 	}
 
 	return claims, nil

@@ -113,3 +113,51 @@ func (r *postgresRepository) RevokeToken(ctx context.Context, tokenHash string) 
 
 	return nil
 }
+
+// RotateRefreshToken revokes the old refresh token and stores the new one in a
+// single transaction. It returns app.ErrTokenRevoked if the old token was
+// already revoked, so two concurrent refreshes cannot both succeed.
+func (r *postgresRepository) RotateRefreshToken(ctx context.Context, oldTokenHash string, newToken *auth.RefreshTokenEntity) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	now := time.Now().UTC()
+	result, err := tx.Exec(
+		ctx,
+		"UPDATE refresh_tokens SET revoked_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL",
+		now, oldTokenHash,
+	)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return app.ErrTokenRevoked
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		"INSERT INTO refresh_tokens (usuario_id, token_hash, device_name, expires_at, created_at) "+
+			"VALUES ($1, $2, $3, $4, $5)",
+		newToken.UsuarioID, newToken.TokenHash, newToken.DeviceName, newToken.ExpiresAt, now,
+	)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *postgresRepository) RevokeUserTokens(ctx context.Context, userID string) error {
+	now := time.Now().UTC()
+	_, err := r.pool.Exec(
+		ctx,
+		"UPDATE refresh_tokens SET revoked_at = $1 WHERE usuario_id = $2 AND revoked_at IS NULL",
+		now, userID,
+	)
+
+	return err
+}

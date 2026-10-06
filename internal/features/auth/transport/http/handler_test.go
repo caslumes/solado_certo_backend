@@ -139,3 +139,50 @@ func TestRegisterMapsUnexpectedErrors(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
 	}
 }
+
+func TestRefreshTokenMapsTokenErrorsToUnauthorized(t *testing.T) {
+	for _, tokenErr := range []error{app.ErrInvalidToken, app.ErrTokenExpired, app.ErrTokenNotFound, app.ErrTokenRevoked} {
+		t.Run(tokenErr.Error(), func(t *testing.T) {
+			handler := NewHandler(
+				registerUseCaseFunc(nilRegisterUseCaseFunc),
+				loginUseCaseFunc(nilLoginUseCaseFunc),
+				logoutUseCaseFunc(nilLogoutUseCaseFunc),
+				refreshTokenUseCaseFunc(func(context.Context, string) (auth.TokenPair, error) {
+					return auth.TokenPair{}, tokenErr
+				}),
+			)
+
+			request := httptest.NewRequest(http.MethodPost, "/auth/refresh-token", strings.NewReader(`{"refresh_token":"token"}`))
+			recorder := httptest.NewRecorder()
+
+			handler.RefreshToken(recorder, request)
+
+			if recorder.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+func TestRefreshTokenReturnsRotatedTokens(t *testing.T) {
+	handler := NewHandler(
+		registerUseCaseFunc(nilRegisterUseCaseFunc),
+		loginUseCaseFunc(nilLoginUseCaseFunc),
+		logoutUseCaseFunc(nilLogoutUseCaseFunc),
+		refreshTokenUseCaseFunc(func(context.Context, string) (auth.TokenPair, error) {
+			return auth.TokenPair{AccessToken: "new-access", RefreshToken: "new-refresh"}, nil
+		}),
+	)
+
+	request := httptest.NewRequest(http.MethodPost, "/auth/refresh-token", strings.NewReader(`{"refresh_token":"old-refresh"}`))
+	recorder := httptest.NewRecorder()
+
+	handler.RefreshToken(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, `"refresh_token":"new-refresh"`) {
+		t.Fatalf("body = %s, want the rotated refresh token", body)
+	}
+}

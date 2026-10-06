@@ -112,6 +112,10 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if errors.Is(err, app.ErrInvalidToken) || errors.Is(err, app.ErrTokenExpired) {
+			http.Error(w, "invalid or expired refresh token", http.StatusUnauthorized)
+			return
+		}
 		if errors.Is(err, app.ErrTokenNotFound) {
 			http.Error(w, "refresh token not found or does not match user", http.StatusNotFound)
 			return
@@ -149,8 +153,8 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if errors.Is(err, app.ErrTokenNotFound) {
-			http.Error(w, "refresh token not found or does not match user", http.StatusNotFound)
+		if errors.Is(err, app.ErrInvalidToken) || errors.Is(err, app.ErrTokenExpired) || errors.Is(err, app.ErrTokenNotFound) {
+			http.Error(w, "invalid or expired refresh token", http.StatusUnauthorized)
 			return
 		}
 		if errors.Is(err, app.ErrTokenRevoked) {
