@@ -114,9 +114,6 @@ func (r *postgresRepository) RevokeToken(ctx context.Context, tokenHash string) 
 	return nil
 }
 
-// RotateRefreshToken revokes the old refresh token and stores the new one in a
-// single transaction. It returns app.ErrTokenRevoked if the old token was
-// already revoked, so two concurrent refreshes cannot both succeed.
 func (r *postgresRepository) RotateRefreshToken(ctx context.Context, oldTokenHash string, newToken *auth.RefreshTokenEntity) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
