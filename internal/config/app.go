@@ -1,6 +1,8 @@
 package config
 
 import (
+	"context"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
@@ -24,15 +26,15 @@ type App struct {
 	CatalogHandler *httpcatalog.Handler
 }
 
-func InitApp() *App {
+func InitApp(ctx context.Context) (*App, error) {
 	envs, err := LoadEnvs()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	dbPool, err := InitDatabase(envs.DatabaseURL)
+	dbPool, err := InitDatabase(ctx, envs.DatabaseURL)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	authService := auth.NewService(authRepository.NewPostgresRepository(dbPool), envs.SecretKey)
@@ -46,5 +48,5 @@ func InitApp() *App {
 		AuthHandler:    httpauth.NewHandler(authService),
 		MeHandler:      httpme.NewHandler(meService),
 		CatalogHandler: httpcatalog.NewHandler(catalogService),
-	}
+	}, nil
 }
