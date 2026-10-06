@@ -8,9 +8,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -46,6 +48,8 @@ const (
 	refreshTokenType = "refresh"
 )
 
+var dummyPasswordHash, _ = hashPassword("dummy-password-for-timing")
+
 type Claims struct {
 	UserID    string `json:"user_id"`
 	TokenType string `json:"typ"`
@@ -71,8 +75,27 @@ func NewService(r repository, secretKey string) *service {
 }
 
 func (s *service) Register(context context.Context, input *RegisterInput) error {
-	if input == nil || input.Name == "" || input.Email == "" || input.Phone == "" || len(input.Password) < 8 {
+	if input == nil {
 		return app.ErrInvalidInput
+	}
+
+	name, err := helpers.NormalizeName(input.Name)
+	if err != nil {
+		return err
+	}
+
+	email, err := helpers.NormalizeEmail(input.Email)
+	if err != nil {
+		return err
+	}
+
+	phone, err := helpers.NormalizePhone(input.Phone)
+	if err != nil {
+		return err
+	}
+
+	if err := helpers.ValidatePassword(input.Password); err != nil {
+		return err
 	}
 
 	hashedPassword, err := hashPassword(input.Password)
@@ -81,9 +104,9 @@ func (s *service) Register(context context.Context, input *RegisterInput) error 
 	}
 
 	ue := &UserEntity{
-		Nome:      input.Name,
-		Email:     input.Email,
-		Telefone:  input.Phone,
+		Nome:      name,
+		Email:     email,
+		Telefone:  phone,
 		SenhaHash: hashedPassword,
 	}
 
@@ -95,9 +118,16 @@ func (s *service) Login(context context.Context, input *LoginInput) (TokenPair, 
 		return TokenPair{}, app.ErrInvalidInput
 	}
 
-	ue, err := s.r.GetUserByEmail(context, input.Email)
+	email, err := helpers.NormalizeEmail(input.Email)
+	if err != nil {
+		return TokenPair{}, app.ErrInvalidCredentials
+	}
+
+	ue, err := s.r.GetUserByEmail(context, email)
 	if err != nil {
 		if errors.Is(err, app.ErrUserNotFound) {
+			// prevents email enumeration by timing. every email, known or unkown, takes the same amount of time.
+			passwordMatches(dummyPasswordHash, input.Password)
 			return TokenPair{}, app.ErrInvalidCredentials
 		}
 
@@ -110,7 +140,7 @@ func (s *service) Login(context context.Context, input *LoginInput) (TokenPair, 
 
 	tokenPair, err := s.createTokens(ue.ID)
 	if err != nil {
-		fmt.Printf("%+v", err)
+		slog.ErrorContext(context, "could not create tokens", "user_id", ue.ID, "error", err)
 		return TokenPair{}, err
 	}
 

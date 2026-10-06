@@ -15,18 +15,28 @@ const testSecretKey = "test-secret-key"
 
 type fakeRepository struct {
 	tokens map[string]*RefreshTokenEntity
+	users  map[string]*UserEntity
 }
 
 func newFakeRepository() *fakeRepository {
-	return &fakeRepository{tokens: map[string]*RefreshTokenEntity{}}
+	return &fakeRepository{
+		tokens: map[string]*RefreshTokenEntity{},
+		users:  map[string]*UserEntity{},
+	}
 }
 
-func (f *fakeRepository) CreateUser(context.Context, *UserEntity) error {
+func (f *fakeRepository) CreateUser(_ context.Context, ue *UserEntity) error {
+	ue.ID = "user-" + ue.Email
+	f.users[ue.Email] = ue
 	return nil
 }
 
-func (f *fakeRepository) GetUserByEmail(context.Context, string) (*UserEntity, error) {
-	return nil, nil
+func (f *fakeRepository) GetUserByEmail(_ context.Context, email string) (*UserEntity, error) {
+	ue, ok := f.users[email]
+	if !ok {
+		return nil, app.ErrUserNotFound
+	}
+	return ue, nil
 }
 
 func (f *fakeRepository) SaveRefreshToken(_ context.Context, rt *RefreshTokenEntity) error {
@@ -324,5 +334,75 @@ func TestRefreshTokenRejectsUnknownToken(t *testing.T) {
 	_, err := s.RefreshToken(context.Background(), token)
 	if !errors.Is(err, app.ErrTokenNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrTokenNotFound)
+	}
+}
+
+func TestRegisterStoresNormalizedFields(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository, testSecretKey)
+
+	err := s.Register(context.Background(), &RegisterInput{
+		Name:     "  Ana Maria ",
+		Email:    " Ana@Example.COM ",
+		Phone:    "+55 (19) 91234-5678",
+		Password: "password",
+	})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	ue, ok := repository.users["ana@example.com"]
+	if !ok {
+		t.Fatalf("user not stored under the normalized email: %v", repository.users)
+	}
+	if ue.Nome != "Ana Maria" || ue.Telefone != "19912345678" {
+		t.Fatalf("stored user = %+v", ue)
+	}
+}
+
+func TestRegisterRejectsInvalidInput(t *testing.T) {
+	valid := RegisterInput{Name: "Ana", Email: "ana@example.com", Phone: "19912345678", Password: "password"}
+
+	tests := map[string]func(*RegisterInput){
+		"blank name":     func(in *RegisterInput) { in.Name = "  " },
+		"invalid email":  func(in *RegisterInput) { in.Email = "ana" },
+		"invalid phone":  func(in *RegisterInput) { in.Phone = "123" },
+		"short password": func(in *RegisterInput) { in.Password = "1234567" },
+		"long password":  func(in *RegisterInput) { in.Password = strings.Repeat("a", 73) },
+	}
+
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			input := valid
+			mutate(&input)
+
+			err := NewService(newFakeRepository(), testSecretKey).Register(context.Background(), &input)
+			if !errors.Is(err, app.ErrInvalidInput) {
+				t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
+			}
+		})
+	}
+}
+
+func TestLoginNormalizesEmail(t *testing.T) {
+	s := NewService(newFakeRepository(), testSecretKey)
+	err := s.Register(context.Background(), &RegisterInput{
+		Name: "Ana", Email: "ana@example.com", Phone: "19912345678", Password: "password",
+	})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if _, err := s.Login(context.Background(), &LoginInput{Email: " ANA@example.com", Password: "password"}); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+}
+
+func TestLoginUnknownEmailReturnsInvalidCredentials(t *testing.T) {
+	s := NewService(newFakeRepository(), testSecretKey)
+
+	_, err := s.Login(context.Background(), &LoginInput{Email: "nobody@example.com", Password: "password"})
+	if !errors.Is(err, app.ErrInvalidCredentials) {
+		t.Fatalf("err = %v, want %v", err, app.ErrInvalidCredentials)
 	}
 }

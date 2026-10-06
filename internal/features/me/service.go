@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
@@ -79,7 +80,7 @@ func NewService(r repository) *service {
 func (s *service) GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error) {
 	profile, err := s.r.GetProfileByUserID(context, userID)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "GetProfileByUserID failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -89,19 +90,34 @@ func (s *service) GetProfileByUserID(context context.Context, userID string) (*P
 func (s *service) EditProfile(context context.Context, userID string, input ProfileInput) (*ProfileEntity, error) {
 	profile, err := s.r.GetProfileByUserID(context, userID)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "EditProfile failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	name, err := helpers.NormalizeName(input.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	email, err := helpers.NormalizeEmail(input.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	phone, err := helpers.NormalizePhone(input.Phone)
+	if err != nil {
 		return nil, err
 	}
 
 	profile.ID = userID
-	profile.Name = input.Name
-	profile.Email = input.Email
-	profile.Phone = input.Phone
+	profile.Name = name
+	profile.Email = email
+	profile.Phone = phone
 	profile.AvatarURL = input.AvatarURL
 
 	err = s.r.UpdateProfile(context, profile)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "EditProfile failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -111,7 +127,7 @@ func (s *service) EditProfile(context context.Context, userID string, input Prof
 func (s *service) GetAddressesByUserID(context context.Context, userID string) ([]*AddressEntity, error) {
 	addresses, err := s.r.GetAddressesByUserID(context, userID)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "GetAddressesByUserID failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -136,7 +152,7 @@ func (s *service) AddAddress(context context.Context, userID string, input Addre
 
 	newAddress, err := s.r.CreateAddress(context, userID, address)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "AddAddress failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -146,7 +162,7 @@ func (s *service) AddAddress(context context.Context, userID string, input Addre
 func (s *service) EditAddress(context context.Context, userID string, addressID string, input AddressInput) (*AddressEntity, error) {
 	address, err := s.r.GetAddressByID(context, addressID)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "EditAddress failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -168,7 +184,7 @@ func (s *service) EditAddress(context context.Context, userID string, addressID 
 
 	err = s.r.UpdateAddress(context, address)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "EditAddress failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -178,7 +194,7 @@ func (s *service) EditAddress(context context.Context, userID string, addressID 
 func (s *service) DeleteAddress(context context.Context, userID string, addressID string) error {
 	address, err := s.r.GetAddressByID(context, addressID)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "DeleteAddress failed", "user_id", userID, "error", err)
 		return err
 	}
 
@@ -188,7 +204,7 @@ func (s *service) DeleteAddress(context context.Context, userID string, addressI
 
 	err = s.r.DeleteAddress(context, addressID)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "DeleteAddress failed", "user_id", userID, "error", err)
 		return err
 	}
 
@@ -202,7 +218,7 @@ func (s *service) GetPodologicalProfileByUserID(context context.Context, userID 
 			return &PodologicalProfileEntity{}, nil
 		}
 
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "GetPodologicalProfileByUserID failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -213,7 +229,7 @@ func (s *service) EditPodologicalProfile(context context.Context, userID string,
 	profile, err := s.r.GetPodologicalProfileByUserID(context, userID)
 	if err != nil {
 		if !errors.Is(err, app.ErrPodologicalProfileNotFound) {
-			fmt.Printf("err %v\n", err)
+			slog.ErrorContext(context, "EditPodologicalProfile failed", "user_id", userID, "error", err)
 			return nil, err
 		}
 
@@ -228,7 +244,7 @@ func (s *service) EditPodologicalProfile(context context.Context, userID string,
 
 	err = s.r.UpsertPodologicalProfile(context, profile)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "EditPodologicalProfile failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -244,19 +260,19 @@ func (s *service) GetOnboardingByUserID(context context.Context, userID string) 
 				Status: OnboardingStatusNotStarted,
 			})
 			if err != nil {
-				fmt.Printf("err %v\n", err)
+				slog.ErrorContext(context, "GetOnboardingByUserID failed", "user_id", userID, "error", err)
 				return nil, err
 			}
 
 			onboarding, err = s.r.GetOnboardingByUserID(context, userID)
 			if err != nil {
-				fmt.Printf("err %v\n", err)
+				slog.ErrorContext(context, "GetOnboardingByUserID failed", "user_id", userID, "error", err)
 				return nil, err
 			}
 
 			return onboarding, nil
 		}
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "GetOnboardingByUserID failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -266,7 +282,7 @@ func (s *service) GetOnboardingByUserID(context context.Context, userID string) 
 func (s *service) ChangeOnboardingStep(context context.Context, userID string, input OnboardingInput) error {
 	onboarding, err := s.r.GetOnboardingByUserID(context, userID)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 		return err
 	}
 
@@ -276,14 +292,14 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 
 	step, err := s.r.GetOnboardingStepByTag(context, input.Step)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 		return err
 	}
 
 	action := OnboardingAction(input.Action)
 	err = s.validateOnboardingAction(action, step)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 		return err
 	}
 
@@ -291,7 +307,7 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 		onboarding.DispensedAt = helpers.TimePtr(time.Now())
 		err = s.r.UpdateOnboarding(context, userID, onboarding)
 		if err != nil {
-			fmt.Printf("err %v\n", err)
+			slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 			return err
 		}
 		return nil
@@ -302,18 +318,18 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 		onboarding.CompletedAt = helpers.TimePtr(time.Now())
 		err = s.r.UpdateOnboarding(context, userID, onboarding)
 		if err != nil {
-			fmt.Printf("err %v\n", err)
+			slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 			return err
 		}
 		profile, err := s.r.GetProfileByUserID(context, userID)
 		if err != nil {
-			fmt.Printf("err %v\n", err)
+			slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 			return err
 		}
 		profile.Status = enum.ProfileStatusActive
 		err = s.r.UpdateProfile(context, profile)
 		if err != nil {
-			fmt.Printf("err %v\n", err)
+			slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 			return err
 		}
 		return nil
@@ -321,7 +337,7 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 
 	nextStep, err := s.resolveNextOnboardingStep(step, action)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 		return err
 	}
 
@@ -332,7 +348,7 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 	onboarding.CurrentStep = *nextStep
 	err = s.r.UpdateOnboarding(context, userID, onboarding)
 	if err != nil {
-		fmt.Printf("err %v\n", err)
+		slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 		return err
 	}
 
