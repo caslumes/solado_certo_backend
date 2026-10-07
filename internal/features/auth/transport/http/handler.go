@@ -58,6 +58,10 @@ func (h *Handler) Register(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		if errors.Is(err, app.ErrUserAlreadyExists) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register user"})
 		return

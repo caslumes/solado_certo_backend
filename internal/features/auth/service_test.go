@@ -26,6 +26,11 @@ func newFakeRepository() *fakeRepository {
 }
 
 func (f *fakeRepository) CreateUser(_ context.Context, ue *UserEntity) error {
+	for _, existing := range f.users {
+		if existing.Email == ue.Email || existing.Phone == ue.Phone {
+			return app.ErrUserAlreadyExists
+		}
+	}
 	ue.ID = "user-" + ue.Email
 	f.users[ue.Email] = ue
 	return nil
@@ -379,6 +384,30 @@ func TestRegisterRejectsInvalidInput(t *testing.T) {
 			err := NewService(newFakeRepository(), testSecretKey).Register(context.Background(), &input)
 			if !errors.Is(err, app.ErrInvalidInput) {
 				t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
+			}
+		})
+	}
+}
+
+func TestRegisterRejectsDuplicateEmailOrPhone(t *testing.T) {
+	tests := map[string]RegisterInput{
+		"same email": {Name: "Bia", Email: " ANA@example.com", Phone: "19987654321", Password: "password"},
+		"same phone": {Name: "Bia", Email: "bia@example.com", Phone: "(19) 91234-5678", Password: "password"},
+	}
+
+	for name, duplicate := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := NewService(newFakeRepository(), testSecretKey)
+			err := s.Register(context.Background(), &RegisterInput{
+				Name: "Ana", Email: "ana@example.com", Phone: "19912345678", Password: "password",
+			})
+			if err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			err = s.Register(context.Background(), &duplicate)
+			if !errors.Is(err, app.ErrUserAlreadyExists) {
+				t.Fatalf("err = %v, want %v", err, app.ErrUserAlreadyExists)
 			}
 		})
 	}

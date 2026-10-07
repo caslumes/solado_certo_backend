@@ -10,8 +10,11 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 	model "github.com/caslumes/solado_certo_backend/internal/features/auth/repository"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const uniqueViolationCode = "23505"
 
 type postgresRepository struct {
 	pool *pgxpool.Pool
@@ -31,6 +34,11 @@ func (r *postgresRepository) CreateUser(ctx context.Context, ue *auth.UserEntity
 	)
 
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolationCode {
+			return app.ErrUserAlreadyExists
+		}
+
 		return err
 	}
 

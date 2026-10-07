@@ -111,6 +111,23 @@ func TestRegisterMapsApplicationErrors(t *testing.T) {
 	}
 }
 
+func TestRegisterMapsDuplicateUserToConflict(t *testing.T) {
+	handler := NewHandler(fakeService{
+		register: func(context.Context, *auth.RegisterInput) error {
+			return app.ErrUserAlreadyExists
+		},
+	})
+
+	recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(registerBody)))
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusConflict)
+	}
+	if !strings.Contains(recorder.Body.String(), "email or phone already registered") {
+		t.Fatalf("body = %s", recorder.Body.String())
+	}
+}
+
 func TestRegisterMapsUnexpectedErrors(t *testing.T) {
 	handler := NewHandler(fakeService{
 		register: func(context.Context, *auth.RegisterInput) error {
