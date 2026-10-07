@@ -28,9 +28,9 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 	argsCount := len(args)
 	rows, err := r.pool.Query(
 		ctx,
-		"SELECT id, vendedor_id, titulo, descricao, preco, estoque, status, prescription_required, custom_made_allowed, "+
+		"SELECT id, seller_id, title, description, price, stock, status, prescription_required, custom_made_allowed, "+
 			"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, "+
-			"updated_at, removed_at FROM anuncios "+whereClause+" ORDER BY created_at DESC, id DESC LIMIT $"+(strconv.Itoa(argsCount+1))+" OFFSET $"+(strconv.Itoa(argsCount+2)),
+			"updated_at, removed_at FROM advertisements "+whereClause+" ORDER BY created_at DESC, id DESC LIMIT $"+(strconv.Itoa(argsCount+1))+" OFFSET $"+(strconv.Itoa(argsCount+2)),
 		append(args, limit, offset)...,
 	)
 	if err != nil {
@@ -69,7 +69,7 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 
 		imageRows, err := r.pool.Query(
 			ctx,
-			"SELECT url, alt_text, ordem, is_cover FROM anuncio_imagens WHERE anuncio_id = $1 ORDER BY ordem",
+			"SELECT url, alt_text, position, is_cover FROM advertisement_images WHERE advertisement_id = $1 ORDER BY position",
 			m.ID,
 		)
 		if err != nil {
@@ -107,9 +107,9 @@ func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string
 	var images []*repository.AdvertisementImageModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT id, vendedor_id, titulo, descricao, preco, estoque, status, prescription_required, custom_made_allowed, "+
+		"SELECT id, seller_id, title, description, price, stock, status, prescription_required, custom_made_allowed, "+
 			"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, "+
-			"updated_at, removed_at FROM anuncios WHERE id = $1",
+			"updated_at, removed_at FROM advertisements WHERE id = $1",
 		id,
 	).Scan(
 		&m.ID,
@@ -143,7 +143,7 @@ func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string
 
 	imageRows, err := r.pool.Query(
 		ctx,
-		"SELECT url, alt_text, ordem, is_cover FROM anuncio_imagens WHERE anuncio_id = $1 ORDER BY ordem",
+		"SELECT url, alt_text, position, is_cover FROM advertisement_images WHERE advertisement_id = $1 ORDER BY position",
 		m.ID,
 	)
 	if err != nil {
@@ -174,7 +174,7 @@ func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string
 
 func (r *postgresRepository) CountAdvertisements(ctx context.Context) (uint, error) {
 	var total int64
-	err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM anuncios").Scan(&total)
+	err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM advertisements").Scan(&total)
 	if err != nil {
 		return 0, err
 	}
@@ -186,7 +186,7 @@ func (r *postgresRepository) GetCategories(ctx context.Context) ([]*catalog.Cate
 	var categories []*catalog.CategoryEntity
 	rows, err := r.pool.Query(
 		ctx,
-		"SELECT id, categoria_pai_id, nome, slug, ativo FROM categorias",
+		"SELECT id, parent_category_id, name, slug, active FROM categories",
 	)
 	if err != nil {
 		return nil, err
@@ -221,22 +221,22 @@ func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []int
 	argIndex := 1
 
 	if filters.Query != nil {
-		conditions = append(conditions, "(titulo ILIKE $"+strconv.Itoa(argIndex)+" OR descricao ILIKE $"+strconv.Itoa(argIndex)+")")
+		conditions = append(conditions, "(title ILIKE $"+strconv.Itoa(argIndex)+" OR description ILIKE $"+strconv.Itoa(argIndex)+")")
 		args = append(args, "%"+*filters.Query+"%")
 		argIndex++
 	}
 	if filters.Category != nil {
-		conditions = append(conditions, "categoria_id = $"+strconv.Itoa(argIndex))
+		conditions = append(conditions, "category_id = $"+strconv.Itoa(argIndex))
 		args = append(args, *filters.Category)
 		argIndex++
 	}
 	if filters.PriceMin != nil {
-		conditions = append(conditions, "preco >= $"+strconv.Itoa(argIndex))
+		conditions = append(conditions, "price >= $"+strconv.Itoa(argIndex))
 		args = append(args, *filters.PriceMin)
 		argIndex++
 	}
 	if filters.PriceMax != nil {
-		conditions = append(conditions, "preco <= $"+strconv.Itoa(argIndex))
+		conditions = append(conditions, "price <= $"+strconv.Itoa(argIndex))
 		args = append(args, *filters.PriceMax)
 		argIndex++
 	}

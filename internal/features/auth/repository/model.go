@@ -7,24 +7,24 @@ import (
 )
 
 type UserModel struct {
-	ID        string
-	Nome      string
-	Email     string
-	Telefone  string
-	SenhaHash string
-	Status    string
-	CreatedAt *time.Time
-	UpdatedAt *time.Time
-	DeletedAt *time.Time
+	ID           string
+	Name         string
+	Email        string
+	Phone        string
+	PasswordHash string
+	Status       string
+	CreatedAt    *time.Time
+	UpdatedAt    *time.Time
+	DeletedAt    *time.Time
 }
 
 func (u *UserModel) ToEntity() auth.UserEntity {
 	var ue auth.UserEntity
 	ue.ID = u.ID
-	ue.Nome = u.Nome
+	ue.Name = u.Name
 	ue.Email = u.Email
-	ue.Telefone = u.Telefone
-	ue.SenhaHash = u.SenhaHash
+	ue.Phone = u.Phone
+	ue.PasswordHash = u.PasswordHash
 	ue.Status = u.Status
 	ue.CreatedAt = u.CreatedAt
 	ue.UpdatedAt = u.UpdatedAt
@@ -35,7 +35,7 @@ func (u *UserModel) ToEntity() auth.UserEntity {
 
 type RefreshTokenModel struct {
 	ID         string
-	UsuarioID  string
+	UserID     string
 	TokenHash  string
 	DeviceName string
 	ExpiresAt  *time.Time
@@ -46,7 +46,7 @@ type RefreshTokenModel struct {
 func (r *RefreshTokenModel) ToEntity() auth.RefreshTokenEntity {
 	var rte auth.RefreshTokenEntity
 	rte.ID = r.ID
-	rte.UsuarioID = r.UsuarioID
+	rte.UserID = r.UserID
 	rte.TokenHash = r.TokenHash
 	rte.DeviceName = r.DeviceName
 	rte.ExpiresAt = r.ExpiresAt

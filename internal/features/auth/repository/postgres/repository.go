@@ -25,9 +25,9 @@ func (r *postgresRepository) CreateUser(ctx context.Context, ue *auth.UserEntity
 	now := time.Now().UTC()
 	_, err := r.pool.Exec(
 		ctx,
-		"INSERT INTO usuarios (nome, email, telefone, senha_hash, status, created_at, updated_at) "+
+		"INSERT INTO users (name, email, phone, password_hash, status, created_at, updated_at) "+
 			"VALUES ($1, $2, $3, $4, $5, $6, $7)",
-		ue.Nome, ue.Email, ue.Telefone, ue.SenhaHash, enum.ProfileStatusPending, now, now,
+		ue.Name, ue.Email, ue.Phone, ue.PasswordHash, enum.ProfileStatusPending, now, now,
 	)
 
 	if err != nil {
@@ -41,9 +41,9 @@ func (r *postgresRepository) GetUserByEmail(ctx context.Context, email string) (
 	var um model.UserModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT id, nome, email, telefone, senha_hash, status, created_at, updated_at FROM usuarios WHERE email = $1",
+		"SELECT id, name, email, phone, password_hash, status, created_at, updated_at FROM users WHERE email = $1",
 		email,
-	).Scan(&um.ID, &um.Nome, &um.Email, &um.Telefone, &um.SenhaHash, &um.Status, &um.CreatedAt, &um.UpdatedAt)
+	).Scan(&um.ID, &um.Name, &um.Email, &um.Phone, &um.PasswordHash, &um.Status, &um.CreatedAt, &um.UpdatedAt)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -62,9 +62,9 @@ func (r *postgresRepository) SaveRefreshToken(ctx context.Context, rt *auth.Refr
 	now := time.Now().UTC()
 	_, err := r.pool.Exec(
 		ctx,
-		"INSERT INTO refresh_tokens (usuario_id, token_hash, device_name, expires_at, created_at) "+
+		"INSERT INTO refresh_tokens (user_id, token_hash, device_name, expires_at, created_at) "+
 			"VALUES ($1, $2, $3, $4, $5)",
-		rt.UsuarioID, rt.TokenHash, rt.DeviceName, rt.ExpiresAt, now,
+		rt.UserID, rt.TokenHash, rt.DeviceName, rt.ExpiresAt, now,
 	)
 
 	if err != nil {
@@ -78,9 +78,9 @@ func (r *postgresRepository) GetTokenByHash(ctx context.Context, tokenHash strin
 	var rtm model.RefreshTokenModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT id, usuario_id, token_hash, device_name, expires_at, revoked_at, created_at FROM refresh_tokens WHERE token_hash = $1",
+		"SELECT id, user_id, token_hash, device_name, expires_at, revoked_at, created_at FROM refresh_tokens WHERE token_hash = $1",
 		tokenHash,
-	).Scan(&rtm.ID, &rtm.UsuarioID, &rtm.TokenHash, &rtm.DeviceName, &rtm.ExpiresAt, &rtm.RevokedAt, &rtm.CreatedAt)
+	).Scan(&rtm.ID, &rtm.UserID, &rtm.TokenHash, &rtm.DeviceName, &rtm.ExpiresAt, &rtm.RevokedAt, &rtm.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -137,9 +137,9 @@ func (r *postgresRepository) RotateRefreshToken(ctx context.Context, oldTokenHas
 
 	_, err = tx.Exec(
 		ctx,
-		"INSERT INTO refresh_tokens (usuario_id, token_hash, device_name, expires_at, created_at) "+
+		"INSERT INTO refresh_tokens (user_id, token_hash, device_name, expires_at, created_at) "+
 			"VALUES ($1, $2, $3, $4, $5)",
-		newToken.UsuarioID, newToken.TokenHash, newToken.DeviceName, newToken.ExpiresAt, now,
+		newToken.UserID, newToken.TokenHash, newToken.DeviceName, newToken.ExpiresAt, now,
 	)
 	if err != nil {
 		return err
@@ -152,7 +152,7 @@ func (r *postgresRepository) RevokeUserTokens(ctx context.Context, userID string
 	now := time.Now().UTC()
 	_, err := r.pool.Exec(
 		ctx,
-		"UPDATE refresh_tokens SET revoked_at = $1 WHERE usuario_id = $2 AND revoked_at IS NULL",
+		"UPDATE refresh_tokens SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL",
 		now, userID,
 	)
 

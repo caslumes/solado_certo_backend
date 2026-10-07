@@ -23,7 +23,7 @@ func (r *postgresRepository) GetProfileByUserID(ctx context.Context, userID stri
 	var m repository.ProfileModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT nome, email, telefone, avatar_url, status FROM usuarios WHERE id = $1",
+		"SELECT name, email, phone, avatar_url, status FROM users WHERE id = $1",
 		userID,
 	).Scan(&m.Name, &m.Email, &m.Phone, &m.AvatarURL, &m.Status)
 	if err != nil {
@@ -38,7 +38,7 @@ func (r *postgresRepository) GetProfileByUserID(ctx context.Context, userID stri
 func (r *postgresRepository) UpdateProfile(ctx context.Context, profile *me.ProfileEntity) error {
 	_, err := r.pool.Exec(
 		ctx,
-		"UPDATE usuarios SET nome = $1, email = $2, telefone = $3, avatar_url = $4, status = $5 WHERE id = $6",
+		"UPDATE users SET name = $1, email = $2, phone = $3, avatar_url = $4, status = $5 WHERE id = $6",
 		profile.Name,
 		profile.Email,
 		profile.Phone,
@@ -56,7 +56,7 @@ func (r *postgresRepository) UpdateProfile(ctx context.Context, profile *me.Prof
 func (r *postgresRepository) GetAddressesByUserID(ctx context.Context, userID string) ([]*me.AddressEntity, error) {
 	rows, err := r.pool.Query(
 		ctx,
-		"SELECT id, usuario_id, apelido, destinatario, cep, logradouro, numero, complemento, bairro, cidade, estado, pais, is_principal FROM enderecos WHERE usuario_id = $1",
+		"SELECT id, user_id, label, receiver, zip_code, street, number, complement, district, city, state, country, is_default FROM addresses WHERE user_id = $1",
 		userID,
 	)
 	if err != nil {
@@ -95,7 +95,7 @@ func (r *postgresRepository) GetAddressByID(ctx context.Context, addressID strin
 	var m repository.AddressModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT id, usuario_id, apelido, destinatario, cep, logradouro, numero, complemento, bairro, cidade, estado, pais, is_principal FROM enderecos WHERE id = $1",
+		"SELECT id, user_id, label, receiver, zip_code, street, number, complement, district, city, state, country, is_default FROM addresses WHERE id = $1",
 		addressID,
 	).Scan(
 		&m.ID,
@@ -128,7 +128,7 @@ func (r *postgresRepository) CreateAddress(ctx context.Context, userID string, a
 	var m repository.AddressModel
 	err := r.pool.QueryRow(
 		ctx,
-		"INSERT INTO enderecos (usuario_id, apelido, destinatario, cep, logradouro, numero, complemento, bairro, cidade, estado, pais, is_principal, created_at, updated_at)"+
+		"INSERT INTO addresses (user_id, label, receiver, zip_code, street, number, complement, district, city, state, country, is_default, created_at, updated_at)"+
 			"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()) RETURNING id",
 		userID,
 		address.Label,
@@ -155,7 +155,7 @@ func (r *postgresRepository) CreateAddress(ctx context.Context, userID string, a
 func (r *postgresRepository) UpdateAddress(ctx context.Context, address *me.AddressEntity) error {
 	_, err := r.pool.Exec(
 		ctx,
-		"UPDATE enderecos SET apelido = $1, destinatario = $2, cep = $3, logradouro = $4, numero = $5, complemento = $6, bairro = $7, cidade = $8, estado = $9, pais = $10, is_principal = $11, updated_at = NOW() WHERE id = $12",
+		"UPDATE addresses SET label = $1, receiver = $2, zip_code = $3, street = $4, number = $5, complement = $6, district = $7, city = $8, state = $9, country = $10, is_default = $11, updated_at = NOW() WHERE id = $12",
 		address.Label,
 		address.Receiver,
 		address.ZIPCode,
@@ -179,7 +179,7 @@ func (r *postgresRepository) UpdateAddress(ctx context.Context, address *me.Addr
 func (r *postgresRepository) DeleteAddress(ctx context.Context, addressID string) error {
 	_, err := r.pool.Exec(
 		ctx,
-		"DELETE FROM enderecos WHERE id = $1",
+		"DELETE FROM addresses WHERE id = $1",
 		addressID,
 	)
 	if err != nil {
@@ -197,7 +197,7 @@ func (r *postgresRepository) GetPodologicalProfileByUserID(ctx context.Context, 
 	var m repository.PodologicalProfileModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT usuario_id, tipo_pisada, condicao_clinica, observacoes, updated_at FROM perfis_podologicos WHERE usuario_id = $1",
+		"SELECT user_id, footstrike_type, clinical_condition, notes, updated_at FROM podological_profiles WHERE user_id = $1",
 		userID,
 	).Scan(
 		&m.UserID,
@@ -221,8 +221,8 @@ func (r *postgresRepository) GetPodologicalProfileByUserID(ctx context.Context, 
 func (r *postgresRepository) UpsertPodologicalProfile(ctx context.Context, profile *me.PodologicalProfileEntity) error {
 	_, err := r.pool.Exec(
 		ctx,
-		"INSERT INTO perfis_podologicos (usuario_id, tipo_pisada, condicao_clinica, observacoes, updated_at)"+
-			"VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (usuario_id) DO UPDATE SET tipo_pisada = $2, condicao_clinica = $3, observacoes = $4, updated_at = NOW()",
+		"INSERT INTO podological_profiles (user_id, footstrike_type, clinical_condition, notes, updated_at)"+
+			"VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (user_id) DO UPDATE SET footstrike_type = $2, clinical_condition = $3, notes = $4, updated_at = NOW()",
 		profile.UserID,
 		profile.FootstrikeType,
 		profile.ClinicalCondition,
@@ -238,8 +238,8 @@ func (r *postgresRepository) UpsertPodologicalProfile(ctx context.Context, profi
 func (r *postgresRepository) CreateOnboarding(ctx context.Context, onboarding *me.OnboardingEntity) error {
 	_, err := r.pool.Exec(
 		ctx,
-		"INSERT INTO onboarding (usuario_id, status, etapa_atual_id, concluido_em, dispensado_em, created_at, updated_at) "+
-			"VALUES ($1, $2, (SELECT id FROM onboarding_etapas WHERE ordem = 1), $3, $4, NOW(), NOW())",
+		"INSERT INTO onboardings (user_id, status, current_step_id, completed_at, dismissed_at, created_at, updated_at) "+
+			"VALUES ($1, $2, (SELECT id FROM onboarding_steps WHERE position = 1), $3, $4, NOW(), NOW())",
 		onboarding.UserID,
 		onboarding.Status,
 		onboarding.CompletedAt,
@@ -257,7 +257,7 @@ func (r *postgresRepository) GetOnboardingByUserID(ctx context.Context, userID s
 	var om repository.OnboardingModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT o.usuario_id, o.status, o.etapa_atual_id, o.concluido_em, o.created_at, o.updated_at, e.id, e.tag, e.nome, e.ordem, e.obrigatorio FROM onboarding o LEFT JOIN onboarding_etapas e ON o.etapa_atual_id = e.id WHERE o.usuario_id = $1",
+		"SELECT o.user_id, o.status, o.current_step_id, o.completed_at, o.created_at, o.updated_at, e.id, e.tag, e.name, e.position, e.required FROM onboardings o LEFT JOIN onboarding_steps e ON o.current_step_id = e.id WHERE o.user_id = $1",
 		userID,
 	).Scan(
 		&om.UserID,
@@ -295,7 +295,7 @@ func (r *postgresRepository) GetOnboardingStepByTag(ctx context.Context, tag str
 	var m repository.OnboardingStepModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT id, tag, nome, ordem, obrigatorio FROM onboarding_etapas WHERE tag = $1",
+		"SELECT id, tag, name, position, required FROM onboarding_steps WHERE tag = $1",
 		tag,
 	).Scan(
 		&m.ID,
@@ -320,7 +320,7 @@ func (r *postgresRepository) GetOnboardingStepByOrder(ctx context.Context, order
 	var m repository.OnboardingStepModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT id, tag, nome, ordem, obrigatorio FROM onboarding_etapas WHERE ordem = $1",
+		"SELECT id, tag, name, position, required FROM onboarding_steps WHERE position = $1",
 		order,
 	).Scan(
 		&m.ID,
@@ -344,7 +344,7 @@ func (r *postgresRepository) GetOnboardingStepByOrder(ctx context.Context, order
 func (r *postgresRepository) UpdateOnboarding(ctx context.Context, userID string, onboarding *me.OnboardingEntity) error {
 	_, err := r.pool.Exec(
 		ctx,
-		"UPDATE onboarding SET status = $1, etapa_atual_id = $2, concluido_em = $3, dispensado_em = $4, updated_at = NOW() WHERE usuario_id = $5",
+		"UPDATE onboardings SET status = $1, current_step_id = $2, completed_at = $3, dismissed_at = $4, updated_at = NOW() WHERE user_id = $5",
 		onboarding.Status,
 		onboarding.CurrentStep.ID,
 		onboarding.CompletedAt,

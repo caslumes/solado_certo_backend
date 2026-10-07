@@ -3,10 +3,10 @@ package me
 type OnboardingStatus string
 
 const (
-	OnboardingStatusNotStarted OnboardingStatus = "nao_iniciado"
-	OnboardingStatusInProgress OnboardingStatus = "em_andamento"
-	OnboardingStatusCompleted  OnboardingStatus = "concluido"
-	OnboardingStatusDismissed  OnboardingStatus = "dispensado"
+	OnboardingStatusNotStarted OnboardingStatus = "not_started"
+	OnboardingStatusInProgress OnboardingStatus = "in_progress"
+	OnboardingStatusCompleted  OnboardingStatus = "completed"
+	OnboardingStatusDismissed  OnboardingStatus = "dismissed"
 )
 
 func (s OnboardingStatus) String() string {

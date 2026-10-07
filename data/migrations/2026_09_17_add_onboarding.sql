@@ -1,35 +1,35 @@
-CREATE TABLE onboarding_etapas (
+CREATE TABLE onboarding_steps (
     id bigserial PRIMARY KEY,
     tag varchar(40) NOT NULL UNIQUE,
-    nome varchar(80) NOT NULL,
-    ordem integer NOT NULL UNIQUE,
-    obrigatorio boolean NOT NULL DEFAULT true,
-    ativa boolean NOT NULL DEFAULT true,
+    name varchar(80) NOT NULL,
+    position integer NOT NULL UNIQUE,
+    required boolean NOT NULL DEFAULT true,
+    active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE onboarding (
-    usuario_id uuid PRIMARY KEY REFERENCES usuarios(id),
-    status varchar(20) NOT NULL DEFAULT 'nao_iniciado',
-    etapa_atual_id bigserial REFERENCES onboarding_etapas(id),
-    concluido_em timestamptz,
-    dispensado_em timestamptz,
+CREATE TABLE onboardings (
+    user_id uuid PRIMARY KEY REFERENCES users(id),
+    status varchar(20) NOT NULL DEFAULT 'not_started',
+    current_step_id bigint REFERENCES onboarding_steps(id),
+    completed_at timestamptz,
+    dismissed_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
 
-    CONSTRAINT onboarding_status_check
+    CONSTRAINT onboardings_status_check
         CHECK (status IN (
-            'nao_iniciado',
-            'em_andamento',
-            'concluido',
-            'dispensado'
+            'not_started',
+            'in_progress',
+            'completed',
+            'dismissed'
         ))
 );
 
-INSERT INTO onboarding_etapas (nome, tag, ordem, obrigatorio) VALUES
-('Bem-vindo', 'bem_vindo', 1, true),
-('Configuração de perfil', 'configuracao_perfil', 2, true),
-('Configuração de endereço', 'configuracao_endereco', 3, false),
-('Perfil podológico', 'perfil_podologico', 4, false),
-('Finalização', 'finalizacao', 5, true) ON CONFLICT (tag) DO NOTHING;
+INSERT INTO onboarding_steps (name, tag, position, required) VALUES
+('Bem-vindo', 'welcome', 1, true),
+('Configuração de perfil', 'profile_setup', 2, true),
+('Configuração de endereço', 'address_setup', 3, false),
+('Perfil podológico', 'podological_profile', 4, false),
+('Finalização', 'completion', 5, true) ON CONFLICT (tag) DO NOTHING;

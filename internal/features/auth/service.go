@@ -104,10 +104,10 @@ func (s *service) Register(context context.Context, input *RegisterInput) error 
 	}
 
 	ue := &UserEntity{
-		Nome:      name,
-		Email:     email,
-		Telefone:  phone,
-		SenhaHash: hashedPassword,
+		Name:         name,
+		Email:        email,
+		Phone:        phone,
+		PasswordHash: hashedPassword,
 	}
 
 	return s.r.CreateUser(context, ue)
@@ -134,7 +134,7 @@ func (s *service) Login(context context.Context, input *LoginInput) (TokenPair, 
 		return TokenPair{}, err
 	}
 
-	if !passwordMatches(ue.SenhaHash, input.Password) {
+	if !passwordMatches(ue.PasswordHash, input.Password) {
 		return TokenPair{}, app.ErrInvalidCredentials
 	}
 
@@ -184,7 +184,7 @@ func (s *service) RefreshToken(context context.Context, refreshToken string) (To
 		return TokenPair{}, err
 	}
 
-	if savedRefreshToken.UsuarioID != userID {
+	if savedRefreshToken.UserID != userID {
 		return TokenPair{}, app.ErrInvalidToken
 	}
 
@@ -296,7 +296,7 @@ func (s *service) createRefreshToken(context context.Context, userID string) (Re
 	}
 
 	return RefreshTokenEntity{
-		UsuarioID:  userID,
+		UserID:     userID,
 		TokenHash:  hashTokenID(tokenID),
 		DeviceName: "default",
 		ExpiresAt:  &refreshClaims.ExpiresAt.Time,

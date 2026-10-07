@@ -3,9 +3,9 @@ package catalog
 type AdvertisementStatus string
 
 const (
-	AdvertisementStatusDraft     AdvertisementStatus = "rascunho"
-	AdvertisementStatusPublished AdvertisementStatus = "publicado"
-	AdvertisementStatusPaused    AdvertisementStatus = "pausado"
-	AdvertisementStatusArchived  AdvertisementStatus = "arquivado"
-	AdvertisementStatusRemoved   AdvertisementStatus = "removido"
+	AdvertisementStatusDraft     AdvertisementStatus = "draft"
+	AdvertisementStatusPublished AdvertisementStatus = "published"
+	AdvertisementStatusPaused    AdvertisementStatus = "paused"
+	AdvertisementStatusArchived  AdvertisementStatus = "archived"
+	AdvertisementStatusRemoved   AdvertisementStatus = "removed"
 )

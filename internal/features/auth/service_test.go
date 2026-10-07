@@ -76,7 +76,7 @@ func (f *fakeRepository) RotateRefreshToken(_ context.Context, oldTokenHash stri
 func (f *fakeRepository) RevokeUserTokens(_ context.Context, userID string) error {
 	now := time.Now()
 	for _, rt := range f.tokens {
-		if rt.UsuarioID == userID && !rt.IsRevoked() {
+		if rt.UserID == userID && !rt.IsRevoked() {
 			rt.RevokedAt = &now
 		}
 	}
@@ -355,7 +355,7 @@ func TestRegisterStoresNormalizedFields(t *testing.T) {
 	if !ok {
 		t.Fatalf("user not stored under the normalized email: %v", repository.users)
 	}
-	if ue.Nome != "Ana Maria" || ue.Telefone != "19912345678" {
+	if ue.Name != "Ana Maria" || ue.Phone != "19912345678" {
 		t.Fatalf("stored user = %+v", ue)
 	}
 }

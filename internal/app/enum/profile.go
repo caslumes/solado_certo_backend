@@ -3,8 +3,8 @@ package enum
 type ProfileStatus string
 
 const (
-	ProfileStatusActive   ProfileStatus = "ativo"
-	ProfileStatusPending  ProfileStatus = "pendente"
-	ProfileStatusInactive ProfileStatus = "inativo"
-	ProfileStatusBlocked  ProfileStatus = "bloqueado"
+	ProfileStatusActive   ProfileStatus = "active"
+	ProfileStatusPending  ProfileStatus = "pending"
+	ProfileStatusInactive ProfileStatus = "inactive"
+	ProfileStatusBlocked  ProfileStatus = "blocked"
 )
