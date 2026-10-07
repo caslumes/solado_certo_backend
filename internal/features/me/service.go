@@ -304,7 +304,8 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 	}
 
 	if action == OnboardingActionDismiss {
-		onboarding.DispensedAt = helpers.TimePtr(time.Now())
+		onboarding.Status = OnboardingStatusDismissed
+		onboarding.DismissedAt = helpers.TimePtr(time.Now())
 		err = s.r.UpdateOnboarding(context, userID, onboarding)
 		if err != nil {
 			slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
@@ -345,6 +346,7 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 		return app.ErrOnboardingAlreadyCompleted
 	}
 
+	onboarding.Status = OnboardingStatusInProgress
 	onboarding.CurrentStep = *nextStep
 	err = s.r.UpdateOnboarding(context, userID, onboarding)
 	if err != nil {

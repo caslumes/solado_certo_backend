@@ -80,7 +80,7 @@ type OnboardingEntity struct {
 	Status      OnboardingStatus
 	CurrentStep OnboardingStepEntity
 	CompletedAt *time.Time
-	DispensedAt *time.Time
+	DismissedAt *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

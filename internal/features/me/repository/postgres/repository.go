@@ -243,7 +243,7 @@ func (r *postgresRepository) CreateOnboarding(ctx context.Context, onboarding *m
 		onboarding.UserID,
 		onboarding.Status,
 		onboarding.CompletedAt,
-		onboarding.DispensedAt,
+		onboarding.DismissedAt,
 	)
 	if err != nil {
 		return err
@@ -257,13 +257,14 @@ func (r *postgresRepository) GetOnboardingByUserID(ctx context.Context, userID s
 	var om repository.OnboardingModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT o.user_id, o.status, o.current_step_id, o.completed_at, o.created_at, o.updated_at, e.id, e.tag, e.name, e.position, e.required FROM onboardings o LEFT JOIN onboarding_steps e ON o.current_step_id = e.id WHERE o.user_id = $1",
+		"SELECT o.user_id, o.status, o.current_step_id, o.completed_at, o.dismissed_at, o.created_at, o.updated_at, e.id, e.tag, e.name, e.position, e.required FROM onboardings o LEFT JOIN onboarding_steps e ON o.current_step_id = e.id WHERE o.user_id = $1",
 		userID,
 	).Scan(
 		&om.UserID,
 		&om.Status,
 		&osm.ID,
 		&om.CompletedAt,
+		&om.DismissedAt,
 		&om.CreatedAt,
 		&om.UpdatedAt,
 		&osm.ID,
@@ -348,7 +349,7 @@ func (r *postgresRepository) UpdateOnboarding(ctx context.Context, userID string
 		onboarding.Status,
 		onboarding.CurrentStep.ID,
 		onboarding.CompletedAt,
-		onboarding.DispensedAt,
+		onboarding.DismissedAt,
 		userID,
 	)
 	if err != nil {

@@ -107,6 +107,7 @@ type OnboardingModel struct {
 	Status      string
 	CurrentStep OnboardingStepModel
 	CompletedAt *time.Time
+	DismissedAt *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -117,6 +118,7 @@ func (o *OnboardingModel) ToEntity() *me.OnboardingEntity {
 		Status:      me.OnboardingStatus(o.Status),
 		CurrentStep: *o.CurrentStep.ToEntity(),
 		CompletedAt: o.CompletedAt,
+		DismissedAt: o.DismissedAt,
 		CreatedAt:   o.CreatedAt,
 		UpdatedAt:   o.UpdatedAt,
 	}
