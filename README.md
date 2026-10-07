@@ -55,16 +55,17 @@ The server exits with a clear error at startup if a required variable is missing
 
 SQL migrations live in `data/migrations`, named `YYYY_MM_DD_description.sql`. Compose mounts that folder as `/docker-entrypoint-initdb.d`, so Postgres runs every file in name order **only when the data directory (`data/postgres`) is empty**, that is, on the first start.
 
-A new migration does not run on an existing database. Apply it by hand (works in PowerShell and sh):
+A new migration does not run on an existing database. Apply it with:
 
 ```sh
-docker compose cp data/migrations/<file>.sql db:/tmp/migration.sql
-docker compose exec db psql -v ON_ERROR_STOP=1 -U postgres -d solado_certo -f /tmp/migration.sql
+make migrate
 ```
 
-or start from scratch: `make down`, delete `data/postgres`, `make up` (this erases all data; restore with `make restore` if needed).
+It runs every file in `data/migrations` in name order against the running database. Migration files must therefore be safe to run more than once (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`), and a schema change goes in a new file instead of editing an applied one.
 
-The migrations create the schema and the onboarding steps only. The catalog starts empty.
+To start from scratch instead: `make down`, delete `data/postgres`, `make up` (this erases all data; restore with `make restore` if needed).
+
+The migrations create the schema and the onboarding steps only. `make seed` loads development data (users, categories, ads).
 
 From the host, Postgres listens on port `2345` (user `postgres`, password `postgres`, database `solado_certo`).
 
@@ -93,6 +94,8 @@ Never run the stack on two machines at the same time.
 | `make test` | Run the Go tests inside the server container |
 | `make dump` | Write a SQL dump to `data/dump.sql` |
 | `make restore` | Load `data/dump.sql` into the database |
+| `make migrate` | Apply every migration in `data/migrations` to the running database |
+| `make seed` | Load the development data in `data/seeds/dev.sql` (safe to run again) |
 | `make secret-key` | Print a random value for `SECRET_KEY` |
 | `make format` / `make tidy` | `go fmt` / `go mod tidy` (need Go on the host) |
 | `make audit` | Verify modules, tidy, format, and run `golangci-lint` in the container |

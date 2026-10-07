@@ -404,10 +404,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     CONSTRAINT audit_logs_user_fk FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE INDEX idx_advertisements_seller_status ON advertisements (seller_id, status);
-CREATE INDEX idx_advertisements_category_status_price ON advertisements (category_id, status, price);
-CREATE INDEX idx_orders_buyer_created_at ON orders (buyer_id, created_at DESC);
-CREATE INDEX idx_order_items_seller_order ON order_items (seller_id, order_id);
-CREATE INDEX idx_payments_order_status ON payments (order_id, status);
-CREATE INDEX idx_support_tickets_opened_by_status ON support_tickets (opened_by, status);
-CREATE INDEX idx_audit_logs_entity_entity_id_created_at ON audit_logs (entity, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_advertisements_seller_status ON advertisements (seller_id, status);
+CREATE INDEX IF NOT EXISTS idx_advertisements_category_status_price ON advertisements (category_id, status, price);
+CREATE INDEX IF NOT EXISTS idx_orders_buyer_created_at ON orders (buyer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_order_items_seller_order ON order_items (seller_id, order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_order_status ON payments (order_id, status);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_opened_by_status ON support_tickets (opened_by, status);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity_entity_id_created_at ON audit_logs (entity, entity_id, created_at DESC);

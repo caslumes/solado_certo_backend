@@ -1,4 +1,4 @@
-CREATE TABLE onboarding_steps (
+CREATE TABLE IF NOT EXISTS onboarding_steps (
     id bigserial PRIMARY KEY,
     tag varchar(40) NOT NULL UNIQUE,
     name varchar(80) NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE onboarding_steps (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE onboardings (
+CREATE TABLE IF NOT EXISTS onboardings (
     user_id uuid PRIMARY KEY REFERENCES users(id),
     status varchar(20) NOT NULL DEFAULT 'not_started',
     current_step_id bigint REFERENCES onboarding_steps(id),

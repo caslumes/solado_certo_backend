@@ -6,7 +6,7 @@ SEED_FILE=data/seeds/dev.sql
 DB_USER?=postgres
 DB_NAME?=solado_certo
 
-.PHONY: up down dump restore seed restart logs test format secret-key tidy audit
+.PHONY: up down dump restore migrate seed restart logs test format secret-key tidy audit
 
 up:
 	docker compose up --build -d
@@ -19,6 +19,8 @@ dump:
 restore:
 	docker compose cp ${DUMP_FILE} ${DB_CONTAINER}:/tmp/dump.sql
 	${EXEC} -T ${DB_CONTAINER} psql -v ON_ERROR_STOP=1 -q -o /dev/null -U ${DB_USER} -d ${DB_NAME} -f /tmp/dump.sql
+migrate:
+	${EXEC} -T ${DB_CONTAINER} sh -c 'for f in /docker-entrypoint-initdb.d/*.sql; do echo "$$f"; PGOPTIONS="-c client_min_messages=warning" psql -v ON_ERROR_STOP=1 -q -o /dev/null -U ${DB_USER} -d ${DB_NAME} -f "$$f" || exit 1; done'
 seed:
 	docker compose cp ${SEED_FILE} ${DB_CONTAINER}:/tmp/seed.sql
 	${EXEC} -T ${DB_CONTAINER} psql -v ON_ERROR_STOP=1 -q -o /dev/null -U ${DB_USER} -d ${DB_NAME} -f /tmp/seed.sql
