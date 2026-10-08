@@ -3,6 +3,7 @@ package me
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,8 @@ type fakeRepository struct {
 	podologicalProfiles map[string]*PodologicalProfileEntity
 	painPoints          map[string]PainPointEntity
 	consents            []*ConsentEntity
+	addresses           map[string]*AddressEntity
+	nextAddressID       int
 }
 
 func newFakeRepository() *fakeRepository {
@@ -45,7 +48,58 @@ func newFakeRepository() *fakeRepository {
 			painPointHeel: {ID: painPointHeel, Name: "Calcanhar"},
 			painPointArch: {ID: painPointArch, Name: "Arco plantar"},
 		},
+		addresses: map[string]*AddressEntity{},
 	}
+}
+
+func (f *fakeRepository) GetAddressesByUserID(_ context.Context, userID string) ([]*AddressEntity, error) {
+	addresses := []*AddressEntity{}
+	for _, address := range f.addresses {
+		if address.UserID == userID {
+			copied := *address
+			addresses = append(addresses, &copied)
+		}
+	}
+	return addresses, nil
+}
+
+func (f *fakeRepository) GetAddressByID(_ context.Context, addressID string) (*AddressEntity, error) {
+	address, ok := f.addresses[addressID]
+	if !ok {
+		return nil, app.ErrAddressNotFound
+	}
+	copied := *address
+	return &copied, nil
+}
+
+func (f *fakeRepository) CreateAddress(_ context.Context, userID string, address *AddressEntity) (*AddressEntity, error) {
+	f.nextAddressID++
+	copied := *address
+	copied.ID = fmt.Sprintf("address-%d", f.nextAddressID)
+	copied.UserID = userID
+	f.addresses[copied.ID] = &copied
+	created := copied
+	return &created, nil
+}
+
+func (f *fakeRepository) UpdateAddress(_ context.Context, address *AddressEntity) error {
+	copied := *address
+	f.addresses[address.ID] = &copied
+	return nil
+}
+
+func (f *fakeRepository) DeleteAddress(_ context.Context, addressID string) error {
+	delete(f.addresses, addressID)
+	return nil
+}
+
+func (f *fakeRepository) GetPainPoints(_ context.Context) ([]*PainPointEntity, error) {
+	painPoints := []*PainPointEntity{}
+	for _, painPoint := range f.painPoints {
+		copied := painPoint
+		painPoints = append(painPoints, &copied)
+	}
+	return painPoints, nil
 }
 
 func (f *fakeRepository) GetPodologicalProfileByUserID(_ context.Context, userID string) (*PodologicalProfileEntity, error) {
@@ -489,5 +543,446 @@ func TestRevokeConsentRejectsUnknownPurpose(t *testing.T) {
 	err := NewService(newFakeRepository()).RevokeConsent(context.Background(), testUserID, "marketing")
 	if !errors.Is(err, app.ErrInvalidInput) {
 		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
+	}
+}
+
+var errDatabase = errors.New("database is down")
+
+type failingRepository struct {
+	repository
+}
+
+func (failingRepository) GetProfileByUserID(context.Context, string) (*ProfileEntity, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) GetAddressesByUserID(context.Context, string) ([]*AddressEntity, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) GetAddressByID(context.Context, string) (*AddressEntity, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) CreateAddress(context.Context, string, *AddressEntity) (*AddressEntity, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) GetPodologicalProfileByUserID(context.Context, string) (*PodologicalProfileEntity, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) GetPainPoints(context.Context) ([]*PainPointEntity, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) GetActiveConsents(context.Context, string) ([]*ConsentEntity, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) GetActiveConsent(context.Context, string, ConsentPurpose) (*ConsentEntity, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) GrantConsent(context.Context, *ConsentEntity) (bool, error) {
+	return false, errDatabase
+}
+
+func (failingRepository) RevokeConsentAndDeletePodologicalProfile(context.Context, string) error {
+	return errDatabase
+}
+
+func (failingRepository) GetOnboardingByUserID(context.Context, string) (*OnboardingEntity, error) {
+	return nil, errDatabase
+}
+
+func TestServicePropagatesRepositoryErrors(t *testing.T) {
+	ctx := context.Background()
+	s := NewService(failingRepository{})
+	tests := map[string]func() error{
+		"get profile":   func() error { _, err := s.GetProfileByUserID(ctx, testUserID); return err },
+		"edit profile":  func() error { _, err := s.EditProfile(ctx, testUserID, ProfileInput{}); return err },
+		"get addresses": func() error { _, err := s.GetAddressesByUserID(ctx, testUserID); return err },
+		"add address":   func() error { _, err := s.AddAddress(ctx, testUserID, AddressInput{}); return err },
+		"edit address": func() error {
+			_, err := s.EditAddress(ctx, testUserID, "address-1", AddressInput{})
+			return err
+		},
+		"delete address":          func() error { return s.DeleteAddress(ctx, testUserID, "address-1") },
+		"get podological profile": func() error { _, err := s.GetPodologicalProfileByUserID(ctx, testUserID); return err },
+		"edit podological profile": func() error {
+			_, err := s.EditPodologicalProfile(ctx, testUserID, validPodologicalProfileInput())
+			return err
+		},
+		"get pain points": func() error { _, err := s.GetPainPoints(ctx); return err },
+		"get consents":    func() error { _, err := s.GetConsents(ctx, testUserID); return err },
+		"grant consent": func() error {
+			_, _, err := s.GrantConsent(ctx, testUserID, ConsentInput{Purpose: "podological_profile", TermsVersion: "podological-profile-v1"})
+			return err
+		},
+		"revoke consent": func() error { return s.RevokeConsent(ctx, testUserID, "podological_profile") },
+		"get onboarding": func() error { _, err := s.GetOnboardingByUserID(ctx, testUserID); return err },
+		"change onboarding step": func() error {
+			return s.ChangeOnboardingStep(ctx, testUserID, OnboardingInput{Step: "welcome", Action: "advance"})
+		},
+	}
+
+	for name, call := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); !errors.Is(err, errDatabase) {
+				t.Fatalf("err = %v, want %v", err, errDatabase)
+			}
+		})
+	}
+}
+
+func TestGetProfileReturnsStoredProfile(t *testing.T) {
+	repository := newFakeRepository()
+	repository.profiles[testUserID].Name = "Maria"
+
+	profile, err := NewService(repository).GetProfileByUserID(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("GetProfileByUserID: %v", err)
+	}
+	if profile.ID != testUserID || profile.Name != "Maria" {
+		t.Fatalf("profile = %+v", profile)
+	}
+}
+
+func TestGetProfileReturnsNotFoundForUnknownUser(t *testing.T) {
+	_, err := NewService(newFakeRepository()).GetProfileByUserID(context.Background(), "unknown")
+	if !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
+	}
+}
+
+func validProfileInput() ProfileInput {
+	return ProfileInput{
+		Name:      "  Maria Silva ",
+		Email:     " Maria@Example.COM ",
+		Phone:     "(11) 91234-5678",
+		AvatarURL: "https://example.com/avatar.png",
+	}
+}
+
+func TestEditProfileSavesNormalizedData(t *testing.T) {
+	repository := newFakeRepository()
+
+	profile, err := NewService(repository).EditProfile(context.Background(), testUserID, validProfileInput())
+	if err != nil {
+		t.Fatalf("EditProfile: %v", err)
+	}
+
+	want := ProfileEntity{
+		ID:        testUserID,
+		Name:      "Maria Silva",
+		Email:     "maria@example.com",
+		Phone:     "11912345678",
+		AvatarURL: "https://example.com/avatar.png",
+		Status:    enum.ProfileStatusPending,
+	}
+	if *profile != want {
+		t.Fatalf("profile = %+v, want %+v", *profile, want)
+	}
+	if stored := *repository.profiles[testUserID]; stored != want {
+		t.Fatalf("stored profile = %+v, want %+v", stored, want)
+	}
+}
+
+func TestEditProfileRejectsInvalidInput(t *testing.T) {
+	tests := map[string]func(*ProfileInput){
+		"blank name":    func(in *ProfileInput) { in.Name = "   " },
+		"long name":     func(in *ProfileInput) { in.Name = strings.Repeat("a", 121) },
+		"invalid email": func(in *ProfileInput) { in.Email = "maria@" },
+		"invalid phone": func(in *ProfileInput) { in.Phone = "1234" },
+		"foreign phone": func(in *ProfileInput) { in.Phone = "+1 202 555 0100" },
+	}
+
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			repository := newFakeRepository()
+			input := validProfileInput()
+			mutate(&input)
+
+			_, err := NewService(repository).EditProfile(context.Background(), testUserID, input)
+
+			if !errors.Is(err, app.ErrInvalidInput) {
+				t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
+			}
+			if repository.profiles[testUserID].Name != "" {
+				t.Fatal("invalid profile was saved")
+			}
+		})
+	}
+}
+
+func TestEditProfileReturnsNotFoundForUnknownUser(t *testing.T) {
+	_, err := NewService(newFakeRepository()).EditProfile(context.Background(), "unknown", validProfileInput())
+	if !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
+	}
+}
+
+func validAddressInput() AddressInput {
+	return AddressInput{
+		Label:     helpers.StringPtr("Casa"),
+		Receiver:  "Maria Silva",
+		ZIPCode:   "01001000",
+		Street:    "Praça da Sé",
+		Number:    "100",
+		District:  "Sé",
+		City:      "São Paulo",
+		State:     "SP",
+		Country:   "BR",
+		IsDefault: true,
+	}
+}
+
+func addAddress(t *testing.T, s *service, userID string) *AddressEntity {
+	t.Helper()
+	address, err := s.AddAddress(context.Background(), userID, validAddressInput())
+	if err != nil {
+		t.Fatalf("AddAddress: %v", err)
+	}
+	return address
+}
+
+func TestAddAddressStoresItForTheUser(t *testing.T) {
+	s := NewService(newFakeRepository())
+
+	address := addAddress(t, s, testUserID)
+
+	if address.ID == "" || address.UserID != testUserID || address.Street != "Praça da Sé" || !address.IsDefault {
+		t.Fatalf("address = %+v", address)
+	}
+	addresses, err := s.GetAddressesByUserID(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("GetAddressesByUserID: %v", err)
+	}
+	if len(addresses) != 1 || addresses[0].ID != address.ID {
+		t.Fatalf("addresses = %+v, want only %s", addresses, address.ID)
+	}
+}
+
+func TestGetAddressesReturnsOnlyTheUsersAddresses(t *testing.T) {
+	s := NewService(newFakeRepository())
+	addAddress(t, s, "other-user")
+
+	addresses, err := s.GetAddressesByUserID(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("GetAddressesByUserID: %v", err)
+	}
+	if len(addresses) != 0 {
+		t.Fatalf("addresses = %+v, want none", addresses)
+	}
+}
+
+func TestEditAddressUpdatesOwnAddress(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository)
+	address := addAddress(t, s, testUserID)
+	input := validAddressInput()
+	input.Number = "200"
+	input.Complement = helpers.StringPtr("Apto 3")
+	input.IsDefault = false
+
+	edited, err := s.EditAddress(context.Background(), testUserID, address.ID, input)
+	if err != nil {
+		t.Fatalf("EditAddress: %v", err)
+	}
+
+	stored := repository.addresses[address.ID]
+	if edited.Number != "200" || stored.Number != "200" || stored.Complement == nil || *stored.Complement != "Apto 3" || stored.IsDefault {
+		t.Fatalf("stored address = %+v", stored)
+	}
+	if stored.UserID != testUserID {
+		t.Fatalf("owner changed to %s", stored.UserID)
+	}
+}
+
+func TestEditAddressHidesOtherUsersAddress(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository)
+	address := addAddress(t, s, "other-user")
+	input := validAddressInput()
+	input.Street = "Rua Invasora"
+
+	_, err := s.EditAddress(context.Background(), testUserID, address.ID, input)
+
+	if !errors.Is(err, app.ErrAddressNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrAddressNotFound)
+	}
+	if repository.addresses[address.ID].Street != "Praça da Sé" {
+		t.Fatal("another user's address was changed")
+	}
+}
+
+func TestEditAddressReturnsNotFoundForUnknownAddress(t *testing.T) {
+	_, err := NewService(newFakeRepository()).EditAddress(context.Background(), testUserID, "missing", validAddressInput())
+	if !errors.Is(err, app.ErrAddressNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrAddressNotFound)
+	}
+}
+
+func TestDeleteAddressRemovesOwnAddress(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository)
+	address := addAddress(t, s, testUserID)
+
+	if err := s.DeleteAddress(context.Background(), testUserID, address.ID); err != nil {
+		t.Fatalf("DeleteAddress: %v", err)
+	}
+	if _, ok := repository.addresses[address.ID]; ok {
+		t.Fatal("address still exists")
+	}
+}
+
+func TestDeleteAddressHidesOtherUsersAddress(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository)
+	address := addAddress(t, s, "other-user")
+
+	err := s.DeleteAddress(context.Background(), testUserID, address.ID)
+
+	if !errors.Is(err, app.ErrAddressNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrAddressNotFound)
+	}
+	if _, ok := repository.addresses[address.ID]; !ok {
+		t.Fatal("another user's address was deleted")
+	}
+}
+
+func TestDeleteAddressReturnsNotFoundForUnknownAddress(t *testing.T) {
+	err := NewService(newFakeRepository()).DeleteAddress(context.Background(), testUserID, "missing")
+	if !errors.Is(err, app.ErrAddressNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrAddressNotFound)
+	}
+}
+
+func TestGetPodologicalProfileReturnsEmptyProfileWhenNoneSaved(t *testing.T) {
+	profile, err := NewService(newFakeRepository()).GetPodologicalProfileByUserID(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("GetPodologicalProfileByUserID: %v", err)
+	}
+	if profile.FootstrikeType != "" || profile.ClinicalCondition != nil || len(profile.PainPoints) != 0 {
+		t.Fatalf("profile = %+v, want empty", profile)
+	}
+}
+
+func TestGetPodologicalProfileReturnsSavedProfile(t *testing.T) {
+	s := NewService(newFakeRepository())
+	grantPodologicalConsent(t, s)
+	if _, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput()); err != nil {
+		t.Fatalf("EditPodologicalProfile: %v", err)
+	}
+
+	profile, err := s.GetPodologicalProfileByUserID(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("GetPodologicalProfileByUserID: %v", err)
+	}
+	if profile.FootstrikeType != "pronated" || len(profile.PainPoints) != 2 {
+		t.Fatalf("profile = %+v", profile)
+	}
+}
+
+func TestGetPainPointsReturnsAll(t *testing.T) {
+	painPoints, err := NewService(newFakeRepository()).GetPainPoints(context.Background())
+	if err != nil {
+		t.Fatalf("GetPainPoints: %v", err)
+	}
+	if len(painPoints) != 2 {
+		t.Fatalf("pain points = %+v, want 2", painPoints)
+	}
+}
+
+func TestRevokePrescriptionConsentKeepsPodologicalProfile(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository)
+	grantPodologicalConsent(t, s)
+	if _, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput()); err != nil {
+		t.Fatalf("EditPodologicalProfile: %v", err)
+	}
+	repository.consents = append(repository.consents, &ConsentEntity{
+		UserID: testUserID, Purpose: ConsentPurposePrescription, TermsVersion: "prescription-v1",
+	})
+
+	if err := s.RevokeConsent(context.Background(), testUserID, "prescription"); err != nil {
+		t.Fatalf("RevokeConsent: %v", err)
+	}
+
+	if repository.activeConsent(testUserID, ConsentPurposePrescription) != nil {
+		t.Fatal("prescription consent is still active")
+	}
+	if repository.activeConsent(testUserID, ConsentPurposePodologicalProfile) == nil {
+		t.Fatal("podological profile consent was revoked")
+	}
+	if _, ok := repository.podologicalProfiles[testUserID]; !ok {
+		t.Fatal("podological profile was deleted")
+	}
+}
+
+func TestGetOnboardingReturnsExistingWithoutRecreating(t *testing.T) {
+	s, _ := startOnboarding(t)
+	changeStep(t, s, "welcome", OnboardingActionAdvance)
+
+	onboarding, err := s.GetOnboardingByUserID(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("GetOnboardingByUserID: %v", err)
+	}
+	if onboarding.Status != OnboardingStatusInProgress || onboarding.CurrentStep.Tag != "profile_setup" {
+		t.Fatalf("onboarding = %+v, want in_progress at profile_setup", onboarding)
+	}
+}
+
+func TestOnboardingRetreatGoesToPreviousStep(t *testing.T) {
+	s, repository := startOnboarding(t)
+	changeStep(t, s, "welcome", OnboardingActionAdvance)
+	changeStep(t, s, "profile_setup", OnboardingActionAdvance)
+
+	changeStep(t, s, "address_setup", OnboardingActionRetreat)
+
+	onboarding := repository.onboardings[testUserID]
+	if onboarding.Status != OnboardingStatusInProgress || onboarding.CurrentStep.Tag != "profile_setup" {
+		t.Fatalf("onboarding = %+v, want in_progress at profile_setup", onboarding)
+	}
+}
+
+func TestOnboardingRejectsInvalidTransitions(t *testing.T) {
+	tests := map[string]struct {
+		input   OnboardingInput
+		wantErr error
+	}{
+		"unknown action":           {input: OnboardingInput{Step: "welcome", Action: "jump"}},
+		"unknown step":             {input: OnboardingInput{Step: "missing", Action: "advance"}, wantErr: app.ErrOnboardingStepNotFound},
+		"retreat from first step":  {input: OnboardingInput{Step: "welcome", Action: "retreat"}, wantErr: app.ErrOnboardingStepNotFound},
+		"advance past last step":   {input: OnboardingInput{Step: "completion", Action: "advance"}, wantErr: app.ErrOnboardingStepNotFound},
+		"skip required first step": {input: OnboardingInput{Step: "welcome", Action: "skip"}},
+		"skip required last step":  {input: OnboardingInput{Step: "completion", Action: "skip"}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s, repository := startOnboarding(t)
+
+			err := s.ChangeOnboardingStep(context.Background(), testUserID, tt.input)
+
+			if err == nil {
+				t.Fatal("transition succeeded")
+			}
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			onboarding := repository.onboardings[testUserID]
+			if onboarding.Status != OnboardingStatusNotStarted || onboarding.CurrentStep.Tag != "welcome" {
+				t.Fatalf("onboarding changed to %+v", onboarding)
+			}
+		})
+	}
+}
+
+func TestChangeOnboardingStepRequiresExistingOnboarding(t *testing.T) {
+	err := NewService(newFakeRepository()).ChangeOnboardingStep(context.Background(), testUserID, OnboardingInput{Step: "welcome", Action: "advance"})
+	if !errors.Is(err, app.ErrOnboardingNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrOnboardingNotFound)
 	}
 }
