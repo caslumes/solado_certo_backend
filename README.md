@@ -92,6 +92,8 @@ Never run the stack on two machines at the same time.
 | `make restart` | `down` then `up` |
 | `make logs` | Follow the container logs |
 | `make test` | Run the Go tests inside the server container |
+| `make test-db` | Create the `solado_certo_test` database and apply the migrations to it (safe to run again) |
+| `make coverage` | Run the tests on the host with a coverage profile and print the total for `internal/` |
 | `make dump` | Write a SQL dump to `data/dump.sql` |
 | `make restore` | Load `data/dump.sql` into the database |
 | `make migrate` | Apply every migration in `data/migrations` to the running database |
@@ -148,7 +150,10 @@ Each feature follows the same layering: the HTTP handler decodes the request and
 
 ```sh
 make test     # go test ./... inside the server container
+make coverage # go test on the host, prints total coverage of internal/
 make audit    # includes golangci-lint
 ```
 
 With Go installed on the host, `go test ./...` works too.
+
+Repository tests run against a separate `solado_certo_test` database in the same Postgres container. Create it once with `make test-db` (and again after adding a migration). Tests that need it read `TEST_DATABASE_URL` (`make test` and `make coverage` set it) and are skipped when it is unset or the database is unreachable. They refuse to run against a database whose name does not end in `_test`, and they empty its tables between tests.

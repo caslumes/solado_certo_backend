@@ -2,3 +2,4 @@
 data/postgres
 tmp
 data/dump.sql*
+coverage.out
