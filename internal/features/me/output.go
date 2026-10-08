@@ -36,10 +36,23 @@ func (a *AddressesOutput) FromEntities(entities []*AddressEntity) []AddressOutpu
 }
 
 type PodologicalProfileOutput struct {
-	FootstrikeType    *string    `json:"footstrike_type"`
-	ClinicalCondition *string    `json:"clinical_condition"`
-	Obs               *string    `json:"obs"`
-	UpdatedAt         *time.Time `json:"updated_at"`
+	FootstrikeType    *string           `json:"footstrike_type"`
+	ClinicalCondition *string           `json:"clinical_condition"`
+	Obs               *string           `json:"obs"`
+	PainPoints        []PainPointOutput `json:"pain_points"`
+	UpdatedAt         *time.Time        `json:"updated_at"`
+}
+
+type PainPointOutput struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+}
+
+type ConsentOutput struct {
+	Purpose      string    `json:"purpose"`
+	TermsVersion string    `json:"terms_version"`
+	GrantedAt    time.Time `json:"granted_at"`
 }
 
 type OnboardingOutput struct {

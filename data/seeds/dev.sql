@@ -58,6 +58,15 @@ INSERT INTO podological_conditions (id, name, description) VALUES
 ('00000000-0000-0000-0000-000000000505', 'Pé plano', 'Arco plantar rebaixado')
 ON CONFLICT (name) DO NOTHING;
 
+INSERT INTO pain_points (id, name, description) VALUES
+('00000000-0000-0000-0000-000000000701', 'Calcanhar', 'Dor na parte de trás ou na base do calcanhar'),
+('00000000-0000-0000-0000-000000000702', 'Arco plantar', 'Dor na região central da sola'),
+('00000000-0000-0000-0000-000000000703', 'Dedos', 'Dor ou desconforto nos dedos'),
+('00000000-0000-0000-0000-000000000704', 'Antepé', 'Dor na parte da frente da sola, abaixo dos dedos'),
+('00000000-0000-0000-0000-000000000705', 'Tornozelo', 'Dor ou instabilidade no tornozelo'),
+('00000000-0000-0000-0000-000000000706', 'Lateral do pé', 'Dor na borda externa do pé')
+ON CONFLICT (name) DO NOTHING;
+
 INSERT INTO advertisements (id, seller_id, category_id, title, description, price, stock, status, prescription_required, custom_made_allowed, side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, updated_at) VALUES
 ('00000000-0000-0000-0000-000000000601', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000301',
  'Palmilha de silicone para fascite plantar', 'Palmilha em gel de silicone com absorção de impacto no calcanhar.', 89.90, 25, 'published', false, false,

@@ -48,9 +48,15 @@ func (r addressRequest) toInput() me.AddressInput {
 }
 
 type podologicalProfileRequest struct {
-	FootstrikeType    string  `json:"footstrike_type"`
-	ClinicalCondition string  `json:"clinical_condition"`
-	Obs               *string `json:"obs,omitempty"`
+	FootstrikeType    string   `json:"footstrike_type"`
+	ClinicalCondition *string  `json:"clinical_condition"`
+	Obs               *string  `json:"obs,omitempty"`
+	PainPointIDs      []string `json:"pain_point_ids"`
+}
+
+type consentRequest struct {
+	Purpose      string `json:"purpose"`
+	TermsVersion string `json:"terms_version"`
 }
 
 type onboardingRequest struct {
@@ -67,6 +73,10 @@ type Service interface {
 	me.DeleteAddressUseCase
 	me.GetPodologicalProfileUseCase
 	me.EditPodologicalProfileUseCase
+	me.GetPainPointsUseCase
+	me.GetConsentsUseCase
+	me.GrantConsentUseCase
+	me.RevokeConsentUseCase
 	me.GetOnboardingUseCase
 	me.ChangeOnboardingStepUseCase
 }
@@ -249,15 +259,113 @@ func (h *Handler) EditPodologicalProfile(c *gin.Context) {
 		FootstrikeType:    request.FootstrikeType,
 		ClinicalCondition: request.ClinicalCondition,
 		Obs:               request.Obs,
+		PainPointIDs:      request.PainPointIDs,
 	}
 
 	profile, err := h.service.EditPodologicalProfile(c.Request.Context(), userID, input)
 	if err != nil {
+		if errors.Is(err, app.ErrConsentRequired) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, app.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not edit podological profile"})
 		return
 	}
 
 	c.JSON(http.StatusOK, profile.ToOutput())
+}
+
+func (h *Handler) GetPainPoints(c *gin.Context) {
+	painPoints, err := h.service.GetPainPoints(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get pain points"})
+		return
+	}
+
+	outputs := make([]me.PainPointOutput, 0, len(painPoints))
+	for _, painPoint := range painPoints {
+		outputs = append(outputs, *painPoint.ToOutput())
+	}
+
+	c.JSON(http.StatusOK, outputs)
+}
+
+func (h *Handler) GetConsents(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	consents, err := h.service.GetConsents(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get consents"})
+		return
+	}
+
+	outputs := make([]me.ConsentOutput, 0, len(consents))
+	for _, consent := range consents {
+		outputs = append(outputs, *consent.ToOutput())
+	}
+
+	c.JSON(http.StatusOK, outputs)
+}
+
+func (h *Handler) GrantConsent(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var request consentRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
+		return
+	}
+
+	consent, created, err := h.service.GrantConsent(c.Request.Context(), userID, me.ConsentInput{
+		Purpose:      request.Purpose,
+		TermsVersion: request.TermsVersion,
+	})
+	if err != nil {
+		if errors.Is(err, app.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not grant consent"})
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	c.JSON(status, consent.ToOutput())
+}
+
+func (h *Handler) RevokeConsent(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	err := h.service.RevokeConsent(c.Request.Context(), userID, c.Param("purpose"))
+	if err != nil {
+		if errors.Is(err, app.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not revoke consent"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) GetOnboarding(c *gin.Context) {

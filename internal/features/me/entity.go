@@ -61,17 +61,55 @@ func (a *AddressEntity) ToOutput() *AddressOutput {
 type PodologicalProfileEntity struct {
 	UserID            string
 	FootstrikeType    string
-	ClinicalCondition string
+	ClinicalCondition *string
 	Obs               *string
+	PainPoints        []PainPointEntity
 	UpdatedAt         time.Time
 }
 
 func (p *PodologicalProfileEntity) ToOutput() *PodologicalProfileOutput {
+	painPoints := make([]PainPointOutput, 0, len(p.PainPoints))
+	for _, painPoint := range p.PainPoints {
+		painPoints = append(painPoints, *painPoint.ToOutput())
+	}
+
 	return &PodologicalProfileOutput{
 		FootstrikeType:    NullIfZeroValueString(p.FootstrikeType),
-		ClinicalCondition: NullIfZeroValueString(p.ClinicalCondition),
+		ClinicalCondition: p.ClinicalCondition,
 		Obs:               p.Obs,
+		PainPoints:        painPoints,
 		UpdatedAt:         NullIfZeroValueTime(p.UpdatedAt),
+	}
+}
+
+type PainPointEntity struct {
+	ID          string
+	Name        string
+	Description *string
+}
+
+func (p *PainPointEntity) ToOutput() *PainPointOutput {
+	return &PainPointOutput{
+		ID:          p.ID,
+		Name:        p.Name,
+		Description: p.Description,
+	}
+}
+
+type ConsentEntity struct {
+	ID           string
+	UserID       string
+	Purpose      ConsentPurpose
+	TermsVersion string
+	GrantedAt    time.Time
+	RevokedAt    *time.Time
+}
+
+func (c *ConsentEntity) ToOutput() *ConsentOutput {
+	return &ConsentOutput{
+		Purpose:      c.Purpose.String(),
+		TermsVersion: c.TermsVersion,
+		GrantedAt:    c.GrantedAt,
 	}
 }
 

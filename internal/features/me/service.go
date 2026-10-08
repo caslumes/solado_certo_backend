@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
@@ -44,6 +47,22 @@ type EditPodologicalProfileUseCase interface {
 	EditPodologicalProfile(context context.Context, userID string, input PodologicalProfileInput) (*PodologicalProfileEntity, error)
 }
 
+type GetPainPointsUseCase interface {
+	GetPainPoints(context context.Context) ([]*PainPointEntity, error)
+}
+
+type GetConsentsUseCase interface {
+	GetConsents(context context.Context, userID string) ([]*ConsentEntity, error)
+}
+
+type GrantConsentUseCase interface {
+	GrantConsent(context context.Context, userID string, input ConsentInput) (consent *ConsentEntity, created bool, err error)
+}
+
+type RevokeConsentUseCase interface {
+	RevokeConsent(context context.Context, userID string, purpose string) error
+}
+
 type GetOnboardingUseCase interface {
 	GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error)
 }
@@ -61,7 +80,14 @@ type repository interface {
 	UpdateAddress(context context.Context, address *AddressEntity) error
 	DeleteAddress(context context.Context, addressID string) error
 	GetPodologicalProfileByUserID(context context.Context, userID string) (*PodologicalProfileEntity, error)
-	UpsertPodologicalProfile(context context.Context, profile *PodologicalProfileEntity) error
+	SavePodologicalProfile(context context.Context, profile *PodologicalProfileEntity, painPointIDs []string) error
+	GetPainPoints(context context.Context) ([]*PainPointEntity, error)
+	CountPainPoints(context context.Context, ids []string) (int, error)
+	GetActiveConsents(context context.Context, userID string) ([]*ConsentEntity, error)
+	GetActiveConsent(context context.Context, userID string, purpose ConsentPurpose) (*ConsentEntity, error)
+	GrantConsent(context context.Context, consent *ConsentEntity) (created bool, err error)
+	RevokeConsent(context context.Context, userID string, purpose ConsentPurpose) error
+	RevokeConsentAndDeletePodologicalProfile(context context.Context, userID string) error
 	CreateOnboarding(context context.Context, onboarding *OnboardingEntity) error
 	GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error)
 	GetOnboardingStepByTag(context context.Context, tag string) (*OnboardingStepEntity, error)
@@ -225,30 +251,188 @@ func (s *service) GetPodologicalProfileByUserID(context context.Context, userID 
 	return profile, nil
 }
 
-func (s *service) EditPodologicalProfile(context context.Context, userID string, input PodologicalProfileInput) (*PodologicalProfileEntity, error) {
-	profile, err := s.r.GetPodologicalProfileByUserID(context, userID)
-	if err != nil {
-		if !errors.Is(err, app.ErrPodologicalProfileNotFound) {
-			slog.ErrorContext(context, "EditPodologicalProfile failed", "user_id", userID, "error", err)
-			return nil, err
-		}
+const (
+	maxClinicalConditionLength = 120
+	maxPodologicalNotesLength  = 1000
+)
 
-		profile = &PodologicalProfileEntity{
-			UserID: userID,
-		}
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+func (s *service) EditPodologicalProfile(context context.Context, userID string, input PodologicalProfileInput) (*PodologicalProfileEntity, error) {
+	if err := s.requireConsent(context, userID, ConsentPurposePodologicalProfile); err != nil {
+		return nil, err
 	}
 
-	profile.FootstrikeType = input.FootstrikeType
-	profile.ClinicalCondition = input.ClinicalCondition
-	profile.Obs = input.Obs
+	profile, painPointIDs, err := s.validatePodologicalProfile(context, userID, input)
+	if err != nil {
+		return nil, err
+	}
 
-	err = s.r.UpsertPodologicalProfile(context, profile)
+	err = s.r.SavePodologicalProfile(context, profile, painPointIDs)
 	if err != nil {
 		slog.ErrorContext(context, "EditPodologicalProfile failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 
-	return profile, nil
+	saved, err := s.r.GetPodologicalProfileByUserID(context, userID)
+	if err != nil {
+		slog.ErrorContext(context, "EditPodologicalProfile failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	return saved, nil
+}
+
+func (s *service) requireConsent(context context.Context, userID string, purpose ConsentPurpose) error {
+	consent, err := s.r.GetActiveConsent(context, userID, purpose)
+	if err != nil {
+		if errors.Is(err, app.ErrConsentNotFound) {
+			return app.ErrConsentRequired
+		}
+
+		slog.ErrorContext(context, "requireConsent failed", "user_id", userID, "purpose", purpose, "error", err)
+		return err
+	}
+
+	if consent.TermsVersion != currentTermsVersions[purpose] {
+		return app.ErrConsentRequired
+	}
+
+	return nil
+}
+
+func (s *service) validatePodologicalProfile(context context.Context, userID string, input PodologicalProfileInput) (*PodologicalProfileEntity, []string, error) {
+	footstrikeType := FootstrikeType(strings.TrimSpace(input.FootstrikeType))
+	if !footstrikeType.IsValid() {
+		return nil, nil, fmt.Errorf("%w: invalid footstrike type", app.ErrInvalidInput)
+	}
+
+	clinicalCondition := trimToNil(input.ClinicalCondition)
+	if clinicalCondition != nil && utf8.RuneCountInString(*clinicalCondition) > maxClinicalConditionLength {
+		return nil, nil, fmt.Errorf("%w: clinical condition is too long", app.ErrInvalidInput)
+	}
+
+	notes := trimToNil(input.Obs)
+	if notes != nil && utf8.RuneCountInString(*notes) > maxPodologicalNotesLength {
+		return nil, nil, fmt.Errorf("%w: notes are too long", app.ErrInvalidInput)
+	}
+
+	painPointIDs, err := s.validatePainPointIDs(context, input.PainPointIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &PodologicalProfileEntity{
+		UserID:            userID,
+		FootstrikeType:    string(footstrikeType),
+		ClinicalCondition: clinicalCondition,
+		Obs:               notes,
+	}, painPointIDs, nil
+}
+
+func (s *service) validatePainPointIDs(context context.Context, ids []string) ([]string, error) {
+	unique := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if !uuidPattern.MatchString(id) {
+			return nil, fmt.Errorf("%w: invalid pain point id", app.ErrInvalidInput)
+		}
+		if !seen[id] {
+			seen[id] = true
+			unique = append(unique, id)
+		}
+	}
+
+	if len(unique) == 0 {
+		return unique, nil
+	}
+
+	count, err := s.r.CountPainPoints(context, unique)
+	if err != nil {
+		slog.ErrorContext(context, "validatePainPointIDs failed", "error", err)
+		return nil, err
+	}
+	if count != len(unique) {
+		return nil, fmt.Errorf("%w: unknown pain point id", app.ErrInvalidInput)
+	}
+
+	return unique, nil
+}
+
+func trimToNil(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*s)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func (s *service) GetPainPoints(context context.Context) ([]*PainPointEntity, error) {
+	painPoints, err := s.r.GetPainPoints(context)
+	if err != nil {
+		slog.ErrorContext(context, "GetPainPoints failed", "error", err)
+		return nil, err
+	}
+
+	return painPoints, nil
+}
+
+func (s *service) GetConsents(context context.Context, userID string) ([]*ConsentEntity, error) {
+	consents, err := s.r.GetActiveConsents(context, userID)
+	if err != nil {
+		slog.ErrorContext(context, "GetConsents failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	return consents, nil
+}
+
+func (s *service) GrantConsent(context context.Context, userID string, input ConsentInput) (*ConsentEntity, bool, error) {
+	purpose := ConsentPurpose(input.Purpose)
+	termsVersion, ok := currentTermsVersions[purpose]
+	if !ok {
+		return nil, false, fmt.Errorf("%w: unknown consent purpose", app.ErrInvalidInput)
+	}
+	if input.TermsVersion != termsVersion {
+		return nil, false, fmt.Errorf("%w: terms version is not the current one", app.ErrInvalidInput)
+	}
+
+	consent := &ConsentEntity{
+		UserID:       userID,
+		Purpose:      purpose,
+		TermsVersion: termsVersion,
+	}
+	created, err := s.r.GrantConsent(context, consent)
+	if err != nil {
+		slog.ErrorContext(context, "GrantConsent failed", "user_id", userID, "purpose", purpose, "error", err)
+		return nil, false, err
+	}
+
+	return consent, created, nil
+}
+
+func (s *service) RevokeConsent(context context.Context, userID string, purpose string) error {
+	consentPurpose := ConsentPurpose(purpose)
+
+	var err error
+	switch consentPurpose {
+	case ConsentPurposePodologicalProfile:
+		err = s.r.RevokeConsentAndDeletePodologicalProfile(context, userID)
+	case ConsentPurposePrescription:
+		err = s.r.RevokeConsent(context, userID, consentPurpose)
+	default:
+		return fmt.Errorf("%w: unknown consent purpose", app.ErrInvalidInput)
+	}
+	if err != nil {
+		slog.ErrorContext(context, "RevokeConsent failed", "user_id", userID, "purpose", purpose, "error", err)
+		return err
+	}
+
+	return nil
 }
 
 func (s *service) GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error) {

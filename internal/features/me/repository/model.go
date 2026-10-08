@@ -69,7 +69,7 @@ func (a *AddressModel) ToEntity() *me.AddressEntity {
 type PodologicalProfileModel struct {
 	UserID            string
 	FootstrikeType    string
-	ClinicalCondition string
+	ClinicalCondition *string
 	Obs               *string
 	UpdatedAt         time.Time
 }
@@ -80,7 +80,42 @@ func (p *PodologicalProfileModel) ToEntity() *me.PodologicalProfileEntity {
 		FootstrikeType:    p.FootstrikeType,
 		ClinicalCondition: p.ClinicalCondition,
 		Obs:               p.Obs,
+		PainPoints:        []me.PainPointEntity{},
 		UpdatedAt:         p.UpdatedAt,
+	}
+}
+
+type PainPointModel struct {
+	ID          string
+	Name        string
+	Description *string
+}
+
+func (p *PainPointModel) ToEntity() *me.PainPointEntity {
+	return &me.PainPointEntity{
+		ID:          p.ID,
+		Name:        p.Name,
+		Description: p.Description,
+	}
+}
+
+type ConsentModel struct {
+	ID           string
+	UserID       string
+	Purpose      string
+	TermsVersion string
+	GrantedAt    time.Time
+	RevokedAt    *time.Time
+}
+
+func (c *ConsentModel) ToEntity() *me.ConsentEntity {
+	return &me.ConsentEntity{
+		ID:           c.ID,
+		UserID:       c.UserID,
+		Purpose:      me.ConsentPurpose(c.Purpose),
+		TermsVersion: c.TermsVersion,
+		GrantedAt:    c.GrantedAt,
+		RevokedAt:    c.RevokedAt,
 	}
 }
 

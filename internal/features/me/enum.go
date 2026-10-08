@@ -26,3 +26,35 @@ const (
 func (a OnboardingAction) String() string {
 	return string(a)
 }
+
+type ConsentPurpose string
+
+const (
+	ConsentPurposePodologicalProfile ConsentPurpose = "podological_profile"
+	ConsentPurposePrescription       ConsentPurpose = "prescription"
+)
+
+func (p ConsentPurpose) String() string {
+	return string(p)
+}
+
+var currentTermsVersions = map[ConsentPurpose]string{
+	ConsentPurposePodologicalProfile: "podological-profile-v1",
+}
+
+type FootstrikeType string
+
+const (
+	FootstrikeTypeNeutral   FootstrikeType = "neutral"
+	FootstrikeTypePronated  FootstrikeType = "pronated"
+	FootstrikeTypeSupinated FootstrikeType = "supinated"
+	FootstrikeTypeUnknown   FootstrikeType = "unknown"
+)
+
+func (f FootstrikeType) IsValid() bool {
+	switch f {
+	case FootstrikeTypeNeutral, FootstrikeTypePronated, FootstrikeTypeSupinated, FootstrikeTypeUnknown:
+		return true
+	}
+	return false
+}

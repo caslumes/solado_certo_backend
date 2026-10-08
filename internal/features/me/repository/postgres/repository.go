@@ -215,13 +215,42 @@ func (r *postgresRepository) GetPodologicalProfileByUserID(ctx context.Context, 
 	}
 
 	e := m.ToEntity()
+
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT p.id, p.name, p.description FROM podological_profile_pain_points pp "+
+			"JOIN pain_points p ON p.id = pp.pain_point_id WHERE pp.profile_user_id = $1 ORDER BY p.name",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var pm repository.PainPointModel
+		if err := rows.Scan(&pm.ID, &pm.Name, &pm.Description); err != nil {
+			return nil, err
+		}
+		e.PainPoints = append(e.PainPoints, *pm.ToEntity())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return e, nil
 }
 
-func (r *postgresRepository) UpsertPodologicalProfile(ctx context.Context, profile *me.PodologicalProfileEntity) error {
-	_, err := r.pool.Exec(
+func (r *postgresRepository) SavePodologicalProfile(ctx context.Context, profile *me.PodologicalProfileEntity, painPointIDs []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(
 		ctx,
-		"INSERT INTO podological_profiles (user_id, footstrike_type, clinical_condition, notes, updated_at)"+
+		"INSERT INTO podological_profiles (user_id, footstrike_type, clinical_condition, notes, updated_at) "+
 			"VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (user_id) DO UPDATE SET footstrike_type = $2, clinical_condition = $3, notes = $4, updated_at = NOW()",
 		profile.UserID,
 		profile.FootstrikeType,
@@ -232,7 +261,188 @@ func (r *postgresRepository) UpsertPodologicalProfile(ctx context.Context, profi
 		return err
 	}
 
-	return nil
+	_, err = tx.Exec(ctx, "DELETE FROM podological_profile_pain_points WHERE profile_user_id = $1", profile.UserID)
+	if err != nil {
+		return err
+	}
+
+	if len(painPointIDs) > 0 {
+		_, err = tx.Exec(
+			ctx,
+			"INSERT INTO podological_profile_pain_points (profile_user_id, pain_point_id) SELECT $1, unnest($2::uuid[])",
+			profile.UserID,
+			painPointIDs,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *postgresRepository) GetPainPoints(ctx context.Context) ([]*me.PainPointEntity, error) {
+	rows, err := r.pool.Query(ctx, "SELECT id, name, description FROM pain_points ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	painPoints := []*me.PainPointEntity{}
+	for rows.Next() {
+		var m repository.PainPointModel
+		if err := rows.Scan(&m.ID, &m.Name, &m.Description); err != nil {
+			return nil, err
+		}
+		painPoints = append(painPoints, m.ToEntity())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return painPoints, nil
+}
+
+func (r *postgresRepository) CountPainPoints(ctx context.Context, ids []string) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, "SELECT count(*) FROM pain_points WHERE id = ANY($1::uuid[])", ids).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+const consentColumns = "id, user_id, purpose, terms_version, granted_at, revoked_at"
+
+func scanConsent(row pgx.Row) (*me.ConsentEntity, error) {
+	var m repository.ConsentModel
+	err := row.Scan(&m.ID, &m.UserID, &m.Purpose, &m.TermsVersion, &m.GrantedAt, &m.RevokedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.ToEntity(), nil
+}
+
+func (r *postgresRepository) GetActiveConsents(ctx context.Context, userID string) ([]*me.ConsentEntity, error) {
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT "+consentColumns+" FROM consents WHERE user_id = $1 AND revoked_at IS NULL ORDER BY granted_at",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	consents := []*me.ConsentEntity{}
+	for rows.Next() {
+		consent, err := scanConsent(rows)
+		if err != nil {
+			return nil, err
+		}
+		consents = append(consents, consent)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return consents, nil
+}
+
+func (r *postgresRepository) GetActiveConsent(ctx context.Context, userID string, purpose me.ConsentPurpose) (*me.ConsentEntity, error) {
+	consent, err := scanConsent(r.pool.QueryRow(
+		ctx,
+		"SELECT "+consentColumns+" FROM consents WHERE user_id = $1 AND purpose = $2 AND revoked_at IS NULL",
+		userID,
+		purpose,
+	))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrConsentNotFound
+		}
+
+		return nil, err
+	}
+
+	return consent, nil
+}
+
+func (r *postgresRepository) GrantConsent(ctx context.Context, consent *me.ConsentEntity) (bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(
+		ctx,
+		"UPDATE consents SET revoked_at = NOW() WHERE user_id = $1 AND purpose = $2 AND revoked_at IS NULL AND terms_version <> $3",
+		consent.UserID,
+		consent.Purpose,
+		consent.TermsVersion,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	result, err := tx.Exec(
+		ctx,
+		"INSERT INTO consents (user_id, purpose, terms_version, granted_at) VALUES ($1, $2, $3, NOW()) "+
+			"ON CONFLICT (user_id, purpose) WHERE revoked_at IS NULL DO NOTHING",
+		consent.UserID,
+		consent.Purpose,
+		consent.TermsVersion,
+	)
+	if err != nil {
+		return false, err
+	}
+	created := result.RowsAffected() == 1
+
+	saved, err := scanConsent(tx.QueryRow(
+		ctx,
+		"SELECT "+consentColumns+" FROM consents WHERE user_id = $1 AND purpose = $2 AND revoked_at IS NULL",
+		consent.UserID,
+		consent.Purpose,
+	))
+	if err != nil {
+		return false, err
+	}
+	*consent = *saved
+
+	return created, tx.Commit(ctx)
+}
+
+func (r *postgresRepository) RevokeConsent(ctx context.Context, userID string, purpose me.ConsentPurpose) error {
+	_, err := r.pool.Exec(
+		ctx,
+		"UPDATE consents SET revoked_at = NOW() WHERE user_id = $1 AND purpose = $2 AND revoked_at IS NULL",
+		userID,
+		purpose,
+	)
+	return err
+}
+
+func (r *postgresRepository) RevokeConsentAndDeletePodologicalProfile(ctx context.Context, userID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	statements := []string{
+		"UPDATE consents SET revoked_at = NOW() WHERE user_id = $1 AND purpose = 'podological_profile' AND revoked_at IS NULL",
+		"DELETE FROM podological_profile_pain_points WHERE profile_user_id = $1",
+		"DELETE FROM podological_profiles WHERE user_id = $1",
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(ctx, statement, userID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *postgresRepository) CreateOnboarding(ctx context.Context, onboarding *me.OnboardingEntity) error {

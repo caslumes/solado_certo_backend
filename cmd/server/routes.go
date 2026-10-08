@@ -37,6 +37,11 @@ func initRoutes(r *gin.Engine, a *config.App) {
 
 		meGroup.GET("/podological-profile", a.MeHandler.GetPodologicalProfile)
 		meGroup.PUT("/podological-profile", a.MeHandler.EditPodologicalProfile)
+		meGroup.GET("/pain-points", a.MeHandler.GetPainPoints)
+
+		meGroup.GET("/consents", a.MeHandler.GetConsents)
+		meGroup.POST("/consents", a.MeHandler.GrantConsent)
+		meGroup.DELETE("/consents/:purpose", a.MeHandler.RevokeConsent)
 
 		meGroup.GET("/onboarding", a.MeHandler.GetOnboarding)
 		meGroup.PUT("/onboarding", a.MeHandler.ChangeOnboardingStep)

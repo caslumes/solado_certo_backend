@@ -23,8 +23,14 @@ type AddressInput struct {
 
 type PodologicalProfileInput struct {
 	FootstrikeType    string
-	ClinicalCondition string
+	ClinicalCondition *string
 	Obs               *string
+	PainPointIDs      []string
+}
+
+type ConsentInput struct {
+	Purpose      string
+	TermsVersion string
 }
 
 type OnboardingInput struct {

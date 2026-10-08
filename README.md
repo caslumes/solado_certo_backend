@@ -114,7 +114,10 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `GET` / `PATCH` | `/me/profile` | Read / edit name, email, phone, avatar |
 | `GET` / `POST` | `/me/addresses` | List / add addresses |
 | `PATCH` / `DELETE` | `/me/addresses/:addressID` | Edit / delete an address |
-| `GET` / `PUT` | `/me/podological-profile` | Read / save footstrike type, clinical condition and notes |
+| `GET` / `PUT` | `/me/podological-profile` | Read / save `footstrike_type` (`neutral`, `pronated`, `supinated`, `unknown`), optional `clinical_condition` and `obs`, and `pain_point_ids`. Saving needs an active `podological_profile` consent (403 otherwise) |
+| `GET` | `/me/pain-points` | Pain points the user can pick |
+| `GET` / `POST` | `/me/consents` | List active consents / grant one (`purpose`, `terms_version`; 201 when new, 200 when already active) |
+| `DELETE` | `/me/consents/:purpose` | Revoke a consent. Revoking `podological_profile` also deletes the podological profile |
 | `GET` / `PUT` | `/me/onboarding` | Read the current onboarding step / change it (`action`: `advance`, `retreat`, `skip`, `dismiss`, `complete`) |
 | `GET` | `/catalog` | List published ads. Query: `page`, `limit` (max 100), `q`, `category`, `price_min`, `price_max`, `prescription_required`, `custom_made_allowed`, `side`, `size`, `material`, `rigidity`, `usage_indication` |
 | `GET` | `/catalog/items/:advertisementID` | One ad |
