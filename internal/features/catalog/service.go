@@ -21,7 +21,7 @@ type GetCategoriesUseCase interface {
 }
 
 type repository interface {
-	GetAdvertisements(ctx context.Context, limit uint, offset uint, filters AdvertisementFilters) ([]*AdvertisementEntity, error)
+	GetAdvertisements(ctx context.Context, limit uint, offset uint, filters AdvertisementFilters, sort AdvertisementSort) ([]*AdvertisementEntity, error)
 	GetAdvertisementByID(ctx context.Context, id string) (*AdvertisementEntity, error)
 	CountAdvertisements(ctx context.Context, filters AdvertisementFilters) (uint, error)
 	GetCategories(ctx context.Context) ([]*CategoryEntity, error)
@@ -52,6 +52,13 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 	if input.Filters != nil {
 		filters = *input.Filters
 	}
+	sort := input.Sort
+	if sort == "" {
+		sort = AdvertisementSortRelevance
+	}
+	if !sort.IsValid() {
+		return AdvertisementPage{}, fmt.Errorf("%w: invalid sort", app.ErrInvalidInput)
+	}
 	if filters.Category != nil && !helpers.IsUUID(*filters.Category) {
 		return AdvertisementPage{}, fmt.Errorf("%w: invalid category id", app.ErrInvalidInput)
 	}
@@ -62,7 +69,7 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 	}
 
 	offset := (page - 1) * limit
-	ads, err := s.repo.GetAdvertisements(ctx, limit, offset, filters)
+	ads, err := s.repo.GetAdvertisements(ctx, limit, offset, filters, sort)
 	if err != nil {
 		return AdvertisementPage{}, err
 	}

@@ -13,6 +13,7 @@ import (
 type getAdvertisementsQuery struct {
 	Page                 uint     `form:"page,default=1" binding:"min=1"`
 	Limit                uint     `form:"limit,default=10" binding:"min=1,max=100"`
+	Sort                 string   `form:"sort" binding:"omitempty,oneof=relevance price_asc price_desc newest"`
 	Query                *string  `form:"q"`
 	Category             *string  `form:"category"`
 	PriceMin             *float64 `form:"price_min"`
@@ -45,13 +46,14 @@ func (h *Handler) GetAdvertisements(c *gin.Context) {
 
 	var query getAdvertisementsQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters: page and limit must be positive integers (limit at most 100), prices must be numbers and flags must be booleans"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters: page and limit must be positive integers (limit at most 100), prices must be numbers and flags must be booleans and sort must be relevance, price_asc, price_desc or newest"})
 		return
 	}
 
 	ap, err := h.service.GetAdvertisements(c.Request.Context(), catalog.GetAdvertisementsInput{
 		Page:  query.Page,
 		Limit: query.Limit,
+		Sort:  catalog.AdvertisementSort(query.Sort),
 		Filters: &catalog.AdvertisementFilters{
 			Query:                query.Query,
 			Category:             query.Category,

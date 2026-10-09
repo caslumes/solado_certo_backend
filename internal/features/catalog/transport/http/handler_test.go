@@ -86,8 +86,23 @@ func TestGetAdvertisementsBindsFilters(t *testing.T) {
 	}
 }
 
+func TestGetAdvertisementsBindsSort(t *testing.T) {
+	for _, sort := range []string{"", "relevance", "price_asc", "price_desc", "newest"} {
+		t.Run(sort, func(t *testing.T) {
+			code, input := getAdvertisements(t, "?sort="+sort)
+
+			if code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", code, http.StatusOK)
+			}
+			if string(input.Sort) != sort {
+				t.Fatalf("sort = %q, want %q", input.Sort, sort)
+			}
+		})
+	}
+}
+
 func TestGetAdvertisementsRejectsInvalidQuery(t *testing.T) {
-	for _, query := range []string{"?page=0", "?page=-1", "?limit=0", "?limit=101", "?price_min=abc", "?custom_made_allowed=maybe"} {
+	for _, query := range []string{"?page=0", "?page=-1", "?limit=0", "?limit=101", "?price_min=abc", "?custom_made_allowed=maybe", "?sort=cheapest"} {
 		t.Run(query, func(t *testing.T) {
 			code, input := getAdvertisements(t, query)
 

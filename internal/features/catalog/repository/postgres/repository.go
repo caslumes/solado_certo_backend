@@ -84,13 +84,25 @@ func (r *postgresRepository) getImages(ctx context.Context, advertisementID stri
 	return images, nil
 }
 
-func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, offset uint, filters catalog.AdvertisementFilters) ([]*catalog.AdvertisementEntity, error) {
+var orderBy = map[catalog.AdvertisementSort]string{
+	catalog.AdvertisementSortRelevance: "advertisements.created_at DESC, advertisements.id DESC",
+	catalog.AdvertisementSortNewest:    "advertisements.created_at DESC, advertisements.id DESC",
+	catalog.AdvertisementSortPriceAsc:  "advertisements.price ASC, advertisements.created_at DESC, advertisements.id DESC",
+	catalog.AdvertisementSortPriceDesc: "advertisements.price DESC, advertisements.created_at DESC, advertisements.id DESC",
+}
+
+func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, offset uint, filters catalog.AdvertisementFilters, sort catalog.AdvertisementSort) ([]*catalog.AdvertisementEntity, error) {
+	order, ok := orderBy[sort]
+	if !ok {
+		return nil, fmt.Errorf("%w: invalid sort", app.ErrInvalidInput)
+	}
+
 	whereClause, args := whereStringFromFilters(filters)
 	argsCount := len(args)
 	rows, err := r.pool.Query(
 		ctx,
 		"SELECT "+advertisementColumns+" FROM advertisements "+whereClause+
-			" ORDER BY created_at DESC, id DESC LIMIT $"+strconv.Itoa(argsCount+1)+" OFFSET $"+strconv.Itoa(argsCount+2),
+			" ORDER BY "+order+" LIMIT $"+strconv.Itoa(argsCount+1)+" OFFSET $"+strconv.Itoa(argsCount+2),
 		append(args, limit, offset)...,
 	)
 	if err != nil {

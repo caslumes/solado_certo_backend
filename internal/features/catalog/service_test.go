@@ -26,11 +26,12 @@ type fakeRepository struct {
 	gotOffset       uint
 	gotFilters      AdvertisementFilters
 	gotCountFilters AdvertisementFilters
+	gotSort         AdvertisementSort
 	called          bool
 }
 
-func (f *fakeRepository) GetAdvertisements(_ context.Context, limit uint, offset uint, filters AdvertisementFilters) ([]*AdvertisementEntity, error) {
-	f.gotLimit, f.gotOffset, f.gotFilters = limit, offset, filters
+func (f *fakeRepository) GetAdvertisements(_ context.Context, limit uint, offset uint, filters AdvertisementFilters, sort AdvertisementSort) ([]*AdvertisementEntity, error) {
+	f.gotLimit, f.gotOffset, f.gotFilters, f.gotSort = limit, offset, filters, sort
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -107,6 +108,37 @@ func TestGetAdvertisementsPassesOffsetAndFilters(t *testing.T) {
 	}
 	if repository.gotCountFilters != *filters {
 		t.Fatalf("count filters = %+v, want the list filters %+v", repository.gotCountFilters, *filters)
+	}
+}
+
+func TestGetAdvertisementsSortsByRelevanceByDefault(t *testing.T) {
+	repository := &fakeRepository{}
+
+	getAdvertisements(t, repository, GetAdvertisementsInput{})
+
+	if repository.gotSort != AdvertisementSortRelevance {
+		t.Fatalf("sort = %q, want %q", repository.gotSort, AdvertisementSortRelevance)
+	}
+}
+
+func TestGetAdvertisementsPassesSort(t *testing.T) {
+	for _, sort := range []AdvertisementSort{AdvertisementSortRelevance, AdvertisementSortPriceAsc, AdvertisementSortPriceDesc, AdvertisementSortNewest} {
+		t.Run(string(sort), func(t *testing.T) {
+			repository := &fakeRepository{}
+
+			getAdvertisements(t, repository, GetAdvertisementsInput{Sort: sort})
+
+			if repository.gotSort != sort {
+				t.Fatalf("sort = %q, want %q", repository.gotSort, sort)
+			}
+		})
+	}
+}
+
+func TestGetAdvertisementsRejectsUnknownSort(t *testing.T) {
+	_, err := NewService(&fakeRepository{}).GetAdvertisements(context.Background(), GetAdvertisementsInput{Sort: "cheapest"})
+	if !errors.Is(err, app.ErrInvalidInput) {
+		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
 	}
 }
 

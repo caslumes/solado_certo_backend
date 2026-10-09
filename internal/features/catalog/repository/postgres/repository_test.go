@@ -54,7 +54,12 @@ func (f fixture) insertImage(t *testing.T, adID, url string, position int, isCov
 
 func (f fixture) list(t *testing.T, limit, offset uint, filters catalog.AdvertisementFilters) []*catalog.AdvertisementEntity {
 	t.Helper()
-	ads, err := f.r.GetAdvertisements(context.Background(), limit, offset, filters)
+	return f.listSorted(t, limit, offset, filters, catalog.AdvertisementSortNewest)
+}
+
+func (f fixture) listSorted(t *testing.T, limit, offset uint, filters catalog.AdvertisementFilters, sort catalog.AdvertisementSort) []*catalog.AdvertisementEntity {
+	t.Helper()
+	ads, err := f.r.GetAdvertisements(context.Background(), limit, offset, filters, sort)
 	if err != nil {
 		t.Fatalf("GetAdvertisements: %v", err)
 	}
@@ -95,6 +100,54 @@ func TestGetAdvertisementsReturnsOnlyPublishedNewestFirst(t *testing.T) {
 
 	if want := []string{"Novo", "Meio", "Antigo"}; !equal(got, want) {
 		t.Fatalf("titles = %v, want %v", got, want)
+	}
+}
+
+func TestGetAdvertisementsSorts(t *testing.T) {
+	f := newFixture(t)
+	now := time.Now().UTC()
+	f.insertAd(t, testutil.Ad{Title: "Barata antiga", Price: "50.00", CreatedAt: now.Add(-3 * time.Hour)})
+	f.insertAd(t, testutil.Ad{Title: "Cara", Price: "300.00", CreatedAt: now.Add(-2 * time.Hour)})
+	f.insertAd(t, testutil.Ad{Title: "Barata nova", Price: "50.00", CreatedAt: now.Add(-time.Hour)})
+	f.insertAd(t, testutil.Ad{Title: "Média", Price: "120.00", CreatedAt: now})
+
+	tests := map[catalog.AdvertisementSort][]string{
+		catalog.AdvertisementSortNewest:    {"Média", "Barata nova", "Cara", "Barata antiga"},
+		catalog.AdvertisementSortRelevance: {"Média", "Barata nova", "Cara", "Barata antiga"},
+		catalog.AdvertisementSortPriceAsc:  {"Barata nova", "Barata antiga", "Média", "Cara"},
+		catalog.AdvertisementSortPriceDesc: {"Cara", "Média", "Barata nova", "Barata antiga"},
+	}
+
+	for sort, want := range tests {
+		t.Run(string(sort), func(t *testing.T) {
+			if got := titles(f.listSorted(t, 10, 0, catalog.AdvertisementFilters{}, sort)); !equal(got, want) {
+				t.Fatalf("titles = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestGetAdvertisementsSortsAcrossPages(t *testing.T) {
+	f := newFixture(t)
+	for _, price := range []string{"300.00", "9.00", "50.00", "20.00", "100.00"} {
+		f.insertAd(t, testutil.Ad{Title: price, Price: price})
+	}
+
+	first := titles(f.listSorted(t, 2, 0, catalog.AdvertisementFilters{}, catalog.AdvertisementSortPriceAsc))
+	second := titles(f.listSorted(t, 2, 2, catalog.AdvertisementFilters{}, catalog.AdvertisementSortPriceAsc))
+
+	if !equal(first, []string{"9.00", "20.00"}) || !equal(second, []string{"50.00", "100.00"}) {
+		t.Fatalf("pages = %v, %v", first, second)
+	}
+}
+
+func TestGetAdvertisementsRejectsUnknownSort(t *testing.T) {
+	f := newFixture(t)
+
+	_, err := f.r.GetAdvertisements(context.Background(), 10, 0, catalog.AdvertisementFilters{}, "price; DROP TABLE advertisements")
+
+	if !errors.Is(err, app.ErrInvalidInput) {
+		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
 	}
 }
 
