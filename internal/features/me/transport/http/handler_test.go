@@ -444,6 +444,18 @@ func TestGetProfileReturnsProfile(t *testing.T) {
 	}
 }
 
+func TestGetProfileMapsNotFound(t *testing.T) {
+	handler := NewHandler(fakeService{
+		getProfile: func(context.Context, string) (*me.ProfileEntity, error) { return nil, app.ErrUserNotFound },
+	})
+
+	recorder := serve(handler, request(http.MethodGet, "/me/profile", ""))
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
 func TestEditProfileDecodesRequest(t *testing.T) {
 	var received me.ProfileInput
 	handler := NewHandler(fakeService{
@@ -471,6 +483,7 @@ func TestEditProfileMapsErrors(t *testing.T) {
 		want int
 	}{
 		"invalid input":          {app.ErrInvalidInput, http.StatusBadRequest},
+		"user not found":         {app.ErrUserNotFound, http.StatusNotFound},
 		"e-mail or phone in use": {app.ErrUserAlreadyExists, http.StatusConflict},
 	}
 

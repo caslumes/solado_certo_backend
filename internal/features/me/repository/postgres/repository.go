@@ -30,6 +30,10 @@ func (r *postgresRepository) GetProfileByUserID(ctx context.Context, userID stri
 		userID,
 	).Scan(&m.Name, &m.Email, &m.Phone, &m.AvatarURL, &m.Status)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrUserNotFound
+		}
+
 		return nil, err
 	}
 

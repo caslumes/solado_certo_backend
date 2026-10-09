@@ -11,6 +11,16 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/testutil"
 )
 
+func TestGetProfileReturnsNotFoundForUnknownUser(t *testing.T) {
+	r := NewPostgresRepository(testutil.DB(t))
+
+	_, err := r.GetProfileByUserID(context.Background(), "00000000-0000-0000-0000-000000000000")
+
+	if !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
+	}
+}
+
 func TestUpdateProfileRejectsEmailOrPhoneInUse(t *testing.T) {
 	pool := testutil.DB(t)
 	r := NewPostgresRepository(pool)

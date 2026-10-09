@@ -105,6 +105,11 @@ func (h *Handler) GetProfile(c *gin.Context) {
 
 	profile, err := h.service.GetProfileByUserID(c.Request.Context(), userID)
 	if err != nil {
+		if errors.Is(err, app.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get profile"})
 		return
 	}
@@ -134,6 +139,10 @@ func (h *Handler) EditProfile(c *gin.Context) {
 	profile, err := h.service.EditProfile(c.Request.Context(), userID, input)
 	if errors.Is(err, app.ErrInvalidInput) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid name, email or phone"})
+		return
+	}
+	if errors.Is(err, app.ErrUserNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 	if errors.Is(err, app.ErrUserAlreadyExists) {
