@@ -54,6 +54,7 @@ func (m *AdvertisementModel) ToEntity() *catalog.AdvertisementEntity {
 	}
 
 	return &catalog.AdvertisementEntity{
+		ID:                   m.ID,
 		SellerID:             m.SellerID,
 		CategoryID:           m.CategoryID,
 		Title:                m.Title,

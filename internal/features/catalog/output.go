@@ -8,6 +8,7 @@ type AdvertisementImageOutput struct {
 }
 
 type AdvertisementOutput struct {
+	ID                   string                      `json:"id"`
 	SellerID             string                      `json:"seller_id"`
 	CategoryID           string                      `json:"category_id"`
 	Title                string                      `json:"title"`

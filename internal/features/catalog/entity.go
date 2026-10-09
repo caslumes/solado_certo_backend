@@ -19,6 +19,7 @@ func (ai *AdvertisementImageEntity) ToOutput() *AdvertisementImageOutput {
 }
 
 type AdvertisementEntity struct {
+	ID                   string
 	SellerID             string
 	CategoryID           string
 	Title                string
@@ -49,6 +50,7 @@ func (a *AdvertisementEntity) ToOutput() *AdvertisementOutput {
 	}
 
 	return &AdvertisementOutput{
+		ID:                   a.ID,
 		SellerID:             a.SellerID,
 		CategoryID:           a.CategoryID,
 		Title:                a.Title,
