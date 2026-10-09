@@ -8,8 +8,11 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	"github.com/caslumes/solado_certo_backend/internal/features/me/repository"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const uniqueViolationCode = "23505"
 
 type postgresRepository struct {
 	pool *pgxpool.Pool
@@ -47,6 +50,11 @@ func (r *postgresRepository) UpdateProfile(ctx context.Context, profile *me.Prof
 		profile.ID,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolationCode {
+			return app.ErrUserAlreadyExists
+		}
+
 		return err
 	}
 

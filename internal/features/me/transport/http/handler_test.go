@@ -465,17 +465,29 @@ func TestEditProfileDecodesRequest(t *testing.T) {
 	}
 }
 
-func TestEditProfileMapsInvalidInput(t *testing.T) {
-	handler := NewHandler(fakeService{
-		editProfile: func(context.Context, string, me.ProfileInput) (*me.ProfileEntity, error) {
-			return nil, app.ErrInvalidInput
-		},
-	})
+func TestEditProfileMapsErrors(t *testing.T) {
+	tests := map[string]struct {
+		err  error
+		want int
+	}{
+		"invalid input":          {app.ErrInvalidInput, http.StatusBadRequest},
+		"e-mail or phone in use": {app.ErrUserAlreadyExists, http.StatusConflict},
+	}
 
-	recorder := serve(handler, request(http.MethodPatch, "/me/profile", `{"email":"maria@"}`))
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			handler := NewHandler(fakeService{
+				editProfile: func(context.Context, string, me.ProfileInput) (*me.ProfileEntity, error) {
+					return nil, test.err
+				},
+			})
 
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+			recorder := serve(handler, request(http.MethodPatch, "/me/profile", `{"email":"maria@example.com"}`))
+
+			if recorder.Code != test.want {
+				t.Fatalf("status = %d, want %d", recorder.Code, test.want)
+			}
+		})
 	}
 }
 

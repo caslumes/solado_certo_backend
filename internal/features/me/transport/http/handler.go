@@ -136,6 +136,10 @@ func (h *Handler) EditProfile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid name, email or phone"})
 		return
 	}
+	if errors.Is(err, app.ErrUserAlreadyExists) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not edit profile"})
 		return
