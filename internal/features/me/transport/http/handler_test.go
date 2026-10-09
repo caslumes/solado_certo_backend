@@ -541,7 +541,7 @@ func TestGetAddressesReturnsList(t *testing.T) {
 const addressBody = `{"label":"Casa","receiver":"Maria","zip_code":"01001000","street":"Rua A","number":"10",` +
 	`"complement":null,"district":"Sé","city":"São Paulo","state":"SP","country":"BR","is_default":true}`
 
-func TestAddAddressDecodesRequest(t *testing.T) {
+func TestAddAddressDecodesRequestAndReturnsCreated(t *testing.T) {
 	var received me.AddressInput
 	handler := NewHandler(fakeService{
 		addAddress: func(_ context.Context, _ string, input me.AddressInput) (*me.AddressEntity, error) {
@@ -552,8 +552,8 @@ func TestAddAddressDecodesRequest(t *testing.T) {
 
 	recorder := serve(handler, request(http.MethodPost, "/me/addresses", addressBody))
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
 	}
 	if received.Label == nil || *received.Label != "Casa" || received.Complement != nil || received.ZIPCode != "01001000" ||
 		received.State != "SP" || !received.IsDefault {

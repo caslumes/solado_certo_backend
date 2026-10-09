@@ -192,7 +192,7 @@ func (h *Handler) AddAddress(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, address.ToOutput())
+	c.JSON(http.StatusCreated, address.ToOutput())
 }
 
 func (h *Handler) EditAddress(c *gin.Context) {
