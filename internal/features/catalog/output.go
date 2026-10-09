@@ -13,7 +13,7 @@ type AdvertisementOutput struct {
 	CategoryID           string                      `json:"category_id"`
 	Title                string                      `json:"title"`
 	Description          string                      `json:"description"`
-	Price                float64                     `json:"price"`
+	Price                string                      `json:"price"`
 	Stock                uint64                      `json:"stock"`
 	Status               string                      `json:"status"`
 	PrescriptionRequired bool                        `json:"prescription_required"`

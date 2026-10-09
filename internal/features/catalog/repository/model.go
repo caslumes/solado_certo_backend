@@ -28,7 +28,7 @@ type AdvertisementModel struct {
 	CategoryID           string
 	Title                string
 	Description          string
-	Price                float64
+	Price                string
 	Stock                uint64
 	Status               string
 	PrescriptionRequired bool

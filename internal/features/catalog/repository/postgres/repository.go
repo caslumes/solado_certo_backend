@@ -22,7 +22,7 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 	return &postgresRepository{pool: pool}
 }
 
-const advertisementColumns = "id, seller_id, category_id, title, description, price, stock, status, prescription_required, " +
+const advertisementColumns = "id, seller_id, category_id, title, description, price::text, stock, status, prescription_required, " +
 	"custom_made_allowed, side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, " +
 	"created_at, updated_at, removed_at"
 

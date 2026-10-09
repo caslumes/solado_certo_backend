@@ -226,7 +226,7 @@ func TestGetAdvertisementByIDReturnsDetail(t *testing.T) {
 		t.Fatalf("GetAdvertisementByID: %v", err)
 	}
 
-	if got.Title != "Palmilha" || got.Description != "Para fascite" || got.Price != 89.90 || got.Stock != 4 ||
+	if got.Title != "Palmilha" || got.Description != "Para fascite" || got.Price != "89.90" || got.Stock != 4 ||
 		got.Status != "published" || !got.PrescriptionRequired || got.SellerID != f.seller.ID {
 		t.Fatalf("ad = %+v", got)
 	}
@@ -235,6 +235,25 @@ func TestGetAdvertisementByIDReturnsDetail(t *testing.T) {
 	}
 	if len(got.Images) != 2 || got.Images[0].URL != "a.jpg" || got.Images[1].URL != "b.jpg" {
 		t.Fatalf("images = %+v", got.Images)
+	}
+}
+
+func TestPriceIsReadAsDecimalWithTwoPlaces(t *testing.T) {
+	f := newFixture(t)
+	tests := map[string]string{"420": "420.00", "89.9": "89.90", "0.05": "0.05", "12345678.99": "12345678.99"}
+
+	for stored, want := range tests {
+		t.Run(stored, func(t *testing.T) {
+			ad := f.insertAd(t, testutil.Ad{Price: stored})
+
+			got, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
+			if err != nil {
+				t.Fatalf("GetAdvertisementByID: %v", err)
+			}
+			if got.Price != want {
+				t.Fatalf("price = %q, want %q", got.Price, want)
+			}
+		})
 	}
 }
 
