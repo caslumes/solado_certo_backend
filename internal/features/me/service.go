@@ -470,7 +470,11 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 		return err
 	}
 
+	action := OnboardingAction(input.Action)
 	if onboarding.Status == OnboardingStatusCompleted {
+		if action == OnboardingActionComplete {
+			return nil
+		}
 		return app.ErrOnboardingAlreadyCompleted
 	}
 
@@ -480,7 +484,6 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 		return err
 	}
 
-	action := OnboardingAction(input.Action)
 	err = s.validateOnboardingAction(action, step)
 	if err != nil {
 		slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
@@ -520,14 +523,10 @@ func (s *service) ChangeOnboardingStep(context context.Context, userID string, i
 		return nil
 	}
 
-	nextStep, err := s.resolveNextOnboardingStep(step, action)
+	nextStep, err := s.resolveNextOnboardingStep(context, step, action)
 	if err != nil {
 		slog.ErrorContext(context, "ChangeOnboardingStep failed", "user_id", userID, "error", err)
 		return err
-	}
-
-	if nextStep == nil {
-		return app.ErrOnboardingAlreadyCompleted
 	}
 
 	onboarding.Status = OnboardingStatusInProgress
@@ -547,30 +546,33 @@ func (s *service) validateOnboardingAction(action OnboardingAction, step *Onboar
 		break
 	case OnboardingActionSkip:
 		if step.IsRequired {
-			return fmt.Errorf("step is required and cannot be skipped")
+			return fmt.Errorf("%w: step is required and cannot be skipped", app.ErrInvalidInput)
 		}
 	default:
-		return fmt.Errorf("invalid onboarding action: %s", action)
+		return fmt.Errorf("%w: invalid onboarding action: %s", app.ErrInvalidInput, action)
 	}
 
 	return nil
 }
 
-func (s *service) resolveNextOnboardingStep(currentStep *OnboardingStepEntity, action OnboardingAction) (*OnboardingStepEntity, error) {
+func (s *service) resolveNextOnboardingStep(context context.Context, currentStep *OnboardingStepEntity, action OnboardingAction) (*OnboardingStepEntity, error) {
+	var order int
 	switch action {
 	case OnboardingActionAdvance, OnboardingActionSkip:
-		nextStep, err := s.r.GetOnboardingStepByOrder(context.Background(), currentStep.Order+1)
-		if err != nil {
-			return nil, err
-		}
-		return nextStep, nil
+		order = currentStep.Order + 1
 	case OnboardingActionRetreat:
-		nextStep, err := s.r.GetOnboardingStepByOrder(context.Background(), currentStep.Order-1)
-		if err != nil {
-			return nil, err
-		}
-		return nextStep, nil
+		order = currentStep.Order - 1
 	default:
-		return nil, fmt.Errorf("invalid onboarding action: %s", action)
+		return nil, fmt.Errorf("%w: invalid onboarding action: %s", app.ErrInvalidInput, action)
 	}
+
+	nextStep, err := s.r.GetOnboardingStepByOrder(context, order)
+	if err != nil {
+		if errors.Is(err, app.ErrOnboardingStepNotFound) {
+			return nil, fmt.Errorf("%w: no onboarding step to %s to from %s", app.ErrInvalidInput, action, currentStep.Tag)
+		}
+		return nil, err
+	}
+
+	return nextStep, nil
 }

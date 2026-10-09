@@ -414,6 +414,10 @@ func (h *Handler) ChangeOnboardingStep(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "onboarding already completed"})
 			return
 		}
+		if errors.Is(err, app.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid onboarding transition"})
+			return
+		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not change onboarding step"})
 		return

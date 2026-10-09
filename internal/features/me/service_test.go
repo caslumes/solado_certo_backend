@@ -335,12 +335,25 @@ func TestOnboardingRejectsChangesAfterCompletion(t *testing.T) {
 	}
 }
 
+func TestOnboardingCompleteIsIdempotent(t *testing.T) {
+	s, repository := startOnboarding(t)
+	changeStep(t, s, "completion", OnboardingActionComplete)
+	completedAt := *repository.onboardings[testUserID].CompletedAt
+
+	changeStep(t, s, "completion", OnboardingActionComplete)
+
+	onboarding := repository.onboardings[testUserID]
+	if onboarding.Status != OnboardingStatusCompleted || !onboarding.CompletedAt.Equal(completedAt) {
+		t.Fatalf("onboarding = %+v, want unchanged completion at %v", onboarding, completedAt)
+	}
+}
+
 func TestOnboardingRejectsSkippingRequiredStep(t *testing.T) {
 	s, repository := startOnboarding(t)
 
 	err := s.ChangeOnboardingStep(context.Background(), testUserID, OnboardingInput{Step: "profile_setup", Action: "skip"})
-	if err == nil {
-		t.Fatal("skipping a required step succeeded")
+	if !errors.Is(err, app.ErrInvalidInput) {
+		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
 	}
 	if got := repository.onboardings[testUserID].Status; got != OnboardingStatusNotStarted {
 		t.Fatalf("status = %s, want %s", got, OnboardingStatusNotStarted)
@@ -952,12 +965,12 @@ func TestOnboardingRejectsInvalidTransitions(t *testing.T) {
 		input   OnboardingInput
 		wantErr error
 	}{
-		"unknown action":           {input: OnboardingInput{Step: "welcome", Action: "jump"}},
+		"unknown action":           {input: OnboardingInput{Step: "welcome", Action: "jump"}, wantErr: app.ErrInvalidInput},
 		"unknown step":             {input: OnboardingInput{Step: "missing", Action: "advance"}, wantErr: app.ErrOnboardingStepNotFound},
-		"retreat from first step":  {input: OnboardingInput{Step: "welcome", Action: "retreat"}, wantErr: app.ErrOnboardingStepNotFound},
-		"advance past last step":   {input: OnboardingInput{Step: "completion", Action: "advance"}, wantErr: app.ErrOnboardingStepNotFound},
-		"skip required first step": {input: OnboardingInput{Step: "welcome", Action: "skip"}},
-		"skip required last step":  {input: OnboardingInput{Step: "completion", Action: "skip"}},
+		"retreat from first step":  {input: OnboardingInput{Step: "welcome", Action: "retreat"}, wantErr: app.ErrInvalidInput},
+		"advance past last step":   {input: OnboardingInput{Step: "completion", Action: "advance"}, wantErr: app.ErrInvalidInput},
+		"skip required first step": {input: OnboardingInput{Step: "welcome", Action: "skip"}, wantErr: app.ErrInvalidInput},
+		"skip required last step":  {input: OnboardingInput{Step: "completion", Action: "skip"}, wantErr: app.ErrInvalidInput},
 	}
 
 	for name, tt := range tests {
@@ -966,10 +979,7 @@ func TestOnboardingRejectsInvalidTransitions(t *testing.T) {
 
 			err := s.ChangeOnboardingStep(context.Background(), testUserID, tt.input)
 
-			if err == nil {
-				t.Fatal("transition succeeded")
-			}
-			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
 			onboarding := repository.onboardings[testUserID]

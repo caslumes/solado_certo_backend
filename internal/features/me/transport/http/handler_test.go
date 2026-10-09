@@ -28,6 +28,7 @@ type fakeService struct {
 	getPainPoints          func(context.Context) ([]*me.PainPointEntity, error)
 	grantConsent           func(context.Context, string, me.ConsentInput) (*me.ConsentEntity, bool, error)
 	revokeConsent          func(context.Context, string, string) error
+	changeOnboardingStep   func(context.Context, string, me.OnboardingInput) error
 }
 
 func (f fakeService) EditPodologicalProfile(ctx context.Context, userID string, input me.PodologicalProfileInput) (*me.PodologicalProfileEntity, error) {
@@ -46,6 +47,10 @@ func (f fakeService) RevokeConsent(ctx context.Context, userID string, purpose s
 	return f.revokeConsent(ctx, userID, purpose)
 }
 
+func (f fakeService) ChangeOnboardingStep(ctx context.Context, userID string, input me.OnboardingInput) error {
+	return f.changeOnboardingStep(ctx, userID, input)
+}
+
 func serve(handler *Handler, request *http.Request) *httptest.ResponseRecorder {
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -55,6 +60,7 @@ func serve(handler *Handler, request *http.Request) *httptest.ResponseRecorder {
 	router.GET("/me/pain-points", handler.GetPainPoints)
 	router.POST("/me/consents", handler.GrantConsent)
 	router.DELETE("/me/consents/:purpose", handler.RevokeConsent)
+	router.PUT("/me/onboarding", handler.ChangeOnboardingStep)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -209,5 +215,36 @@ func TestRevokeConsentMapsInvalidInput(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestChangeOnboardingStepMapsErrors(t *testing.T) {
+	tests := map[string]struct {
+		err  error
+		want int
+	}{
+		"changed":            {nil, http.StatusNoContent},
+		"invalid transition": {app.ErrInvalidInput, http.StatusBadRequest},
+		"already completed":  {app.ErrOnboardingAlreadyCompleted, http.StatusBadRequest},
+		"unknown step":       {app.ErrOnboardingStepNotFound, http.StatusNotFound},
+		"no onboarding":      {app.ErrOnboardingNotFound, http.StatusNotFound},
+		"unexpected":         {errors.New("database unavailable"), http.StatusInternalServerError},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			handler := NewHandler(fakeService{
+				changeOnboardingStep: func(context.Context, string, me.OnboardingInput) error {
+					return test.err
+				},
+			})
+
+			body := `{"step":"welcome","action":"skip"}`
+			recorder := serve(handler, httptest.NewRequest(http.MethodPut, "/me/onboarding", strings.NewReader(body)))
+
+			if recorder.Code != test.want {
+				t.Fatalf("status = %d, want %d", recorder.Code, test.want)
+			}
+		})
 	}
 }
