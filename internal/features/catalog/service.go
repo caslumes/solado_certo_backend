@@ -2,6 +2,10 @@ package catalog
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
 type GetAdvertisementsUseCase interface {
@@ -19,7 +23,7 @@ type GetCategoriesUseCase interface {
 type repository interface {
 	GetAdvertisements(ctx context.Context, limit uint, offset uint, filters AdvertisementFilters) ([]*AdvertisementEntity, error)
 	GetAdvertisementByID(ctx context.Context, id string) (*AdvertisementEntity, error)
-	CountAdvertisements(ctx context.Context) (uint, error)
+	CountAdvertisements(ctx context.Context, filters AdvertisementFilters) (uint, error)
 	GetCategories(ctx context.Context) ([]*CategoryEntity, error)
 }
 
@@ -44,13 +48,21 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 		limit = 10
 	}
 
-	totalItems, err := s.repo.CountAdvertisements(ctx)
+	filters := AdvertisementFilters{}
+	if input.Filters != nil {
+		filters = *input.Filters
+	}
+	if filters.Category != nil && !helpers.IsUUID(*filters.Category) {
+		return AdvertisementPage{}, fmt.Errorf("%w: invalid category id", app.ErrInvalidInput)
+	}
+
+	totalItems, err := s.repo.CountAdvertisements(ctx, filters)
 	if err != nil {
 		return AdvertisementPage{}, err
 	}
 
 	offset := (page - 1) * limit
-	ads, err := s.repo.GetAdvertisements(ctx, limit, offset, *input.Filters)
+	ads, err := s.repo.GetAdvertisements(ctx, limit, offset, filters)
 	if err != nil {
 		return AdvertisementPage{}, err
 	}
@@ -74,6 +86,10 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 }
 
 func (s *service) GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error) {
+	if !helpers.IsUUID(id) {
+		return nil, app.ErrAdvertisementNotFound
+	}
+
 	ad, err := s.repo.GetAdvertisementByID(ctx, id)
 	if err != nil {
 		return nil, err

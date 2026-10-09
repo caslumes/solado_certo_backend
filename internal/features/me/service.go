@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -256,8 +255,6 @@ const (
 	maxPodologicalNotesLength  = 1000
 )
 
-var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
 func (s *service) EditPodologicalProfile(context context.Context, userID string, input PodologicalProfileInput) (*PodologicalProfileEntity, error) {
 	if err := s.requireConsent(context, userID, ConsentPurposePodologicalProfile); err != nil {
 		return nil, err
@@ -335,7 +332,7 @@ func (s *service) validatePainPointIDs(context context.Context, ids []string) ([
 	seen := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		id = strings.ToLower(strings.TrimSpace(id))
-		if !uuidPattern.MatchString(id) {
+		if !helpers.IsUUID(id) {
 			return nil, fmt.Errorf("%w: invalid pain point id", app.ErrInvalidInput)
 		}
 		if !seen[id] {

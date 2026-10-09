@@ -2,10 +2,12 @@ package httpcatalog
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 	"github.com/gin-gonic/gin"
 )
@@ -108,5 +110,22 @@ func TestGetAdvertisementsTreatsEmptyValuesAsAbsent(t *testing.T) {
 	f := input.Filters
 	if input.Page != 1 || f.Category != nil || f.PriceMin != nil || f.PrescriptionRequired != nil {
 		t.Fatalf("empty params should fall back to defaults/nil: page=%d filters=%#v", input.Page, f)
+	}
+}
+
+func TestGetAdvertisementsMapsInvalidInput(t *testing.T) {
+	handler := NewHandler(fakeService{
+		getAdvertisements: func(context.Context, catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error) {
+			return catalog.AdvertisementPage{}, fmt.Errorf("%w: invalid category id", app.ErrInvalidInput)
+		},
+	})
+	router := gin.New()
+	router.GET("/catalog", handler.GetAdvertisements)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/catalog?category=palmilha", nil))
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
 }

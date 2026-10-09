@@ -248,18 +248,71 @@ func TestGetAdvertisementByIDReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestCountAdvertisementsCountsPublishedAds(t *testing.T) {
+func TestCountAdvertisementsMatchesFilteredList(t *testing.T) {
 	f := newFixture(t)
 	for range 3 {
-		f.insertAd(t, testutil.Ad{})
+		f.insertAd(t, testutil.Ad{Material: helpers.StringPtr("EVA")})
+	}
+	f.insertAd(t, testutil.Ad{Material: helpers.StringPtr("silicone")})
+	f.insertAd(t, testutil.Ad{Material: helpers.StringPtr("EVA"), Status: "draft"})
+
+	tests := map[string]struct {
+		filters catalog.AdvertisementFilters
+		want    uint
+	}{
+		"no filters": {catalog.AdvertisementFilters{}, 4},
+		"material":   {catalog.AdvertisementFilters{Material: helpers.StringPtr("EVA")}, 3},
+		"no match":   {catalog.AdvertisementFilters{Material: helpers.StringPtr("couro")}, 0},
 	}
 
-	count, err := f.r.CountAdvertisements(context.Background())
-	if err != nil {
-		t.Fatalf("CountAdvertisements: %v", err)
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			count, err := f.r.CountAdvertisements(context.Background(), tt.filters)
+			if err != nil {
+				t.Fatalf("CountAdvertisements: %v", err)
+			}
+			listed := uint(len(f.list(t, 100, 0, tt.filters)))
+			if count != tt.want || listed != tt.want {
+				t.Fatalf("count = %d, listed = %d, want %d", count, listed, tt.want)
+			}
+		})
 	}
-	if count != 3 {
-		t.Fatalf("count = %d, want 3", count)
+}
+
+func TestAdvertisementsIncludeIDAndCategory(t *testing.T) {
+	f := newFixture(t)
+	ad := f.insertAd(t, testutil.Ad{})
+
+	listed := f.list(t, 10, 0, catalog.AdvertisementFilters{})
+	detail, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
+	if err != nil {
+		t.Fatalf("GetAdvertisementByID: %v", err)
+	}
+
+	for name, got := range map[string]*catalog.AdvertisementEntity{"list": listed[0], "detail": detail} {
+		if got.ID != ad.ID || got.CategoryID != f.category.ID {
+			t.Fatalf("%s: id = %q, category = %q, want %q and %q", name, got.ID, got.CategoryID, ad.ID, f.category.ID)
+		}
+	}
+}
+
+func TestImageWithoutAltTextIsReadAsEmpty(t *testing.T) {
+	f := newFixture(t)
+	ad := f.insertAd(t, testutil.Ad{})
+	_, err := f.pool.Exec(context.Background(), "INSERT INTO advertisement_images (advertisement_id, url) VALUES ($1, 'photo.jpg')", ad.ID)
+	if err != nil {
+		t.Fatalf("insert image: %v", err)
+	}
+
+	got, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
+	if err != nil {
+		t.Fatalf("GetAdvertisementByID: %v", err)
+	}
+	if len(got.Images) != 1 || got.Images[0].URL != "photo.jpg" || got.Images[0].AltText != "" {
+		t.Fatalf("images = %+v", got.Images)
+	}
+	if listed := f.list(t, 10, 0, catalog.AdvertisementFilters{}); len(listed) != 1 || len(listed[0].Images) != 1 {
+		t.Fatalf("listed = %+v", listed)
 	}
 }
 

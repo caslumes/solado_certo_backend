@@ -22,98 +22,16 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 	return &postgresRepository{pool: pool}
 }
 
-func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, offset uint, filters catalog.AdvertisementFilters) ([]*catalog.AdvertisementEntity, error) {
-	var ads []*catalog.AdvertisementEntity
-	whereClause, args := whereStringFromFilters(filters)
-	argsCount := len(args)
-	rows, err := r.pool.Query(
-		ctx,
-		"SELECT id, seller_id, title, description, price, stock, status, prescription_required, custom_made_allowed, "+
-			"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, "+
-			"updated_at, removed_at FROM advertisements "+whereClause+" ORDER BY created_at DESC, id DESC LIMIT $"+(strconv.Itoa(argsCount+1))+" OFFSET $"+(strconv.Itoa(argsCount+2)),
-		append(args, limit, offset)...,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+const advertisementColumns = "id, seller_id, category_id, title, description, price, stock, status, prescription_required, " +
+	"custom_made_allowed, side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, " +
+	"created_at, updated_at, removed_at"
 
-	for rows.Next() {
-		var m repository.AdvertisementModel
-		var images []*repository.AdvertisementImageModel
-		err := rows.Scan(
-			&m.ID,
-			&m.SellerID,
-			&m.Title,
-			&m.Description,
-			&m.Price,
-			&m.Stock,
-			&m.Status,
-			&m.PrescriptionRequired,
-			&m.CustomMadeAllowed,
-			&m.Side,
-			&m.Size,
-			&m.Material,
-			&m.Rigidity,
-			&m.UsageIndication,
-			&m.SafetyAlerts,
-			&m.Contraindications,
-			&m.ShippingNotes,
-			&m.CreatedAt,
-			&m.UpdatedAt,
-			&m.RemovedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		imageRows, err := r.pool.Query(
-			ctx,
-			"SELECT url, alt_text, position, is_cover FROM advertisement_images WHERE advertisement_id = $1 ORDER BY position",
-			m.ID,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		for imageRows.Next() {
-			image := &repository.AdvertisementImageModel{}
-			if err := imageRows.Scan(
-				&image.URL,
-				&image.AltText,
-				&image.Order,
-				&image.IsCover,
-			); err != nil {
-				imageRows.Close()
-				return nil, err
-			}
-			images = append(images, image)
-		}
-		imageRows.Close()
-
-		if err := imageRows.Err(); err != nil {
-			return nil, err
-		}
-
-		m.Images = images
-		ads = append(ads, m.ToEntity())
-	}
-
-	return ads, nil
-}
-
-func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string) (*catalog.AdvertisementEntity, error) {
+func scanAdvertisement(row pgx.Row) (*repository.AdvertisementModel, error) {
 	var m repository.AdvertisementModel
-	var images []*repository.AdvertisementImageModel
-	err := r.pool.QueryRow(
-		ctx,
-		"SELECT id, seller_id, title, description, price, stock, status, prescription_required, custom_made_allowed, "+
-			"side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, created_at, "+
-			"updated_at, removed_at FROM advertisements WHERE id = $1",
-		id,
-	).Scan(
+	err := row.Scan(
 		&m.ID,
 		&m.SellerID,
+		&m.CategoryID,
 		&m.Title,
 		&m.Description,
 		&m.Price,
@@ -134,6 +52,80 @@ func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string
 		&m.RemovedAt,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	return &m, nil
+}
+
+func (r *postgresRepository) getImages(ctx context.Context, advertisementID string) ([]*repository.AdvertisementImageModel, error) {
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT url, COALESCE(alt_text, ''), position, is_cover FROM advertisement_images WHERE advertisement_id = $1 ORDER BY position",
+		advertisementID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var images []*repository.AdvertisementImageModel
+	for rows.Next() {
+		image := &repository.AdvertisementImageModel{}
+		if err := rows.Scan(&image.URL, &image.AltText, &image.Order, &image.IsCover); err != nil {
+			return nil, err
+		}
+		images = append(images, image)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return images, nil
+}
+
+func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, offset uint, filters catalog.AdvertisementFilters) ([]*catalog.AdvertisementEntity, error) {
+	whereClause, args := whereStringFromFilters(filters)
+	argsCount := len(args)
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT "+advertisementColumns+" FROM advertisements "+whereClause+
+			" ORDER BY created_at DESC, id DESC LIMIT $"+strconv.Itoa(argsCount+1)+" OFFSET $"+strconv.Itoa(argsCount+2),
+		append(args, limit, offset)...,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var models []*repository.AdvertisementModel
+	for rows.Next() {
+		m, err := scanAdvertisement(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		models = append(models, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	ads := make([]*catalog.AdvertisementEntity, 0, len(models))
+	for _, m := range models {
+		m.Images, err = r.getImages(ctx, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		ads = append(ads, m.ToEntity())
+	}
+
+	return ads, nil
+}
+
+func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string) (*catalog.AdvertisementEntity, error) {
+	m, err := scanAdvertisement(r.pool.QueryRow(ctx, "SELECT "+advertisementColumns+" FROM advertisements WHERE id = $1", id))
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, app.ErrAdvertisementNotFound
 		}
@@ -141,40 +133,18 @@ func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string
 		return nil, err
 	}
 
-	imageRows, err := r.pool.Query(
-		ctx,
-		"SELECT url, alt_text, position, is_cover FROM advertisement_images WHERE advertisement_id = $1 ORDER BY position",
-		m.ID,
-	)
+	m.Images, err = r.getImages(ctx, m.ID)
 	if err != nil {
 		return nil, err
 	}
-	defer imageRows.Close()
 
-	for imageRows.Next() {
-		image := &repository.AdvertisementImageModel{}
-		if err := imageRows.Scan(
-			&image.URL,
-			&image.AltText,
-			&image.Order,
-			&image.IsCover,
-		); err != nil {
-			return nil, err
-		}
-		images = append(images, image)
-	}
-
-	if err := imageRows.Err(); err != nil {
-		return nil, err
-	}
-
-	m.Images = images
 	return m.ToEntity(), nil
 }
 
-func (r *postgresRepository) CountAdvertisements(ctx context.Context) (uint, error) {
+func (r *postgresRepository) CountAdvertisements(ctx context.Context, filters catalog.AdvertisementFilters) (uint, error) {
+	whereClause, args := whereStringFromFilters(filters)
 	var total int64
-	err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM advertisements").Scan(&total)
+	err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM advertisements "+whereClause, args...).Scan(&total)
 	if err != nil {
 		return 0, err
 	}

@@ -67,6 +67,11 @@ func (h *Handler) GetAdvertisements(c *gin.Context) {
 		},
 	})
 	if err != nil {
+		if errors.Is(err, app.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get advertisements"})
 		return
 	}

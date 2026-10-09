@@ -11,15 +11,22 @@ import (
 
 var errDatabase = errors.New("database is down")
 
+const (
+	adID       = "00000000-0000-0000-0000-000000000a01"
+	categoryID = "00000000-0000-0000-0000-000000000c01"
+)
+
 type fakeRepository struct {
 	ads        map[string]*AdvertisementEntity
 	total      uint
 	categories []*CategoryEntity
 	err        error
 
-	gotLimit   uint
-	gotOffset  uint
-	gotFilters AdvertisementFilters
+	gotLimit        uint
+	gotOffset       uint
+	gotFilters      AdvertisementFilters
+	gotCountFilters AdvertisementFilters
+	called          bool
 }
 
 func (f *fakeRepository) GetAdvertisements(_ context.Context, limit uint, offset uint, filters AdvertisementFilters) ([]*AdvertisementEntity, error) {
@@ -35,6 +42,7 @@ func (f *fakeRepository) GetAdvertisements(_ context.Context, limit uint, offset
 }
 
 func (f *fakeRepository) GetAdvertisementByID(_ context.Context, id string) (*AdvertisementEntity, error) {
+	f.called = true
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -45,7 +53,8 @@ func (f *fakeRepository) GetAdvertisementByID(_ context.Context, id string) (*Ad
 	return ad, nil
 }
 
-func (f *fakeRepository) CountAdvertisements(context.Context) (uint, error) {
+func (f *fakeRepository) CountAdvertisements(_ context.Context, filters AdvertisementFilters) (uint, error) {
+	f.gotCountFilters = filters
 	if f.err != nil {
 		return 0, f.err
 	}
@@ -86,15 +95,41 @@ func TestGetAdvertisementsAppliesDefaultPageAndLimit(t *testing.T) {
 
 func TestGetAdvertisementsPassesOffsetAndFilters(t *testing.T) {
 	repository := &fakeRepository{total: 50}
-	filters := &AdvertisementFilters{Query: helpers.StringPtr("palmilha"), Side: helpers.StringPtr("left")}
+	filters := &AdvertisementFilters{Query: helpers.StringPtr("palmilha"), Category: helpers.StringPtr(categoryID), Side: helpers.StringPtr("left")}
 
 	getAdvertisements(t, repository, GetAdvertisementsInput{Page: 3, Limit: 20, Filters: filters})
 
 	if repository.gotLimit != 20 || repository.gotOffset != 40 {
 		t.Fatalf("limit = %d, offset = %d, want 20 and 40", repository.gotLimit, repository.gotOffset)
 	}
-	if repository.gotFilters.Query != filters.Query || repository.gotFilters.Side != filters.Side {
+	if repository.gotFilters != *filters {
 		t.Fatalf("filters = %+v, want %+v", repository.gotFilters, *filters)
+	}
+	if repository.gotCountFilters != *filters {
+		t.Fatalf("count filters = %+v, want the list filters %+v", repository.gotCountFilters, *filters)
+	}
+}
+
+func TestGetAdvertisementsAcceptsMissingFilters(t *testing.T) {
+	repository := &fakeRepository{total: 1}
+
+	_, err := NewService(repository).GetAdvertisements(context.Background(), GetAdvertisementsInput{})
+	if err != nil {
+		t.Fatalf("GetAdvertisements: %v", err)
+	}
+	if repository.gotFilters != (AdvertisementFilters{}) {
+		t.Fatalf("filters = %+v, want none", repository.gotFilters)
+	}
+}
+
+func TestGetAdvertisementsRejectsMalformedCategory(t *testing.T) {
+	repository := &fakeRepository{}
+	input := GetAdvertisementsInput{Filters: &AdvertisementFilters{Category: helpers.StringPtr("palmilhas")}}
+
+	_, err := NewService(repository).GetAdvertisements(context.Background(), input)
+
+	if !errors.Is(err, app.ErrInvalidInput) {
+		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
 	}
 }
 
@@ -132,7 +167,7 @@ func TestGetAdvertisementsComputesPagination(t *testing.T) {
 func TestGetAdvertisementsReturnsItems(t *testing.T) {
 	repository := &fakeRepository{
 		total: 1,
-		ads:   map[string]*AdvertisementEntity{"ad-1": {Title: "Palmilha ortopédica"}},
+		ads:   map[string]*AdvertisementEntity{adID: {Title: "Palmilha ortopédica"}},
 	}
 
 	page := getAdvertisements(t, repository, GetAdvertisementsInput{})
@@ -150,9 +185,9 @@ func TestGetAdvertisementsPropagatesRepositoryErrors(t *testing.T) {
 }
 
 func TestGetAdvertisementReturnsAd(t *testing.T) {
-	repository := &fakeRepository{ads: map[string]*AdvertisementEntity{"ad-1": {Title: "Palmilha ortopédica"}}}
+	repository := &fakeRepository{ads: map[string]*AdvertisementEntity{adID: {Title: "Palmilha ortopédica"}}}
 
-	ad, err := NewService(repository).GetAdvertisement(context.Background(), "ad-1")
+	ad, err := NewService(repository).GetAdvertisement(context.Background(), adID)
 	if err != nil {
 		t.Fatalf("GetAdvertisement: %v", err)
 	}
@@ -162,14 +197,27 @@ func TestGetAdvertisementReturnsAd(t *testing.T) {
 }
 
 func TestGetAdvertisementReturnsNotFound(t *testing.T) {
-	_, err := NewService(&fakeRepository{}).GetAdvertisement(context.Background(), "missing")
+	_, err := NewService(&fakeRepository{}).GetAdvertisement(context.Background(), "00000000-0000-0000-0000-000000000a99")
 	if !errors.Is(err, app.ErrAdvertisementNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrAdvertisementNotFound)
 	}
 }
 
+func TestGetAdvertisementTreatsMalformedIDAsNotFound(t *testing.T) {
+	repository := &fakeRepository{}
+
+	_, err := NewService(repository).GetAdvertisement(context.Background(), "abc")
+
+	if !errors.Is(err, app.ErrAdvertisementNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrAdvertisementNotFound)
+	}
+	if repository.called {
+		t.Fatal("repository was queried with a malformed id")
+	}
+}
+
 func TestGetAdvertisementPropagatesRepositoryErrors(t *testing.T) {
-	_, err := NewService(&fakeRepository{err: errDatabase}).GetAdvertisement(context.Background(), "ad-1")
+	_, err := NewService(&fakeRepository{err: errDatabase}).GetAdvertisement(context.Background(), adID)
 	if !errors.Is(err, errDatabase) {
 		t.Fatalf("err = %v, want %v", err, errDatabase)
 	}
