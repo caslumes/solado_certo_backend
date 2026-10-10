@@ -223,6 +223,111 @@ func TestGetAdvertisementsAppliesEachFilter(t *testing.T) {
 	}
 }
 
+func (f fixture) insertPurpose(t *testing.T, code, name string) string {
+	t.Helper()
+	var id string
+	err := f.pool.QueryRow(context.Background(), "INSERT INTO podological_purposes (code, name) VALUES ($1, $2) RETURNING id", code, name).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert purpose: %v", err)
+	}
+	return id
+}
+
+func (f fixture) insertCondition(t *testing.T, name string, active bool) string {
+	t.Helper()
+	var id string
+	err := f.pool.QueryRow(context.Background(), "INSERT INTO podological_conditions (name, active) VALUES ($1, $2) RETURNING id", name, active).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert condition: %v", err)
+	}
+	return id
+}
+
+func (f fixture) link(t *testing.T, table, column, adID, id string) {
+	t.Helper()
+	_, err := f.pool.Exec(context.Background(), "INSERT INTO "+table+" (advertisement_id, "+column+") VALUES ($1, $2)", adID, id)
+	if err != nil {
+		t.Fatalf("link %s: %v", table, err)
+	}
+}
+
+func TestGetAdvertisementsFiltersByPurposeAndCondition(t *testing.T) {
+	f := newFixture(t)
+	prevention := f.insertPurpose(t, "prevention", "Prevenção")
+	correction := f.insertPurpose(t, "correction", "Correção")
+	f.insertPurpose(t, "pain_relief", "Alívio de dor")
+	fasciitis := f.insertCondition(t, "Fascite plantar", true)
+	flatFoot := f.insertCondition(t, "Pé plano", true)
+
+	insole := f.insertAd(t, testutil.Ad{Title: "Palmilha", Material: helpers.StringPtr("EVA")})
+	f.link(t, "advertisement_purposes", "purpose_id", insole.ID, prevention)
+	f.link(t, "advertisement_purposes", "purpose_id", insole.ID, correction)
+	f.link(t, "advertisement_conditions", "condition_id", insole.ID, fasciitis)
+	heelCup := f.insertAd(t, testutil.Ad{Title: "Calcanheira", Material: helpers.StringPtr("silicone")})
+	f.link(t, "advertisement_purposes", "purpose_id", heelCup.ID, correction)
+	f.link(t, "advertisement_conditions", "condition_id", heelCup.ID, flatFoot)
+	f.insertAd(t, testutil.Ad{Title: "Sem classificação"})
+
+	tests := map[string]struct {
+		filters catalog.AdvertisementFilters
+		want    []string
+	}{
+		"one purpose":           {catalog.AdvertisementFilters{Purposes: []string{"prevention"}}, []string{"Palmilha"}},
+		"any of the purposes":   {catalog.AdvertisementFilters{Purposes: []string{"prevention", "correction"}}, []string{"Palmilha", "Calcanheira"}},
+		"purpose with no ads":   {catalog.AdvertisementFilters{Purposes: []string{"pain_relief"}}, []string{}},
+		"unknown purpose":       {catalog.AdvertisementFilters{Purposes: []string{"magic"}}, []string{}},
+		"one condition":         {catalog.AdvertisementFilters{Conditions: []string{flatFoot}}, []string{"Calcanheira"}},
+		"any of the conditions": {catalog.AdvertisementFilters{Conditions: []string{flatFoot, fasciitis}}, []string{"Palmilha", "Calcanheira"}},
+		"purpose and condition": {catalog.AdvertisementFilters{Purposes: []string{"correction"}, Conditions: []string{fasciitis}}, []string{"Palmilha"}},
+		"purpose and attribute": {catalog.AdvertisementFilters{Purposes: []string{"correction"}, Material: helpers.StringPtr("silicone")}, []string{"Calcanheira"}},
+		"no filters":            {catalog.AdvertisementFilters{}, []string{"Palmilha", "Calcanheira", "Sem classificação"}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := titles(f.list(t, 10, 0, tt.filters))
+			if !sameItems(got, tt.want) {
+				t.Fatalf("titles = %v, want %v", got, tt.want)
+			}
+			count, err := f.r.CountAdvertisements(context.Background(), tt.filters)
+			if err != nil || count != uint(len(tt.want)) {
+				t.Fatalf("count = %d, err = %v, want %d", count, err, len(tt.want))
+			}
+		})
+	}
+}
+
+func TestGetPurposesIsSortedByName(t *testing.T) {
+	f := newFixture(t)
+	f.insertPurpose(t, "prevention", "Prevenção")
+	f.insertPurpose(t, "correction", "Correção")
+
+	purposes, err := f.r.GetPurposes(context.Background())
+	if err != nil {
+		t.Fatalf("GetPurposes: %v", err)
+	}
+
+	if len(purposes) != 2 || purposes[0].Code != "correction" || purposes[1].Code != "prevention" || purposes[0].ID == "" {
+		t.Fatalf("purposes = %+v", purposes)
+	}
+}
+
+func TestGetConditionsReturnsOnlyActiveSortedByName(t *testing.T) {
+	f := newFixture(t)
+	f.insertCondition(t, "Pé plano", true)
+	f.insertCondition(t, "Fascite plantar", true)
+	f.insertCondition(t, "Condição desativada", false)
+
+	conditions, err := f.r.GetConditions(context.Background())
+	if err != nil {
+		t.Fatalf("GetConditions: %v", err)
+	}
+
+	if len(conditions) != 2 || conditions[0].Name != "Fascite plantar" || conditions[1].Name != "Pé plano" {
+		t.Fatalf("conditions = %+v", conditions)
+	}
+}
+
 func ptr[T any](v T) *T {
 	return &v
 }

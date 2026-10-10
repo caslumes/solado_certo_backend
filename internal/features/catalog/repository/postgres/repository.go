@@ -197,6 +197,50 @@ func (r *postgresRepository) GetCategories(ctx context.Context) ([]*catalog.Cate
 	return categories, nil
 }
 
+func (r *postgresRepository) GetPurposes(ctx context.Context) ([]*catalog.PurposeEntity, error) {
+	rows, err := r.pool.Query(ctx, "SELECT id, code, name, description FROM podological_purposes ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	purposes := []*catalog.PurposeEntity{}
+	for rows.Next() {
+		var p catalog.PurposeEntity
+		if err := rows.Scan(&p.ID, &p.Code, &p.Name, &p.Description); err != nil {
+			return nil, err
+		}
+		purposes = append(purposes, &p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return purposes, nil
+}
+
+func (r *postgresRepository) GetConditions(ctx context.Context) ([]*catalog.ConditionEntity, error) {
+	rows, err := r.pool.Query(ctx, "SELECT id, name, description FROM podological_conditions WHERE active ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	conditions := []*catalog.ConditionEntity{}
+	for rows.Next() {
+		var c catalog.ConditionEntity
+		if err := rows.Scan(&c.ID, &c.Name, &c.Description); err != nil {
+			return nil, err
+		}
+		conditions = append(conditions, &c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return conditions, nil
+}
+
 func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []interface{}) {
 	var conditions []string
 	var args []interface{}
@@ -255,6 +299,18 @@ func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []int
 	if filters.UsageIndication != nil {
 		conditions = append(conditions, "usage_indication = $"+strconv.Itoa(argIndex))
 		args = append(args, *filters.UsageIndication)
+		argIndex++
+	}
+	if len(filters.Purposes) > 0 {
+		conditions = append(conditions, "EXISTS (SELECT 1 FROM advertisement_purposes ap JOIN podological_purposes p ON p.id = ap.purpose_id "+
+			"WHERE ap.advertisement_id = advertisements.id AND p.code = ANY($"+strconv.Itoa(argIndex)+"))")
+		args = append(args, filters.Purposes)
+		argIndex++
+	}
+	if len(filters.Conditions) > 0 {
+		conditions = append(conditions, "EXISTS (SELECT 1 FROM advertisement_conditions ac "+
+			"WHERE ac.advertisement_id = advertisements.id AND ac.condition_id = ANY($"+strconv.Itoa(argIndex)+"::uuid[]))")
+		args = append(args, filters.Conditions)
 		argIndex++
 	}
 

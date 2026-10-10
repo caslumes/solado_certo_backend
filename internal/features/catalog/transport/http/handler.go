@@ -25,12 +25,16 @@ type getAdvertisementsQuery struct {
 	Material             *string  `form:"material"`
 	Rigidity             *string  `form:"rigidity"`
 	UsageIndication      *string  `form:"usage_indication"`
+	Purposes             []string `form:"purpose"`
+	Conditions           []string `form:"condition"`
 }
 
 type Service interface {
 	catalog.GetAdvertisementsUseCase
 	catalog.GetAdvertisementUseCase
 	catalog.GetCategoriesUseCase
+	catalog.GetPurposesUseCase
+	catalog.GetConditionsUseCase
 }
 
 type Handler struct {
@@ -66,6 +70,8 @@ func (h *Handler) GetAdvertisements(c *gin.Context) {
 			Material:             query.Material,
 			Rigidity:             query.Rigidity,
 			UsageIndication:      query.UsageIndication,
+			Purposes:             withoutEmpty(query.Purposes),
+			Conditions:           withoutEmpty(query.Conditions),
 		},
 	})
 	if err != nil {
@@ -104,6 +110,44 @@ func (h *Handler) GetCategories(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, categories.ToOutput())
+}
+
+func (h *Handler) GetPurposes(c *gin.Context) {
+	purposes, err := h.service.GetPurposes(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get purposes"})
+		return
+	}
+
+	output := catalog.PurposesOutput{Purposes: make([]*catalog.PurposeOutput, 0, len(purposes))}
+	for _, purpose := range purposes {
+		output.Purposes = append(output.Purposes, purpose.ToOutput())
+	}
+	c.JSON(http.StatusOK, output)
+}
+
+func (h *Handler) GetConditions(c *gin.Context) {
+	conditions, err := h.service.GetConditions(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get conditions"})
+		return
+	}
+
+	output := catalog.ConditionsOutput{Conditions: make([]*catalog.ConditionOutput, 0, len(conditions))}
+	for _, condition := range conditions {
+		output.Conditions = append(output.Conditions, condition.ToOutput())
+	}
+	c.JSON(http.StatusOK, output)
+}
+
+func withoutEmpty(values []string) []string {
+	var result []string
+	for _, value := range values {
+		if value != "" {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func withoutEmptyParams(values url.Values) url.Values {

@@ -50,3 +50,24 @@ type CategoryOutput struct {
 type CategoriesOutput struct {
 	Categories []*CategoryOutput `json:"categories"`
 }
+
+type PurposeOutput struct {
+	ID          string  `json:"id"`
+	Code        string  `json:"code"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+}
+
+type PurposesOutput struct {
+	Purposes []*PurposeOutput `json:"purposes"`
+}
+
+type ConditionOutput struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+}
+
+type ConditionsOutput struct {
+	Conditions []*ConditionOutput `json:"conditions"`
+}

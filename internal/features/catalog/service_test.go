@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
@@ -12,14 +13,17 @@ import (
 var errDatabase = errors.New("database is down")
 
 const (
-	adID       = "00000000-0000-0000-0000-000000000a01"
-	categoryID = "00000000-0000-0000-0000-000000000c01"
+	adID        = "00000000-0000-0000-0000-000000000a01"
+	categoryID  = "00000000-0000-0000-0000-000000000c01"
+	conditionID = "00000000-0000-0000-0000-000000000d01"
 )
 
 type fakeRepository struct {
 	ads        map[string]*AdvertisementEntity
 	total      uint
 	categories []*CategoryEntity
+	purposes   []*PurposeEntity
+	conditions []*ConditionEntity
 	err        error
 
 	gotLimit        uint
@@ -69,6 +73,14 @@ func (f *fakeRepository) GetCategories(context.Context) ([]*CategoryEntity, erro
 	return f.categories, nil
 }
 
+func (f *fakeRepository) GetPurposes(context.Context) ([]*PurposeEntity, error) {
+	return f.purposes, f.err
+}
+
+func (f *fakeRepository) GetConditions(context.Context) ([]*ConditionEntity, error) {
+	return f.conditions, f.err
+}
+
 func getAdvertisements(t *testing.T, repository *fakeRepository, input GetAdvertisementsInput) AdvertisementPage {
 	t.Helper()
 	if input.Filters == nil {
@@ -96,17 +108,23 @@ func TestGetAdvertisementsAppliesDefaultPageAndLimit(t *testing.T) {
 
 func TestGetAdvertisementsPassesOffsetAndFilters(t *testing.T) {
 	repository := &fakeRepository{total: 50}
-	filters := &AdvertisementFilters{Query: helpers.StringPtr("palmilha"), Category: helpers.StringPtr(categoryID), Side: helpers.StringPtr("left")}
+	filters := &AdvertisementFilters{
+		Query:      helpers.StringPtr("palmilha"),
+		Category:   helpers.StringPtr(categoryID),
+		Side:       helpers.StringPtr("left"),
+		Purposes:   []string{"prevention", "correction"},
+		Conditions: []string{conditionID},
+	}
 
 	getAdvertisements(t, repository, GetAdvertisementsInput{Page: 3, Limit: 20, Filters: filters})
 
 	if repository.gotLimit != 20 || repository.gotOffset != 40 {
 		t.Fatalf("limit = %d, offset = %d, want 20 and 40", repository.gotLimit, repository.gotOffset)
 	}
-	if repository.gotFilters != *filters {
+	if !reflect.DeepEqual(repository.gotFilters, *filters) {
 		t.Fatalf("filters = %+v, want %+v", repository.gotFilters, *filters)
 	}
-	if repository.gotCountFilters != *filters {
+	if !reflect.DeepEqual(repository.gotCountFilters, *filters) {
 		t.Fatalf("count filters = %+v, want the list filters %+v", repository.gotCountFilters, *filters)
 	}
 }
@@ -149,8 +167,18 @@ func TestGetAdvertisementsAcceptsMissingFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAdvertisements: %v", err)
 	}
-	if repository.gotFilters != (AdvertisementFilters{}) {
+	if !reflect.DeepEqual(repository.gotFilters, AdvertisementFilters{}) {
 		t.Fatalf("filters = %+v, want none", repository.gotFilters)
+	}
+}
+
+func TestGetAdvertisementsRejectsMalformedCondition(t *testing.T) {
+	input := GetAdvertisementsInput{Filters: &AdvertisementFilters{Conditions: []string{conditionID, "fascite"}}}
+
+	_, err := NewService(&fakeRepository{}).GetAdvertisements(context.Background(), input)
+
+	if !errors.Is(err, app.ErrInvalidInput) {
+		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
 	}
 }
 
@@ -311,5 +339,33 @@ func TestGetCategoriesPropagatesRepositoryErrors(t *testing.T) {
 	_, err := NewService(&fakeRepository{err: errDatabase}).GetCategories(context.Background())
 	if !errors.Is(err, errDatabase) {
 		t.Fatalf("err = %v, want %v", err, errDatabase)
+	}
+}
+
+func TestGetPurposesAndConditionsReturnRepositoryData(t *testing.T) {
+	repository := &fakeRepository{
+		purposes:   []*PurposeEntity{{Code: "prevention", Name: "Prevenção"}},
+		conditions: []*ConditionEntity{{ID: conditionID, Name: "Fascite plantar"}},
+	}
+	s := NewService(repository)
+
+	purposes, err := s.GetPurposes(context.Background())
+	if err != nil || len(purposes) != 1 || purposes[0].Code != "prevention" {
+		t.Fatalf("purposes = %+v, err = %v", purposes, err)
+	}
+	conditions, err := s.GetConditions(context.Background())
+	if err != nil || len(conditions) != 1 || conditions[0].ID != conditionID {
+		t.Fatalf("conditions = %+v, err = %v", conditions, err)
+	}
+}
+
+func TestGetPurposesAndConditionsPropagateRepositoryErrors(t *testing.T) {
+	s := NewService(&fakeRepository{err: errDatabase})
+
+	if _, err := s.GetPurposes(context.Background()); !errors.Is(err, errDatabase) {
+		t.Fatalf("purposes err = %v, want %v", err, errDatabase)
+	}
+	if _, err := s.GetConditions(context.Background()); !errors.Is(err, errDatabase) {
+		t.Fatalf("conditions err = %v, want %v", err, errDatabase)
 	}
 }

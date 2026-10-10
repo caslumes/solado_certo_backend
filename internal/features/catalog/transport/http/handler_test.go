@@ -2,9 +2,12 @@ package httpcatalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
@@ -18,6 +21,16 @@ func init() {
 
 type fakeService struct {
 	getAdvertisements func(context.Context, catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error)
+	getPurposes       func(context.Context) ([]*catalog.PurposeEntity, error)
+	getConditions     func(context.Context) ([]*catalog.ConditionEntity, error)
+}
+
+func (f fakeService) GetPurposes(ctx context.Context) ([]*catalog.PurposeEntity, error) {
+	return f.getPurposes(ctx)
+}
+
+func (f fakeService) GetConditions(ctx context.Context) ([]*catalog.ConditionEntity, error) {
+	return f.getConditions(ctx)
 }
 
 func (f fakeService) GetAdvertisements(ctx context.Context, input catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error) {
@@ -142,5 +155,98 @@ func TestGetAdvertisementsMapsInvalidInput(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestGetAdvertisementsBindsRepeatedPurposesAndConditions(t *testing.T) {
+	code, input := getAdvertisements(t, "?purpose=prevention&purpose=correction&purpose=&condition=c-1")
+
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", code, http.StatusOK)
+	}
+	if want := []string{"prevention", "correction"}; !reflect.DeepEqual(input.Filters.Purposes, want) {
+		t.Fatalf("purposes = %v, want %v", input.Filters.Purposes, want)
+	}
+	if want := []string{"c-1"}; !reflect.DeepEqual(input.Filters.Conditions, want) {
+		t.Fatalf("conditions = %v, want %v", input.Filters.Conditions, want)
+	}
+}
+
+func TestGetAdvertisementsLeavesPurposesAndConditionsEmptyWhenAbsent(t *testing.T) {
+	_, input := getAdvertisements(t, "?purpose=&condition=")
+
+	if input.Filters.Purposes != nil || input.Filters.Conditions != nil {
+		t.Fatalf("purposes = %v, conditions = %v, want nil", input.Filters.Purposes, input.Filters.Conditions)
+	}
+}
+
+func serveCatalog(handler *Handler, target string) *httptest.ResponseRecorder {
+	router := gin.New()
+	router.GET("/catalog/purposes", handler.GetPurposes)
+	router.GET("/catalog/conditions", handler.GetConditions)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
+	return recorder
+}
+
+func TestGetPurposesAndConditionsReturnLists(t *testing.T) {
+	handler := NewHandler(fakeService{
+		getPurposes: func(context.Context) ([]*catalog.PurposeEntity, error) {
+			return []*catalog.PurposeEntity{{ID: "p-1", Code: "prevention", Name: "Prevenção"}}, nil
+		},
+		getConditions: func(context.Context) ([]*catalog.ConditionEntity, error) {
+			return []*catalog.ConditionEntity{{ID: "c-1", Name: "Fascite plantar"}}, nil
+		},
+	})
+
+	tests := map[string]string{
+		"/catalog/purposes":   `{"purposes":[{"id":"p-1","code":"prevention","name":"Prevenção","description":null}]}`,
+		"/catalog/conditions": `{"conditions":[{"id":"c-1","name":"Fascite plantar","description":null}]}`,
+	}
+	for target, want := range tests {
+		t.Run(target, func(t *testing.T) {
+			recorder := serveCatalog(handler, target)
+
+			if recorder.Code != http.StatusOK || strings.TrimSpace(recorder.Body.String()) != want {
+				t.Fatalf("status = %d, body = %s, want %s", recorder.Code, recorder.Body.String(), want)
+			}
+		})
+	}
+}
+
+func TestGetPurposesAndConditionsReturnEmptyLists(t *testing.T) {
+	handler := NewHandler(fakeService{
+		getPurposes:   func(context.Context) ([]*catalog.PurposeEntity, error) { return nil, nil },
+		getConditions: func(context.Context) ([]*catalog.ConditionEntity, error) { return nil, nil },
+	})
+
+	tests := map[string]string{
+		"/catalog/purposes":   `{"purposes":[]}`,
+		"/catalog/conditions": `{"conditions":[]}`,
+	}
+	for target, want := range tests {
+		t.Run(target, func(t *testing.T) {
+			if body := strings.TrimSpace(serveCatalog(handler, target).Body.String()); body != want {
+				t.Fatalf("body = %s, want %s", body, want)
+			}
+		})
+	}
+}
+
+func TestGetPurposesAndConditionsHideErrors(t *testing.T) {
+	failure := errors.New("database unavailable")
+	handler := NewHandler(fakeService{
+		getPurposes:   func(context.Context) ([]*catalog.PurposeEntity, error) { return nil, failure },
+		getConditions: func(context.Context) ([]*catalog.ConditionEntity, error) { return nil, failure },
+	})
+
+	for _, target := range []string{"/catalog/purposes", "/catalog/conditions"} {
+		t.Run(target, func(t *testing.T) {
+			recorder := serveCatalog(handler, target)
+
+			if recorder.Code != http.StatusInternalServerError || strings.Contains(recorder.Body.String(), failure.Error()) {
+				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 }

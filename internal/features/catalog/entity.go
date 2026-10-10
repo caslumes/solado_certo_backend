@@ -143,4 +143,27 @@ type AdvertisementFilters struct {
 	Material             *string
 	Rigidity             *string
 	UsageIndication      *string
+	Purposes             []string
+	Conditions           []string
+}
+
+type PurposeEntity struct {
+	ID          string
+	Code        string
+	Name        string
+	Description *string
+}
+
+func (p *PurposeEntity) ToOutput() *PurposeOutput {
+	return &PurposeOutput{ID: p.ID, Code: p.Code, Name: p.Name, Description: p.Description}
+}
+
+type ConditionEntity struct {
+	ID          string
+	Name        string
+	Description *string
+}
+
+func (c *ConditionEntity) ToOutput() *ConditionOutput {
+	return &ConditionOutput{ID: c.ID, Name: c.Name, Description: c.Description}
 }
