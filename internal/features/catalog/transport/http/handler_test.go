@@ -2,6 +2,7 @@ package httpcatalog
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
@@ -23,6 +25,7 @@ type fakeService struct {
 	getAdvertisements func(context.Context, catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error)
 	getPurposes       func(context.Context) ([]*catalog.PurposeEntity, error)
 	getConditions     func(context.Context) ([]*catalog.ConditionEntity, error)
+	getAdvertisement  func(context.Context, string) (*catalog.AdvertisementDetailEntity, error)
 }
 
 func (f fakeService) GetPurposes(ctx context.Context) ([]*catalog.PurposeEntity, error) {
@@ -37,8 +40,8 @@ func (f fakeService) GetAdvertisements(ctx context.Context, input catalog.GetAdv
 	return f.getAdvertisements(ctx, input)
 }
 
-func (fakeService) GetAdvertisement(context.Context, string) (*catalog.AdvertisementEntity, error) {
-	panic("not implemented")
+func (f fakeService) GetAdvertisement(ctx context.Context, id string) (*catalog.AdvertisementDetailEntity, error) {
+	return f.getAdvertisement(ctx, id)
 }
 
 func (fakeService) GetCategories(context.Context) (*catalog.CategoriesEntity, error) {
@@ -274,5 +277,66 @@ func TestGetPurposesAndConditionsHideErrors(t *testing.T) {
 				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestGetAdvertisementReturnsFlatDetail(t *testing.T) {
+	memberSince := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	handler := NewHandler(fakeService{
+		getAdvertisement: func(_ context.Context, id string) (*catalog.AdvertisementDetailEntity, error) {
+			return &catalog.AdvertisementDetailEntity{
+				Advertisement:   &catalog.AdvertisementEntity{ID: id, Title: "Palmilha", Price: "89.90", PrescriptionRequired: true},
+				Purposes:        []*catalog.PurposeEntity{{ID: "p-1", Code: "pain_relief", Name: "Alívio de dor"}},
+				Conditions:      []*catalog.ConditionEntity{{ID: "c-1", Name: "Fascite plantar"}},
+				Seller:          &catalog.SellerEntity{ID: "s-1", Name: "Loja", MemberSince: memberSince},
+				ShippingOptions: []*catalog.ShippingOptionEntity{{ID: "o-1", Name: "PAC", Price: "19.90", DeliveryDays: 7}},
+			}, nil
+		},
+	})
+	router := gin.New()
+	router.GET("/catalog/items/:advertisementID", handler.GetAdvertisement)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/catalog/items/ad-1", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if body["id"] != "ad-1" || body["title"] != "Palmilha" || body["price"] != "89.90" {
+		t.Fatalf("advertisement fields are not at the top level: %v", body)
+	}
+	if body["safety_info_complete"] != false {
+		t.Fatalf("safety_info_complete = %v, want false", body["safety_info_complete"])
+	}
+	seller := body["seller"].(map[string]any)
+	if seller["name"] != "Loja" || seller["member_since"] != "2026-03-01T12:00:00Z" || seller["average_rating"] != nil {
+		t.Fatalf("seller = %v", seller)
+	}
+	options := body["shipping_options"].([]any)
+	if len(options) != 1 || options[0].(map[string]any)["price"] != "19.90" || options[0].(map[string]any)["delivery_days"] != float64(7) {
+		t.Fatalf("shipping options = %v", options)
+	}
+	if len(body["purposes"].([]any)) != 1 || len(body["conditions"].([]any)) != 1 {
+		t.Fatalf("purposes = %v, conditions = %v", body["purposes"], body["conditions"])
+	}
+}
+
+func TestGetAdvertisementMapsNotFound(t *testing.T) {
+	handler := NewHandler(fakeService{
+		getAdvertisement: func(context.Context, string) (*catalog.AdvertisementDetailEntity, error) {
+			return nil, app.ErrAdvertisementNotFound
+		},
+	})
+	router := gin.New()
+	router.GET("/catalog/items/:advertisementID", handler.GetAdvertisement)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/catalog/items/ad-1", nil))
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
 	}
 }

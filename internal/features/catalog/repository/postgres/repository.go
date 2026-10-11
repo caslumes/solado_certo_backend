@@ -143,7 +143,7 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 	return ads, nil
 }
 
-func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string) (*catalog.AdvertisementEntity, error) {
+func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string) (*catalog.AdvertisementDetailEntity, error) {
 	m, err := scanAdvertisement(r.pool.QueryRow(ctx, "SELECT "+advertisementColumns+" FROM advertisements WHERE id = $1", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -157,8 +157,130 @@ func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string
 	if err != nil {
 		return nil, err
 	}
+	ad := m.ToEntity()
 
-	return m.ToEntity(), nil
+	purposes, err := r.getAdvertisementPurposes(ctx, ad.ID)
+	if err != nil {
+		return nil, err
+	}
+	conditions, err := r.getAdvertisementConditions(ctx, ad.ID)
+	if err != nil {
+		return nil, err
+	}
+	seller, err := r.getSeller(ctx, ad.SellerID)
+	if err != nil {
+		return nil, err
+	}
+	seller.State = ad.SellerState
+	shippingOptions, err := r.getShippingOptions(ctx, ad.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &catalog.AdvertisementDetailEntity{
+		Advertisement:   ad,
+		Purposes:        purposes,
+		Conditions:      conditions,
+		Seller:          seller,
+		ShippingOptions: shippingOptions,
+	}, nil
+}
+
+func (r *postgresRepository) getAdvertisementPurposes(ctx context.Context, advertisementID string) ([]*catalog.PurposeEntity, error) {
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT p.id, p.code, p.name, p.description FROM podological_purposes p "+
+			"JOIN advertisement_purposes ap ON ap.purpose_id = p.id WHERE ap.advertisement_id = $1 ORDER BY p.name",
+		advertisementID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	purposes := []*catalog.PurposeEntity{}
+	for rows.Next() {
+		var p catalog.PurposeEntity
+		if err := rows.Scan(&p.ID, &p.Code, &p.Name, &p.Description); err != nil {
+			return nil, err
+		}
+		purposes = append(purposes, &p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return purposes, nil
+}
+
+func (r *postgresRepository) getAdvertisementConditions(ctx context.Context, advertisementID string) ([]*catalog.ConditionEntity, error) {
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT c.id, c.name, c.description FROM podological_conditions c "+
+			"JOIN advertisement_conditions ac ON ac.condition_id = c.id WHERE ac.advertisement_id = $1 AND c.active ORDER BY c.name",
+		advertisementID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	conditions := []*catalog.ConditionEntity{}
+	for rows.Next() {
+		var c catalog.ConditionEntity
+		if err := rows.Scan(&c.ID, &c.Name, &c.Description); err != nil {
+			return nil, err
+		}
+		conditions = append(conditions, &c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return conditions, nil
+}
+
+func (r *postgresRepository) getSeller(ctx context.Context, sellerID string) (*catalog.SellerEntity, error) {
+	var s catalog.SellerEntity
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT u.id, u.name, "+
+			"(SELECT AVG(rv.seller_rating)::float8 FROM reviews rv JOIN order_items oi ON oi.id = rv.order_item_id WHERE oi.seller_id = u.id), "+
+			"u.created_at FROM users u WHERE u.id = $1",
+		sellerID,
+	).Scan(&s.ID, &s.Name, &s.AverageRating, &s.MemberSince)
+	if err != nil {
+		return nil, err
+	}
+
+	return &s, nil
+}
+
+func (r *postgresRepository) getShippingOptions(ctx context.Context, advertisementID string) ([]*catalog.ShippingOptionEntity, error) {
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT id, name, carrier, price::text, delivery_days FROM shipping_options "+
+			"WHERE advertisement_id = $1 AND active ORDER BY price, delivery_days, id",
+		advertisementID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	options := []*catalog.ShippingOptionEntity{}
+	for rows.Next() {
+		var o catalog.ShippingOptionEntity
+		if err := rows.Scan(&o.ID, &o.Name, &o.Carrier, &o.Price, &o.DeliveryDays); err != nil {
+			return nil, err
+		}
+		options = append(options, &o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return options, nil
 }
 
 func (r *postgresRepository) CountAdvertisements(ctx context.Context, filters catalog.AdvertisementFilters) (uint, error) {

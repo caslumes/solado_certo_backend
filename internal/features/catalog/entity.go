@@ -1,6 +1,9 @@
 package catalog
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type AdvertisementImageEntity struct {
 	URL     string
@@ -77,6 +80,90 @@ func (a *AdvertisementEntity) ToOutput() *AdvertisementOutput {
 		AverageRating:        a.AverageRating,
 		ReviewCount:          a.ReviewCount,
 		SellerState:          a.SellerState,
+	}
+}
+
+type SellerEntity struct {
+	ID            string
+	Name          string
+	State         *string
+	AverageRating *float64
+	MemberSince   time.Time
+}
+
+func (s *SellerEntity) ToOutput() *SellerOutput {
+	return &SellerOutput{
+		ID:            s.ID,
+		Name:          s.Name,
+		State:         s.State,
+		AverageRating: s.AverageRating,
+		MemberSince:   s.MemberSince,
+	}
+}
+
+type ShippingOptionEntity struct {
+	ID           string
+	Name         string
+	Carrier      *string
+	Price        string
+	DeliveryDays uint
+}
+
+func (so *ShippingOptionEntity) ToOutput() *ShippingOptionOutput {
+	return &ShippingOptionOutput{
+		ID:           so.ID,
+		Name:         so.Name,
+		Carrier:      so.Carrier,
+		Price:        so.Price,
+		DeliveryDays: so.DeliveryDays,
+	}
+}
+
+type AdvertisementDetailEntity struct {
+	Advertisement   *AdvertisementEntity
+	Purposes        []*PurposeEntity
+	Conditions      []*ConditionEntity
+	Seller          *SellerEntity
+	ShippingOptions []*ShippingOptionEntity
+}
+
+func (d *AdvertisementDetailEntity) SafetyInfoComplete() bool {
+	ad := d.Advertisement
+	if !ad.PrescriptionRequired && len(d.Conditions) == 0 {
+		return true
+	}
+	return isFilled(ad.SafetyAlerts) && isFilled(ad.Contraindications)
+}
+
+func isFilled(s *string) bool {
+	return s != nil && strings.TrimSpace(*s) != ""
+}
+
+func (d *AdvertisementDetailEntity) ToOutput() *AdvertisementDetailOutput {
+	purposes := make([]*PurposeOutput, len(d.Purposes))
+	for i, purpose := range d.Purposes {
+		purposes[i] = purpose.ToOutput()
+	}
+	conditions := make([]*ConditionOutput, len(d.Conditions))
+	for i, condition := range d.Conditions {
+		conditions[i] = condition.ToOutput()
+	}
+	shippingOptions := make([]*ShippingOptionOutput, len(d.ShippingOptions))
+	for i, option := range d.ShippingOptions {
+		shippingOptions[i] = option.ToOutput()
+	}
+	var seller *SellerOutput
+	if d.Seller != nil {
+		seller = d.Seller.ToOutput()
+	}
+
+	return &AdvertisementDetailOutput{
+		AdvertisementOutput: d.Advertisement.ToOutput(),
+		Purposes:            purposes,
+		Conditions:          conditions,
+		Seller:              seller,
+		ShippingOptions:     shippingOptions,
+		SafetyInfoComplete:  d.SafetyInfoComplete(),
 	}
 }
 

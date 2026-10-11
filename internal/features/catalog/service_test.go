@@ -46,7 +46,7 @@ func (f *fakeRepository) GetAdvertisements(_ context.Context, limit uint, offset
 	return ads, nil
 }
 
-func (f *fakeRepository) GetAdvertisementByID(_ context.Context, id string) (*AdvertisementEntity, error) {
+func (f *fakeRepository) GetAdvertisementByID(_ context.Context, id string) (*AdvertisementDetailEntity, error) {
 	f.called = true
 	if f.err != nil {
 		return nil, f.err
@@ -55,7 +55,7 @@ func (f *fakeRepository) GetAdvertisementByID(_ context.Context, id string) (*Ad
 	if !ok {
 		return nil, app.ErrAdvertisementNotFound
 	}
-	return ad, nil
+	return &AdvertisementDetailEntity{Advertisement: ad}, nil
 }
 
 func (f *fakeRepository) CountAdvertisements(_ context.Context, filters AdvertisementFilters) (uint, error) {
@@ -251,7 +251,7 @@ func TestGetAdvertisementReturnsAd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAdvertisement: %v", err)
 	}
-	if ad.Title != "Palmilha ortopédica" {
+	if ad.Advertisement.Title != "Palmilha ortopédica" {
 		t.Fatalf("ad = %+v", ad)
 	}
 }

@@ -13,7 +13,7 @@ type GetAdvertisementsUseCase interface {
 }
 
 type GetAdvertisementUseCase interface {
-	GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error)
+	GetAdvertisement(ctx context.Context, id string) (*AdvertisementDetailEntity, error)
 }
 
 type GetCategoriesUseCase interface {
@@ -30,7 +30,7 @@ type GetConditionsUseCase interface {
 
 type repository interface {
 	GetAdvertisements(ctx context.Context, limit uint, offset uint, filters AdvertisementFilters, sort AdvertisementSort) ([]*AdvertisementEntity, error)
-	GetAdvertisementByID(ctx context.Context, id string) (*AdvertisementEntity, error)
+	GetAdvertisementByID(ctx context.Context, id string) (*AdvertisementDetailEntity, error)
 	CountAdvertisements(ctx context.Context, filters AdvertisementFilters) (uint, error)
 	GetCategories(ctx context.Context) ([]*CategoryEntity, error)
 	GetPurposes(ctx context.Context) ([]*PurposeEntity, error)
@@ -107,7 +107,7 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 	}, nil
 }
 
-func (s *service) GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error) {
+func (s *service) GetAdvertisement(ctx context.Context, id string) (*AdvertisementDetailEntity, error) {
 	if !helpers.IsUUID(id) {
 		return nil, app.ErrAdvertisementNotFound
 	}

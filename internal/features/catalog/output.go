@@ -1,5 +1,7 @@
 package catalog
 
+import "time"
+
 type AdvertisementImageOutput struct {
 	URL     string `json:"url"`
 	AltText string `json:"alt_text"`
@@ -31,6 +33,31 @@ type AdvertisementOutput struct {
 	AverageRating        *float64                    `json:"average_rating"`
 	ReviewCount          uint64                      `json:"review_count"`
 	SellerState          *string                     `json:"seller_state"`
+}
+
+type SellerOutput struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	State         *string   `json:"state"`
+	AverageRating *float64  `json:"average_rating"`
+	MemberSince   time.Time `json:"member_since"`
+}
+
+type ShippingOptionOutput struct {
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Carrier      *string `json:"carrier"`
+	Price        string  `json:"price"`
+	DeliveryDays uint    `json:"delivery_days"`
+}
+
+type AdvertisementDetailOutput struct {
+	*AdvertisementOutput
+	Purposes           []*PurposeOutput        `json:"purposes"`
+	Conditions         []*ConditionOutput      `json:"conditions"`
+	Seller             *SellerOutput           `json:"seller"`
+	ShippingOptions    []*ShippingOptionOutput `json:"shipping_options"`
+	SafetyInfoComplete bool                    `json:"safety_info_complete"`
 }
 
 type AdvertisementPageOutput struct {

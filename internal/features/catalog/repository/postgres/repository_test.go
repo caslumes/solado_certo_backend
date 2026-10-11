@@ -110,6 +110,15 @@ func (f fixture) insertReview(t *testing.T, adID string, productRating int) {
 	}
 }
 
+func (f fixture) detail(t *testing.T, id string) *catalog.AdvertisementDetailEntity {
+	t.Helper()
+	detail, err := f.r.GetAdvertisementByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("GetAdvertisementByID: %v", err)
+	}
+	return detail
+}
+
 func (f fixture) list(t *testing.T, limit, offset uint, filters catalog.AdvertisementFilters) []*catalog.AdvertisementEntity {
 	t.Helper()
 	return f.listSorted(t, limit, offset, filters, catalog.AdvertisementSortNewest)
@@ -431,10 +440,7 @@ func TestGetAdvertisementSellerStateIsNilWithoutDefaultAddress(t *testing.T) {
 	f := newFixture(t)
 	ad := f.insertAd(t, testutil.Ad{})
 
-	got, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
-	if err != nil {
-		t.Fatalf("GetAdvertisementByID: %v", err)
-	}
+	got := f.detail(t, ad.ID).Advertisement
 	if got.SellerState != nil {
 		t.Fatalf("seller state = %v, want nil", got.SellerState)
 	}
@@ -522,10 +528,7 @@ func TestGetAdvertisementByIDReturnsDetail(t *testing.T) {
 	f.insertImage(t, ad.ID, "b.jpg", 2, false)
 	f.insertImage(t, ad.ID, "a.jpg", 1, true)
 
-	got, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
-	if err != nil {
-		t.Fatalf("GetAdvertisementByID: %v", err)
-	}
+	got := f.detail(t, ad.ID).Advertisement
 
 	if got.Title != "Palmilha" || got.Description != "Para fascite" || got.Price != "89.90" || got.Stock != 4 ||
 		got.Status != "published" || !got.PrescriptionRequired || got.SellerID != f.seller.ID {
@@ -547,10 +550,7 @@ func TestPriceIsReadAsDecimalWithTwoPlaces(t *testing.T) {
 		t.Run(stored, func(t *testing.T) {
 			ad := f.insertAd(t, testutil.Ad{Price: stored})
 
-			got, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
-			if err != nil {
-				t.Fatalf("GetAdvertisementByID: %v", err)
-			}
+			got := f.detail(t, ad.ID).Advertisement
 			if got.Price != want {
 				t.Fatalf("price = %q, want %q", got.Price, want)
 			}
@@ -604,10 +604,7 @@ func TestAdvertisementsIncludeIDAndCategory(t *testing.T) {
 	ad := f.insertAd(t, testutil.Ad{})
 
 	listed := f.list(t, 10, 0, catalog.AdvertisementFilters{})
-	detail, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
-	if err != nil {
-		t.Fatalf("GetAdvertisementByID: %v", err)
-	}
+	detail := f.detail(t, ad.ID).Advertisement
 
 	for name, got := range map[string]*catalog.AdvertisementEntity{"list": listed[0], "detail": detail} {
 		if got.ID != ad.ID || got.CategoryID != f.category.ID {
@@ -624,10 +621,7 @@ func TestImageWithoutAltTextIsReadAsEmpty(t *testing.T) {
 		t.Fatalf("insert image: %v", err)
 	}
 
-	got, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
-	if err != nil {
-		t.Fatalf("GetAdvertisementByID: %v", err)
-	}
+	got := f.detail(t, ad.ID).Advertisement
 	if len(got.Images) != 1 || got.Images[0].URL != "photo.jpg" || got.Images[0].AltText != "" {
 		t.Fatalf("images = %+v", got.Images)
 	}
@@ -655,5 +649,88 @@ func TestGetCategoriesReturnsAllWithParents(t *testing.T) {
 	}
 	if got := byID[child.ID]; got == nil || got.ParentCategoryID == nil || *got.ParentCategoryID != f.category.ID {
 		t.Fatalf("child = %+v", got)
+	}
+}
+
+func (f fixture) insertShippingOption(t *testing.T, adID, name, price string, deliveryDays int, active bool) {
+	t.Helper()
+	_, err := f.pool.Exec(
+		context.Background(),
+		"INSERT INTO shipping_options (advertisement_id, name, carrier, price, delivery_days, active) VALUES ($1, $2, 'Correios', $3, $4, $5)",
+		adID, name, price, deliveryDays, active,
+	)
+	if err != nil {
+		t.Fatalf("insert shipping option: %v", err)
+	}
+}
+
+func TestGetAdvertisementByIDIncludesPurposesConditionsSellerAndShipping(t *testing.T) {
+	f := newFixture(t)
+	f.insertAddress(t, f.seller.ID, "SP", true)
+	ad := f.insertAd(t, testutil.Ad{Title: "Palmilha"})
+	other := f.insertAd(t, testutil.Ad{Title: "Outro anúncio do mesmo vendedor"})
+
+	f.link(t, "advertisement_purposes", "purpose_id", ad.ID, f.insertPurpose(t, "prevention", "Prevenção"))
+	f.link(t, "advertisement_purposes", "purpose_id", ad.ID, f.insertPurpose(t, "pain_relief", "Alívio de dor"))
+	f.insertPurpose(t, "correction", "Correção")
+	f.link(t, "advertisement_conditions", "condition_id", ad.ID, f.insertCondition(t, "Fascite plantar", true))
+	f.link(t, "advertisement_conditions", "condition_id", ad.ID, f.insertCondition(t, "Condição desativada", false))
+
+	f.insertShippingOption(t, ad.ID, "SEDEX", "34.9", 2, true)
+	f.insertShippingOption(t, ad.ID, "PAC", "19.9", 7, true)
+	f.insertShippingOption(t, ad.ID, "Inativa", "5", 10, false)
+	f.insertShippingOption(t, other.ID, "De outro anúncio", "1", 1, true)
+
+	// The seller rating covers every ad of the seller; insertReview always gives the seller 5 stars.
+	f.insertReview(t, other.ID, 2)
+
+	got := f.detail(t, ad.ID)
+
+	purposes := []string{}
+	for _, p := range got.Purposes {
+		purposes = append(purposes, p.Name)
+	}
+	if !equal(purposes, []string{"Alívio de dor", "Prevenção"}) {
+		t.Fatalf("purposes = %v", purposes)
+	}
+	if len(got.Conditions) != 1 || got.Conditions[0].Name != "Fascite plantar" {
+		t.Fatalf("conditions = %+v, want only the active one", got.Conditions)
+	}
+
+	seller := got.Seller
+	if seller.ID != f.seller.ID || seller.Name != f.seller.Name || seller.MemberSince.IsZero() {
+		t.Fatalf("seller = %+v", seller)
+	}
+	if seller.State == nil || *seller.State != "SP" {
+		t.Fatalf("seller state = %v, want SP", seller.State)
+	}
+	if seller.AverageRating == nil || *seller.AverageRating != 5 {
+		t.Fatalf("seller rating = %v, want 5", seller.AverageRating)
+	}
+
+	if len(got.ShippingOptions) != 2 {
+		t.Fatalf("shipping options = %+v, want the two active ones", got.ShippingOptions)
+	}
+	pac, sedex := got.ShippingOptions[0], got.ShippingOptions[1]
+	if pac.Name != "PAC" || pac.Price != "19.90" || pac.DeliveryDays != 7 || pac.Carrier == nil || *pac.Carrier != "Correios" {
+		t.Fatalf("first shipping option = %+v", pac)
+	}
+	if sedex.Name != "SEDEX" || sedex.Price != "34.90" {
+		t.Fatalf("second shipping option = %+v", sedex)
+	}
+}
+
+func TestGetAdvertisementByIDWithoutLinksReturnsEmptyLists(t *testing.T) {
+	f := newFixture(t)
+	ad := f.insertAd(t, testutil.Ad{})
+
+	got := f.detail(t, ad.ID)
+
+	if got.Purposes == nil || len(got.Purposes) != 0 || got.Conditions == nil || len(got.Conditions) != 0 ||
+		got.ShippingOptions == nil || len(got.ShippingOptions) != 0 {
+		t.Fatalf("purposes = %v, conditions = %v, shipping options = %v, want empty lists", got.Purposes, got.Conditions, got.ShippingOptions)
+	}
+	if got.Seller.AverageRating != nil || got.Seller.State != nil {
+		t.Fatalf("seller = %+v, want no rating and no state", got.Seller)
 	}
 }
