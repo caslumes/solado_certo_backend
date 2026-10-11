@@ -115,7 +115,7 @@ func TestGetAdvertisementsBindsSort(t *testing.T) {
 }
 
 func TestGetAdvertisementsRejectsInvalidQuery(t *testing.T) {
-	for _, query := range []string{"?page=0", "?page=-1", "?limit=0", "?limit=101", "?price_min=abc", "?custom_made_allowed=maybe", "?sort=cheapest"} {
+	for _, query := range []string{"?page=0", "?page=-1", "?limit=0", "?limit=101", "?price_min=abc", "?rating_min=abc", "?custom_made_allowed=maybe", "?sort=cheapest"} {
 		t.Run(query, func(t *testing.T) {
 			code, input := getAdvertisements(t, query)
 
@@ -155,6 +155,32 @@ func TestGetAdvertisementsMapsInvalidInput(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestGetAdvertisementsBindsRatingMinAndState(t *testing.T) {
+	code, input := getAdvertisements(t, "?rating_min=4.5&state=SP")
+
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", code, http.StatusOK)
+	}
+	f := input.Filters
+	if f.RatingMin == nil || *f.RatingMin != 4.5 {
+		t.Fatalf("rating_min = %v, want 4.5", f.RatingMin)
+	}
+	if f.State == nil || *f.State != "SP" {
+		t.Fatalf("state = %v, want SP", f.State)
+	}
+}
+
+func TestGetAdvertisementsTreatsEmptyRatingMinAndStateAsAbsent(t *testing.T) {
+	code, input := getAdvertisements(t, "?rating_min=&state=")
+
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", code, http.StatusOK)
+	}
+	if input.Filters.RatingMin != nil || input.Filters.State != nil {
+		t.Fatalf("rating_min = %v, state = %v, want nil", input.Filters.RatingMin, input.Filters.State)
 	}
 }
 

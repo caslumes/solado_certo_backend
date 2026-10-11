@@ -38,6 +38,10 @@ type AdvertisementEntity struct {
 	SafetyAlerts         *string
 	Contraindications    *string
 	ShippingNotes        *string
+	CoverImageURL        *string
+	AverageRating        *float64
+	ReviewCount          uint64
+	SellerState          *string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 	RemovedAt            *time.Time
@@ -69,6 +73,10 @@ func (a *AdvertisementEntity) ToOutput() *AdvertisementOutput {
 		SafetyAlerts:         a.SafetyAlerts,
 		Contraindications:    a.Contraindications,
 		ShippingNotes:        a.ShippingNotes,
+		CoverImageURL:        a.CoverImageURL,
+		AverageRating:        a.AverageRating,
+		ReviewCount:          a.ReviewCount,
+		SellerState:          a.SellerState,
 	}
 }
 
@@ -145,6 +153,8 @@ type AdvertisementFilters struct {
 	UsageIndication      *string
 	Purposes             []string
 	Conditions           []string
+	RatingMin            *float64
+	State                *string
 }
 
 type PurposeEntity struct {

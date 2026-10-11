@@ -24,6 +24,10 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 
 const advertisementColumns = "id, seller_id, category_id, title, description, price::text, stock, status, prescription_required, " +
 	"custom_made_allowed, side, size, material, rigidity, usage_indication, safety_alerts, contraindications, shipping_notes, " +
+	"(SELECT ai.url FROM advertisement_images ai WHERE ai.advertisement_id = advertisements.id ORDER BY ai.is_cover DESC, ai.position LIMIT 1), " +
+	"(SELECT AVG(rv.product_rating)::float8 FROM reviews rv JOIN order_items oi ON oi.id = rv.order_item_id WHERE oi.advertisement_id = advertisements.id), " +
+	"(SELECT COUNT(*) FROM reviews rv JOIN order_items oi ON oi.id = rv.order_item_id WHERE oi.advertisement_id = advertisements.id), " +
+	"(SELECT addr.state FROM addresses addr WHERE addr.user_id = advertisements.seller_id AND addr.is_default LIMIT 1), " +
 	"created_at, updated_at, removed_at"
 
 func scanAdvertisement(row pgx.Row) (*repository.AdvertisementModel, error) {
@@ -47,6 +51,10 @@ func scanAdvertisement(row pgx.Row) (*repository.AdvertisementModel, error) {
 		&m.SafetyAlerts,
 		&m.Contraindications,
 		&m.ShippingNotes,
+		&m.CoverImageURL,
+		&m.AverageRating,
+		&m.ReviewCount,
+		&m.SellerState,
 		&m.CreatedAt,
 		&m.UpdatedAt,
 		&m.RemovedAt,
@@ -311,6 +319,18 @@ func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []int
 		conditions = append(conditions, "EXISTS (SELECT 1 FROM advertisement_conditions ac "+
 			"WHERE ac.advertisement_id = advertisements.id AND ac.condition_id = ANY($"+strconv.Itoa(argIndex)+"::uuid[]))")
 		args = append(args, filters.Conditions)
+		argIndex++
+	}
+	if filters.RatingMin != nil {
+		conditions = append(conditions, "(SELECT AVG(rv.product_rating) FROM reviews rv JOIN order_items oi ON oi.id = rv.order_item_id "+
+			"WHERE oi.advertisement_id = advertisements.id) >= $"+strconv.Itoa(argIndex))
+		args = append(args, *filters.RatingMin)
+		argIndex++
+	}
+	if filters.State != nil {
+		conditions = append(conditions, "EXISTS (SELECT 1 FROM addresses addr WHERE addr.user_id = advertisements.seller_id "+
+			"AND addr.is_default AND addr.state = $"+strconv.Itoa(argIndex)+")")
+		args = append(args, *filters.State)
 		argIndex++
 	}
 

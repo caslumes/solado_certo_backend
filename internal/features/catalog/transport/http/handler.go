@@ -27,6 +27,8 @@ type getAdvertisementsQuery struct {
 	UsageIndication      *string  `form:"usage_indication"`
 	Purposes             []string `form:"purpose"`
 	Conditions           []string `form:"condition"`
+	RatingMin            *float64 `form:"rating_min"`
+	State                *string  `form:"state"`
 }
 
 type Service interface {
@@ -72,6 +74,8 @@ func (h *Handler) GetAdvertisements(c *gin.Context) {
 			UsageIndication:      query.UsageIndication,
 			Purposes:             withoutEmpty(query.Purposes),
 			Conditions:           withoutEmpty(query.Conditions),
+			RatingMin:            query.RatingMin,
+			State:                query.State,
 		},
 	})
 	if err != nil {

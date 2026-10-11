@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +14,8 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var orderSequence atomic.Int64
 
 type fixture struct {
 	r        *postgresRepository
@@ -49,6 +53,60 @@ func (f fixture) insertImage(t *testing.T, adID, url string, position int, isCov
 	)
 	if err != nil {
 		t.Fatalf("insert image: %v", err)
+	}
+}
+
+func (f fixture) insertAddress(t *testing.T, userID, state string, isDefault bool) {
+	t.Helper()
+	now := time.Now().UTC()
+	_, err := f.pool.Exec(
+		context.Background(),
+		"INSERT INTO addresses (user_id, receiver, zip_code, street, number, district, city, state, is_default, created_at, updated_at) "+
+			"VALUES ($1, 'Recebedor', '01001000', 'Rua Teste', '1', 'Centro', 'Cidade', $2, $3, $4, $4)",
+		userID, state, isDefault, now,
+	)
+	if err != nil {
+		t.Fatalf("insert address: %v", err)
+	}
+}
+
+// insertReview creates a buyer, a minimal paid order and order item for ad, and a review with the given product rating.
+func (f fixture) insertReview(t *testing.T, adID string, productRating int) {
+	t.Helper()
+	buyer := testutil.InsertUser(t, f.pool)
+	f.insertAddress(t, buyer.ID, "RJ", true)
+
+	now := time.Now().UTC()
+	n := orderSequence.Add(1)
+	var orderID string
+	err := f.pool.QueryRow(
+		context.Background(),
+		"INSERT INTO orders (buyer_id, shipping_address_id, number, status, subtotal, total, created_at, updated_at) "+
+			"SELECT $1, id, $2, 'paid', 100, 100, $3, $3 FROM addresses WHERE user_id = $1 RETURNING id",
+		buyer.ID, fmt.Sprintf("ORD-%d", n), now,
+	).Scan(&orderID)
+	if err != nil {
+		t.Fatalf("insert order: %v", err)
+	}
+
+	var orderItemID string
+	err = f.pool.QueryRow(
+		context.Background(),
+		"INSERT INTO order_items (order_id, advertisement_id, seller_id, quantity, unit_price, subtotal, product_snapshot, created_at) "+
+			"VALUES ($1, $2, $3, 1, 100, 100, '{}', $4) RETURNING id",
+		orderID, adID, f.seller.ID, now,
+	).Scan(&orderItemID)
+	if err != nil {
+		t.Fatalf("insert order item: %v", err)
+	}
+
+	_, err = f.pool.Exec(
+		context.Background(),
+		"INSERT INTO reviews (order_item_id, reviewer_id, product_rating, seller_rating, created_at, updated_at) VALUES ($1, $2, $3, 5, $4, $4)",
+		orderItemID, buyer.ID, productRating, now,
+	)
+	if err != nil {
+		t.Fatalf("insert review: %v", err)
 	}
 }
 
@@ -294,6 +352,91 @@ func TestGetAdvertisementsFiltersByPurposeAndCondition(t *testing.T) {
 				t.Fatalf("count = %d, err = %v, want %d", count, err, len(tt.want))
 			}
 		})
+	}
+}
+
+func TestGetAdvertisementsFiltersByRatingMinAndState(t *testing.T) {
+	f := newFixture(t)
+	f.insertAddress(t, f.seller.ID, "SP", true)
+	rated := f.insertAd(t, testutil.Ad{Title: "Bem avaliada"})
+	f.insertReview(t, rated.ID, 5)
+	f.insertReview(t, rated.ID, 4)
+	f.insertAd(t, testutil.Ad{Title: "Sem avaliação"})
+
+	tests := map[string]struct {
+		filters catalog.AdvertisementFilters
+		want    []string
+	}{
+		"rating_min excludes unrated ads":        {catalog.AdvertisementFilters{RatingMin: ptr(4.0)}, []string{"Bem avaliada"}},
+		"rating_min above the average":           {catalog.AdvertisementFilters{RatingMin: ptr(4.6)}, []string{}},
+		"state matches seller's default address": {catalog.AdvertisementFilters{State: helpers.StringPtr("SP")}, []string{"Bem avaliada", "Sem avaliação"}},
+		"state with no matching seller address":  {catalog.AdvertisementFilters{State: helpers.StringPtr("MG")}, []string{}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := titles(f.list(t, 10, 0, tt.filters))
+			if !sameItems(got, tt.want) {
+				t.Fatalf("titles = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetAdvertisementsIncludesCoverImageRatingAndSellerState(t *testing.T) {
+	f := newFixture(t)
+	f.insertAddress(t, f.seller.ID, "PR", true)
+
+	ad := f.insertAd(t, testutil.Ad{Title: "Com avaliações"})
+	f.insertImage(t, ad.ID, "second.jpg", 2, false)
+	f.insertImage(t, ad.ID, "cover.jpg", 1, true)
+	f.insertReview(t, ad.ID, 5)
+	f.insertReview(t, ad.ID, 3)
+
+	f.insertAd(t, testutil.Ad{Title: "Sem avaliações"})
+
+	ads := f.list(t, 10, 0, catalog.AdvertisementFilters{})
+	byTitle := map[string]*catalog.AdvertisementEntity{}
+	for _, a := range ads {
+		byTitle[a.Title] = a
+	}
+
+	reviewed := byTitle["Com avaliações"]
+	if reviewed.CoverImageURL == nil || *reviewed.CoverImageURL != "cover.jpg" {
+		t.Fatalf("cover image = %v, want cover.jpg", reviewed.CoverImageURL)
+	}
+	if reviewed.AverageRating == nil || *reviewed.AverageRating != 4 {
+		t.Fatalf("average rating = %v, want 4", reviewed.AverageRating)
+	}
+	if reviewed.ReviewCount != 2 {
+		t.Fatalf("review count = %d, want 2", reviewed.ReviewCount)
+	}
+	if reviewed.SellerState == nil || *reviewed.SellerState != "PR" {
+		t.Fatalf("seller state = %v, want PR", reviewed.SellerState)
+	}
+
+	unreviewed := byTitle["Sem avaliações"]
+	if unreviewed.AverageRating != nil {
+		t.Fatalf("average rating = %v, want nil", unreviewed.AverageRating)
+	}
+	if unreviewed.ReviewCount != 0 {
+		t.Fatalf("review count = %d, want 0", unreviewed.ReviewCount)
+	}
+	if unreviewed.CoverImageURL != nil {
+		t.Fatalf("cover image = %v, want nil", unreviewed.CoverImageURL)
+	}
+}
+
+func TestGetAdvertisementSellerStateIsNilWithoutDefaultAddress(t *testing.T) {
+	f := newFixture(t)
+	ad := f.insertAd(t, testutil.Ad{})
+
+	got, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
+	if err != nil {
+		t.Fatalf("GetAdvertisementByID: %v", err)
+	}
+	if got.SellerState != nil {
+		t.Fatalf("seller state = %v, want nil", got.SellerState)
 	}
 }
 

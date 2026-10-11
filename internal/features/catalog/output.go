@@ -27,6 +27,10 @@ type AdvertisementOutput struct {
 	SafetyAlerts         *string                     `json:"safety_alerts"`
 	Contraindications    *string                     `json:"contraindications"`
 	ShippingNotes        *string                     `json:"shipping_notes"`
+	CoverImageURL        *string                     `json:"cover_image_url"`
+	AverageRating        *float64                    `json:"average_rating"`
+	ReviewCount          uint64                      `json:"review_count"`
+	SellerState          *string                     `json:"seller_state"`
 }
 
 type AdvertisementPageOutput struct {

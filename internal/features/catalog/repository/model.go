@@ -42,6 +42,10 @@ type AdvertisementModel struct {
 	SafetyAlerts         *string
 	Contraindications    *string
 	ShippingNotes        *string
+	CoverImageURL        *string
+	AverageRating        *float64
+	ReviewCount          uint64
+	SellerState          *string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 	RemovedAt            *time.Time
@@ -73,6 +77,10 @@ func (m *AdvertisementModel) ToEntity() *catalog.AdvertisementEntity {
 		SafetyAlerts:         m.SafetyAlerts,
 		Contraindications:    m.Contraindications,
 		ShippingNotes:        m.ShippingNotes,
+		CoverImageURL:        m.CoverImageURL,
+		AverageRating:        m.AverageRating,
+		ReviewCount:          m.ReviewCount,
+		SellerState:          m.SellerState,
 		CreatedAt:            m.CreatedAt,
 		UpdatedAt:            m.UpdatedAt,
 		RemovedAt:            m.RemovedAt,
