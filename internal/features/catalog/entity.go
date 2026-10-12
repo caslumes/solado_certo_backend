@@ -242,6 +242,12 @@ type AdvertisementFilters struct {
 	Conditions           []string
 	RatingMin            *float64
 	State                *string
+	Profile *ProfileMatch
+}
+
+type ProfileMatch struct {
+	PainPointIDs      []string
+	ClinicalCondition *string
 }
 
 type PurposeEntity struct {

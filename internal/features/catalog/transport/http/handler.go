@@ -7,6 +7,7 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
+	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +30,7 @@ type getAdvertisementsQuery struct {
 	Conditions           []string `form:"condition"`
 	RatingMin            *float64 `form:"rating_min"`
 	State                *string  `form:"state"`
+	ForMe                bool     `form:"for_me"`
 }
 
 type Service interface {
@@ -55,6 +57,11 @@ func (h *Handler) GetAdvertisements(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters: page and limit must be positive integers (limit at most 100), prices must be numbers and flags must be booleans and sort must be relevance, price_asc, price_desc or newest"})
 		return
 	}
+	userID, _ := authmiddleware.UserIDFrom(c.Request.Context())
+	if query.ForMe && userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "for_me requires authentication"})
+		return
+	}
 
 	ap, err := h.service.GetAdvertisements(c.Request.Context(), catalog.GetAdvertisementsInput{
 		Page:  query.Page,
@@ -77,10 +84,16 @@ func (h *Handler) GetAdvertisements(c *gin.Context) {
 			RatingMin:            query.RatingMin,
 			State:                query.State,
 		},
+		ForMe:  query.ForMe,
+		UserID: userID,
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, app.ErrConsentRequired) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "for_me requires consent to use the podological profile"})
 			return
 		}
 

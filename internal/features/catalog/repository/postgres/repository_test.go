@@ -70,7 +70,6 @@ func (f fixture) insertAddress(t *testing.T, userID, state string, isDefault boo
 	}
 }
 
-// insertReview creates a buyer, a minimal paid order and order item for ad, and a review with the given product rating.
 func (f fixture) insertReview(t *testing.T, adID string, productRating int) {
 	t.Helper()
 	buyer := testutil.InsertUser(t, f.pool)
@@ -681,7 +680,6 @@ func TestGetAdvertisementByIDIncludesPurposesConditionsSellerAndShipping(t *test
 	f.insertShippingOption(t, ad.ID, "Inativa", "5", 10, false)
 	f.insertShippingOption(t, other.ID, "De outro anúncio", "1", 1, true)
 
-	// The seller rating covers every ad of the seller; insertReview always gives the seller 5 stars.
 	f.insertReview(t, other.ID, 2)
 
 	got := f.detail(t, ad.ID)
@@ -732,5 +730,110 @@ func TestGetAdvertisementByIDWithoutLinksReturnsEmptyLists(t *testing.T) {
 	}
 	if got.Seller.AverageRating != nil || got.Seller.State != nil {
 		t.Fatalf("seller = %+v, want no rating and no state", got.Seller)
+	}
+}
+
+func TestGetAdvertisementsSearchesFullText(t *testing.T) {
+	f := newFixture(t)
+	f.insertAd(t, testutil.Ad{Title: "Palmilhas ortopédicas", Description: "Suporte para o calcanhar"})
+	f.insertAd(t, testutil.Ad{Title: "Tênis para pé diabético", Description: "Interior sem costuras"})
+	f.insertAd(t, testutil.Ad{Title: "Meia de compressão", Description: "Média compressão"})
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"prefix while typing":      {"palm", []string{"Palmilhas ortopédicas"}},
+		"singular finds plural":    {"palmilha", []string{"Palmilhas ortopédicas"}},
+		"without accents":          {"diabetico", []string{"Tênis para pé diabético"}},
+		"in description":           {"calcanhar", []string{"Palmilhas ortopédicas"}},
+		"every word must match":    {"palmilha diabetico", []string{}},
+		"no words means no filter": {"!!!", []string{"Meia de compressão", "Tênis para pé diabético", "Palmilhas ortopédicas"}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := titles(f.list(t, 10, 0, catalog.AdvertisementFilters{Query: helpers.StringPtr(tt.query)}))
+			if !equal(got, tt.want) {
+				t.Fatalf("titles = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetAdvertisementsRanksTitleMatchesFirstByRelevance(t *testing.T) {
+	f := newFixture(t)
+	f.insertAd(t, testutil.Ad{Title: "Palmilha de silicone", Description: "Gel"})
+	f.insertAd(t, testutil.Ad{Title: "Calcanheira", Description: "Feita de silicone"})
+
+	filters := catalog.AdvertisementFilters{Query: helpers.StringPtr("silicone")}
+	if got := titles(f.listSorted(t, 10, 0, filters, catalog.AdvertisementSortRelevance)); !equal(got, []string{"Palmilha de silicone", "Calcanheira"}) {
+		t.Fatalf("relevance = %v", got)
+	}
+	if got := titles(f.listSorted(t, 10, 0, filters, catalog.AdvertisementSortNewest)); !equal(got, []string{"Calcanheira", "Palmilha de silicone"}) {
+		t.Fatalf("newest = %v", got)
+	}
+	filters.State = helpers.StringPtr("SP")
+	f.insertAddress(t, f.seller.ID, "SP", true)
+	if got := titles(f.listSorted(t, 10, 0, filters, catalog.AdvertisementSortRelevance)); !equal(got, []string{"Palmilha de silicone", "Calcanheira"}) {
+		t.Fatalf("relevance with state = %v", got)
+	}
+}
+
+func (f fixture) insertPainPoint(t *testing.T, name string, conditionIDs ...string) string {
+	t.Helper()
+	var id string
+	if err := f.pool.QueryRow(context.Background(), "INSERT INTO pain_points (name) VALUES ($1) RETURNING id", name).Scan(&id); err != nil {
+		t.Fatalf("insert pain point: %v", err)
+	}
+	for _, conditionID := range conditionIDs {
+		_, err := f.pool.Exec(context.Background(), "INSERT INTO pain_point_conditions (pain_point_id, condition_id) VALUES ($1, $2)", id, conditionID)
+		if err != nil {
+			t.Fatalf("map pain point: %v", err)
+		}
+	}
+	return id
+}
+
+func TestGetAdvertisementsFiltersByProfile(t *testing.T) {
+	f := newFixture(t)
+	fasciitis := f.insertCondition(t, "Fascite plantar", true)
+	diabetic := f.insertCondition(t, "Pé diabético", true)
+	bunion := f.insertCondition(t, "Joanete (hálux valgo)", true)
+	heel := f.insertPainPoint(t, "Calcanhar", fasciitis)
+	ankle := f.insertPainPoint(t, "Tornozelo")
+
+	for title, conditionID := range map[string]string{"Palmilha": fasciitis, "Tênis": diabetic, "Órtese": bunion} {
+		ad := f.insertAd(t, testutil.Ad{Title: title})
+		f.link(t, "advertisement_conditions", "condition_id", ad.ID, conditionID)
+	}
+	f.insertAd(t, testutil.Ad{Title: "Sem condição"})
+
+	tests := map[string]struct {
+		profile catalog.ProfileMatch
+		want    []string
+	}{
+		"pain point mapped to a condition":   {catalog.ProfileMatch{PainPointIDs: []string{heel}}, []string{"Palmilha"}},
+		"pain point without conditions":      {catalog.ProfileMatch{PainPointIDs: []string{ankle}}, []string{}},
+		"clinical condition without accents": {catalog.ProfileMatch{ClinicalCondition: helpers.StringPtr("sou diabetico")}, []string{"Tênis"}},
+		"either source matches": {catalog.ProfileMatch{PainPointIDs: []string{heel}, ClinicalCondition: helpers.StringPtr("joanete")},
+			[]string{"Palmilha", "Órtese"}},
+		"short words are ignored": {catalog.ProfileMatch{ClinicalCondition: helpers.StringPtr("dor no pé")}, []string{}},
+		"empty profile":           {catalog.ProfileMatch{}, []string{}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			filters := catalog.AdvertisementFilters{Profile: &tt.profile}
+			got := titles(f.list(t, 10, 0, filters))
+			if !sameItems(got, tt.want) {
+				t.Fatalf("titles = %v, want %v", got, tt.want)
+			}
+			count, err := f.r.CountAdvertisements(context.Background(), filters)
+			if err != nil {
+				t.Fatalf("CountAdvertisements: %v", err)
+			}
+			if count != uint(len(tt.want)) {
+				t.Fatalf("count = %d, want %d", count, len(tt.want))
+			}
+		})
 	}
 }

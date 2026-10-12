@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
@@ -37,13 +38,19 @@ type repository interface {
 	GetConditions(ctx context.Context) ([]*ConditionEntity, error)
 }
 
-type service struct {
-	repo repository
+type podologicalProfileReader interface {
+	GetConsentedPodologicalProfile(ctx context.Context, userID string) (*me.PodologicalProfileEntity, error)
 }
 
-func NewService(repo repository) *service {
+type service struct {
+	repo     repository
+	profiles podologicalProfileReader
+}
+
+func NewService(repo repository, profiles podologicalProfileReader) *service {
 	return &service{
-		repo: repo,
+		repo:     repo,
+		profiles: profiles,
 	}
 }
 
@@ -76,6 +83,16 @@ func (s *service) GetAdvertisements(ctx context.Context, input GetAdvertisements
 		if !helpers.IsUUID(condition) {
 			return AdvertisementPage{}, fmt.Errorf("%w: invalid condition id", app.ErrInvalidInput)
 		}
+	}
+	if input.ForMe {
+		if input.UserID == "" {
+			return AdvertisementPage{}, fmt.Errorf("%w: for_me requires an authenticated user", app.ErrInvalidInput)
+		}
+		profile, err := s.profiles.GetConsentedPodologicalProfile(ctx, input.UserID)
+		if err != nil {
+			return AdvertisementPage{}, err
+		}
+		filters.Profile = profileMatch(profile)
 	}
 
 	totalItems, err := s.repo.CountAdvertisements(ctx, filters)
@@ -160,4 +177,12 @@ func groupCategories(categories []*CategoryEntity) []*CategoryEntity {
 	}
 
 	return rootCategories
+}
+
+func profileMatch(profile *me.PodologicalProfileEntity) *ProfileMatch {
+	painPointIDs := make([]string, len(profile.PainPoints))
+	for i, painPoint := range profile.PainPoints {
+		painPointIDs[i] = painPoint.ID
+	}
+	return &ProfileMatch{PainPointIDs: painPointIDs, ClinicalCondition: profile.ClinicalCondition}
 }

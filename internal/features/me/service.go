@@ -250,6 +250,14 @@ func (s *service) GetPodologicalProfileByUserID(context context.Context, userID 
 	return profile, nil
 }
 
+func (s *service) GetConsentedPodologicalProfile(context context.Context, userID string) (*PodologicalProfileEntity, error) {
+	if err := s.requireConsent(context, userID, ConsentPurposePodologicalProfile); err != nil {
+		return nil, err
+	}
+
+	return s.GetPodologicalProfileByUserID(context, userID)
+}
+
 const (
 	maxClinicalConditionLength = 120
 	maxPodologicalNotesLength  = 1000

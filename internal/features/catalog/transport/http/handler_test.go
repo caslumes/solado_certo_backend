@@ -14,6 +14,7 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
+	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -338,5 +339,51 @@ func TestGetAdvertisementMapsNotFound(t *testing.T) {
 
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
+func serveForMe(t *testing.T, userID string, err error) (int, *catalog.GetAdvertisementsInput) {
+	t.Helper()
+
+	var received *catalog.GetAdvertisementsInput
+	handler := NewHandler(fakeService{
+		getAdvertisements: func(_ context.Context, input catalog.GetAdvertisementsInput) (catalog.AdvertisementPage, error) {
+			received = &input
+			return catalog.AdvertisementPage{}, err
+		},
+	})
+	router := gin.New()
+	router.GET("/catalog", func(c *gin.Context) {
+		if userID != "" {
+			c.Request = c.Request.WithContext(authmiddleware.WithUserID(c.Request.Context(), userID))
+		}
+	}, handler.GetAdvertisements)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/catalog?for_me=true", nil))
+	return recorder.Code, received
+}
+
+func TestGetAdvertisementsForMePassesAuthenticatedUser(t *testing.T) {
+	status, input := serveForMe(t, "buyer-1", nil)
+
+	if status != http.StatusOK || input == nil || !input.ForMe || input.UserID != "buyer-1" {
+		t.Fatalf("status = %d, input = %+v", status, input)
+	}
+}
+
+func TestGetAdvertisementsForMeRequiresAuthentication(t *testing.T) {
+	status, input := serveForMe(t, "", nil)
+
+	if status != http.StatusUnauthorized || input != nil {
+		t.Fatalf("status = %d, input = %+v, want 401 without calling the service", status, input)
+	}
+}
+
+func TestGetAdvertisementsForMeMapsMissingConsent(t *testing.T) {
+	status, _ := serveForMe(t, "buyer-1", app.ErrConsentRequired)
+
+	if status != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", status, http.StatusForbidden)
 	}
 }

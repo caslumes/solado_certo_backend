@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
@@ -81,12 +82,30 @@ func (f *fakeRepository) GetConditions(context.Context) ([]*ConditionEntity, err
 	return f.conditions, f.err
 }
 
+type fakeProfiles struct {
+	profile *me.PodologicalProfileEntity
+	err     error
+	gotUser string
+}
+
+func (f *fakeProfiles) GetConsentedPodologicalProfile(_ context.Context, userID string) (*me.PodologicalProfileEntity, error) {
+	f.gotUser = userID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.profile, nil
+}
+
+func newService(repository *fakeRepository) *service {
+	return NewService(repository, &fakeProfiles{})
+}
+
 func getAdvertisements(t *testing.T, repository *fakeRepository, input GetAdvertisementsInput) AdvertisementPage {
 	t.Helper()
 	if input.Filters == nil {
 		input.Filters = &AdvertisementFilters{}
 	}
-	page, err := NewService(repository).GetAdvertisements(context.Background(), input)
+	page, err := newService(repository).GetAdvertisements(context.Background(), input)
 	if err != nil {
 		t.Fatalf("GetAdvertisements: %v", err)
 	}
@@ -154,7 +173,7 @@ func TestGetAdvertisementsPassesSort(t *testing.T) {
 }
 
 func TestGetAdvertisementsRejectsUnknownSort(t *testing.T) {
-	_, err := NewService(&fakeRepository{}).GetAdvertisements(context.Background(), GetAdvertisementsInput{Sort: "cheapest"})
+	_, err := newService(&fakeRepository{}).GetAdvertisements(context.Background(), GetAdvertisementsInput{Sort: "cheapest"})
 	if !errors.Is(err, app.ErrInvalidInput) {
 		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
 	}
@@ -163,7 +182,7 @@ func TestGetAdvertisementsRejectsUnknownSort(t *testing.T) {
 func TestGetAdvertisementsAcceptsMissingFilters(t *testing.T) {
 	repository := &fakeRepository{total: 1}
 
-	_, err := NewService(repository).GetAdvertisements(context.Background(), GetAdvertisementsInput{})
+	_, err := newService(repository).GetAdvertisements(context.Background(), GetAdvertisementsInput{})
 	if err != nil {
 		t.Fatalf("GetAdvertisements: %v", err)
 	}
@@ -175,7 +194,7 @@ func TestGetAdvertisementsAcceptsMissingFilters(t *testing.T) {
 func TestGetAdvertisementsRejectsMalformedCondition(t *testing.T) {
 	input := GetAdvertisementsInput{Filters: &AdvertisementFilters{Conditions: []string{conditionID, "fascite"}}}
 
-	_, err := NewService(&fakeRepository{}).GetAdvertisements(context.Background(), input)
+	_, err := newService(&fakeRepository{}).GetAdvertisements(context.Background(), input)
 
 	if !errors.Is(err, app.ErrInvalidInput) {
 		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
@@ -186,7 +205,7 @@ func TestGetAdvertisementsRejectsMalformedCategory(t *testing.T) {
 	repository := &fakeRepository{}
 	input := GetAdvertisementsInput{Filters: &AdvertisementFilters{Category: helpers.StringPtr("palmilhas")}}
 
-	_, err := NewService(repository).GetAdvertisements(context.Background(), input)
+	_, err := newService(repository).GetAdvertisements(context.Background(), input)
 
 	if !errors.Is(err, app.ErrInvalidInput) {
 		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
@@ -238,7 +257,7 @@ func TestGetAdvertisementsReturnsItems(t *testing.T) {
 }
 
 func TestGetAdvertisementsPropagatesRepositoryErrors(t *testing.T) {
-	_, err := NewService(&fakeRepository{err: errDatabase}).GetAdvertisements(context.Background(), GetAdvertisementsInput{Filters: &AdvertisementFilters{}})
+	_, err := newService(&fakeRepository{err: errDatabase}).GetAdvertisements(context.Background(), GetAdvertisementsInput{Filters: &AdvertisementFilters{}})
 	if !errors.Is(err, errDatabase) {
 		t.Fatalf("err = %v, want %v", err, errDatabase)
 	}
@@ -247,7 +266,7 @@ func TestGetAdvertisementsPropagatesRepositoryErrors(t *testing.T) {
 func TestGetAdvertisementReturnsAd(t *testing.T) {
 	repository := &fakeRepository{ads: map[string]*AdvertisementEntity{adID: {Title: "Palmilha ortopédica"}}}
 
-	ad, err := NewService(repository).GetAdvertisement(context.Background(), adID)
+	ad, err := newService(repository).GetAdvertisement(context.Background(), adID)
 	if err != nil {
 		t.Fatalf("GetAdvertisement: %v", err)
 	}
@@ -257,7 +276,7 @@ func TestGetAdvertisementReturnsAd(t *testing.T) {
 }
 
 func TestGetAdvertisementReturnsNotFound(t *testing.T) {
-	_, err := NewService(&fakeRepository{}).GetAdvertisement(context.Background(), "00000000-0000-0000-0000-000000000a99")
+	_, err := newService(&fakeRepository{}).GetAdvertisement(context.Background(), "00000000-0000-0000-0000-000000000a99")
 	if !errors.Is(err, app.ErrAdvertisementNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrAdvertisementNotFound)
 	}
@@ -266,7 +285,7 @@ func TestGetAdvertisementReturnsNotFound(t *testing.T) {
 func TestGetAdvertisementTreatsMalformedIDAsNotFound(t *testing.T) {
 	repository := &fakeRepository{}
 
-	_, err := NewService(repository).GetAdvertisement(context.Background(), "abc")
+	_, err := newService(repository).GetAdvertisement(context.Background(), "abc")
 
 	if !errors.Is(err, app.ErrAdvertisementNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrAdvertisementNotFound)
@@ -277,7 +296,7 @@ func TestGetAdvertisementTreatsMalformedIDAsNotFound(t *testing.T) {
 }
 
 func TestGetAdvertisementPropagatesRepositoryErrors(t *testing.T) {
-	_, err := NewService(&fakeRepository{err: errDatabase}).GetAdvertisement(context.Background(), adID)
+	_, err := newService(&fakeRepository{err: errDatabase}).GetAdvertisement(context.Background(), adID)
 	if !errors.Is(err, errDatabase) {
 		t.Fatalf("err = %v, want %v", err, errDatabase)
 	}
@@ -292,7 +311,7 @@ func TestGetCategoriesBuildsTree(t *testing.T) {
 		{ID: "orphan", ParentCategoryID: helpers.StringPtr("missing"), Name: "Sem pai"},
 	}}
 
-	categories, err := NewService(repository).GetCategories(context.Background())
+	categories, err := newService(repository).GetCategories(context.Background())
 	if err != nil {
 		t.Fatalf("GetCategories: %v", err)
 	}
@@ -320,7 +339,7 @@ func TestGetCategoriesOutputKeepsNesting(t *testing.T) {
 		{ID: "heel-cup", ParentCategoryID: helpers.StringPtr("insoles"), Name: "Calcanheiras", Slug: "calcanheiras", Active: true},
 	}}
 
-	categories, err := NewService(repository).GetCategories(context.Background())
+	categories, err := newService(repository).GetCategories(context.Background())
 	if err != nil {
 		t.Fatalf("GetCategories: %v", err)
 	}
@@ -336,7 +355,7 @@ func TestGetCategoriesOutputKeepsNesting(t *testing.T) {
 }
 
 func TestGetCategoriesPropagatesRepositoryErrors(t *testing.T) {
-	_, err := NewService(&fakeRepository{err: errDatabase}).GetCategories(context.Background())
+	_, err := newService(&fakeRepository{err: errDatabase}).GetCategories(context.Background())
 	if !errors.Is(err, errDatabase) {
 		t.Fatalf("err = %v, want %v", err, errDatabase)
 	}
@@ -347,7 +366,7 @@ func TestGetPurposesAndConditionsReturnRepositoryData(t *testing.T) {
 		purposes:   []*PurposeEntity{{Code: "prevention", Name: "Prevenção"}},
 		conditions: []*ConditionEntity{{ID: conditionID, Name: "Fascite plantar"}},
 	}
-	s := NewService(repository)
+	s := newService(repository)
 
 	purposes, err := s.GetPurposes(context.Background())
 	if err != nil || len(purposes) != 1 || purposes[0].Code != "prevention" {
@@ -360,12 +379,74 @@ func TestGetPurposesAndConditionsReturnRepositoryData(t *testing.T) {
 }
 
 func TestGetPurposesAndConditionsPropagateRepositoryErrors(t *testing.T) {
-	s := NewService(&fakeRepository{err: errDatabase})
+	s := newService(&fakeRepository{err: errDatabase})
 
 	if _, err := s.GetPurposes(context.Background()); !errors.Is(err, errDatabase) {
 		t.Fatalf("purposes err = %v, want %v", err, errDatabase)
 	}
 	if _, err := s.GetConditions(context.Background()); !errors.Is(err, errDatabase) {
 		t.Fatalf("conditions err = %v, want %v", err, errDatabase)
+	}
+}
+
+func TestGetAdvertisementsForMeRequiresUser(t *testing.T) {
+	profiles := &fakeProfiles{}
+	_, err := NewService(&fakeRepository{}, profiles).GetAdvertisements(context.Background(), GetAdvertisementsInput{ForMe: true})
+
+	if !errors.Is(err, app.ErrInvalidInput) {
+		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
+	}
+	if profiles.gotUser != "" {
+		t.Fatal("profile was read without a user")
+	}
+}
+
+func TestGetAdvertisementsForMeRequiresConsent(t *testing.T) {
+	repository := &fakeRepository{}
+	profiles := &fakeProfiles{err: app.ErrConsentRequired}
+
+	_, err := NewService(repository, profiles).GetAdvertisements(context.Background(), GetAdvertisementsInput{ForMe: true, UserID: "buyer-1"})
+
+	if !errors.Is(err, app.ErrConsentRequired) {
+		t.Fatalf("err = %v, want %v", err, app.ErrConsentRequired)
+	}
+	if profiles.gotUser != "buyer-1" {
+		t.Fatalf("profile read for %q, want buyer-1", profiles.gotUser)
+	}
+	if repository.gotLimit != 0 {
+		t.Fatal("ads were listed without consent")
+	}
+}
+
+func TestGetAdvertisementsForMeFiltersByProfile(t *testing.T) {
+	repository := &fakeRepository{}
+	profiles := &fakeProfiles{profile: &me.PodologicalProfileEntity{
+		ClinicalCondition: helpers.StringPtr("Fascite plantar"),
+		PainPoints:        []me.PainPointEntity{{ID: "heel"}, {ID: "arch"}},
+	}}
+
+	_, err := NewService(repository, profiles).GetAdvertisements(context.Background(), GetAdvertisementsInput{ForMe: true, UserID: "buyer-1"})
+	if err != nil {
+		t.Fatalf("GetAdvertisements: %v", err)
+	}
+
+	want := &ProfileMatch{PainPointIDs: []string{"heel", "arch"}, ClinicalCondition: helpers.StringPtr("Fascite plantar")}
+	for name, got := range map[string]*ProfileMatch{"list": repository.gotFilters.Profile, "count": repository.gotCountFilters.Profile} {
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s profile = %+v, want %+v", name, got, want)
+		}
+	}
+}
+
+func TestGetAdvertisementsWithoutForMeIgnoresProfile(t *testing.T) {
+	repository := &fakeRepository{}
+	profiles := &fakeProfiles{err: app.ErrConsentRequired}
+
+	_, err := NewService(repository, profiles).GetAdvertisements(context.Background(), GetAdvertisementsInput{UserID: "buyer-1"})
+	if err != nil {
+		t.Fatalf("GetAdvertisements: %v", err)
+	}
+	if profiles.gotUser != "" || repository.gotFilters.Profile != nil {
+		t.Fatalf("profile read for %q, filter = %+v", profiles.gotUser, repository.gotFilters.Profile)
 	}
 }

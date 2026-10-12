@@ -996,3 +996,44 @@ func TestChangeOnboardingStepRequiresExistingOnboarding(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, app.ErrOnboardingNotFound)
 	}
 }
+
+func TestGetConsentedPodologicalProfileRequiresConsent(t *testing.T) {
+	repository := newFakeRepository()
+	repository.consents = append(repository.consents, &ConsentEntity{
+		UserID: testUserID, Purpose: ConsentPurposePodologicalProfile, TermsVersion: "podological-profile-v0",
+	})
+	s := NewService(repository)
+
+	for name, userID := range map[string]string{"no consent": "00000000-0000-0000-0000-0000000000ff", "outdated terms": testUserID} {
+		t.Run(name, func(t *testing.T) {
+			_, err := s.GetConsentedPodologicalProfile(context.Background(), userID)
+			if !errors.Is(err, app.ErrConsentRequired) {
+				t.Fatalf("err = %v, want %v", err, app.ErrConsentRequired)
+			}
+		})
+	}
+}
+
+func TestGetConsentedPodologicalProfileReturnsProfileWithConsent(t *testing.T) {
+	s := NewService(newFakeRepository())
+	grantPodologicalConsent(t, s)
+
+	empty, err := s.GetConsentedPodologicalProfile(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("GetConsentedPodologicalProfile: %v", err)
+	}
+	if empty.ClinicalCondition != nil || len(empty.PainPoints) != 0 {
+		t.Fatalf("profile = %+v, want empty before it is filled", empty)
+	}
+
+	if _, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput()); err != nil {
+		t.Fatalf("EditPodologicalProfile: %v", err)
+	}
+	profile, err := s.GetConsentedPodologicalProfile(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("GetConsentedPodologicalProfile: %v", err)
+	}
+	if profile.ClinicalCondition == nil || *profile.ClinicalCondition != "Fascite plantar" || len(profile.PainPoints) != 2 {
+		t.Fatalf("profile = %+v", profile)
+	}
+}

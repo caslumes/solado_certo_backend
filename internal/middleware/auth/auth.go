@@ -56,3 +56,14 @@ func (a *AuthMiddleware) Middleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+func (a *AuthMiddleware) OptionalMiddleware() gin.HandlerFunc {
+	required := a.Middleware()
+	return func(c *gin.Context) {
+		if c.GetHeader("Authorization") == "" {
+			c.Next()
+			return
+		}
+		required(c)
+	}
+}

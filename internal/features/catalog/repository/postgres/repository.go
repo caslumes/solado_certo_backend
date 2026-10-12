@@ -104,6 +104,9 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid sort", app.ErrInvalidInput)
 	}
+	if sort == catalog.AdvertisementSortRelevance && searchQuery(filters) != "" {
+		order = "ts_rank(advertisements.search_vector, to_tsquery('" + textSearchConfig + "', $1)) DESC, " + order
+	}
 
 	whereClause, args := whereStringFromFilters(filters)
 	argsCount := len(args)
@@ -376,9 +379,9 @@ func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []int
 	var args []interface{}
 	argIndex := 1
 
-	if filters.Query != nil {
-		conditions = append(conditions, "(title ILIKE $"+strconv.Itoa(argIndex)+" OR description ILIKE $"+strconv.Itoa(argIndex)+")")
-		args = append(args, "%"+*filters.Query+"%")
+	if query := searchQuery(filters); query != "" {
+		conditions = append(conditions, "search_vector @@ to_tsquery('"+textSearchConfig+"', $"+strconv.Itoa(argIndex)+")")
+		args = append(args, query)
 		argIndex++
 	}
 	if filters.Category != nil {
@@ -454,6 +457,30 @@ func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []int
 			"AND addr.is_default AND addr.state = $"+strconv.Itoa(argIndex)+")")
 		args = append(args, *filters.State)
 		argIndex++
+	}
+	if filters.Profile != nil {
+		var matches []string
+		if len(filters.Profile.PainPointIDs) > 0 {
+			matches = append(matches, "ac.condition_id IN (SELECT ppc.condition_id FROM pain_point_conditions ppc "+
+				"WHERE ppc.pain_point_id = ANY($"+strconv.Itoa(argIndex)+"::uuid[]))")
+			args = append(args, filters.Profile.PainPointIDs)
+			argIndex++
+		}
+		if filters.Profile.ClinicalCondition != nil {
+			if query := anyWordQuery(*filters.Profile.ClinicalCondition); query != "" {
+				matches = append(matches, "ac.condition_id IN (SELECT pc.id FROM podological_conditions pc "+
+					"WHERE to_tsvector('"+textSearchConfig+"', pc.name) @@ to_tsquery('"+textSearchConfig+"', $"+strconv.Itoa(argIndex)+"))")
+				args = append(args, query)
+				argIndex++
+			}
+		}
+
+		if len(matches) == 0 {
+			conditions = append(conditions, "FALSE")
+		} else {
+			conditions = append(conditions, "EXISTS (SELECT 1 FROM advertisement_conditions ac "+
+				"WHERE ac.advertisement_id = advertisements.id AND ("+strings.Join(matches, " OR ")+"))")
+		}
 	}
 
 	conditions = append(conditions, fmt.Sprintf("status = '%s'", catalog.AdvertisementStatusPublished))

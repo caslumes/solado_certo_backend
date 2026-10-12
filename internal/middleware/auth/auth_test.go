@@ -63,3 +63,45 @@ func TestMiddleware(t *testing.T) {
 		})
 	}
 }
+
+func TestOptionalMiddleware(t *testing.T) {
+	middleware := NewAuthMiddleware(fakeService{"access-token": "user-1"})
+
+	tests := []struct {
+		name          string
+		authorization string
+		wantStatus    int
+		wantUserID    string
+	}{
+		{"valid token", "Bearer access-token", http.StatusOK, "user-1"},
+		{"missing header", "", http.StatusOK, ""},
+		{"rejected token", "Bearer expired-token", http.StatusUnauthorized, ""},
+		{"wrong scheme", "Basic access-token", http.StatusUnauthorized, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotUserID, reached := "", false
+			router := gin.New()
+			router.GET("/catalog", middleware.OptionalMiddleware(), func(c *gin.Context) {
+				reached = true
+				gotUserID, _ = UserIDFrom(c.Request.Context())
+			})
+
+			request := httptest.NewRequest(http.MethodGet, "/catalog", nil)
+			if tt.authorization != "" {
+				request.Header.Set("Authorization", tt.authorization)
+			}
+			recorder := httptest.NewRecorder()
+
+			router.ServeHTTP(recorder, request)
+
+			if recorder.Code != tt.wantStatus || gotUserID != tt.wantUserID {
+				t.Fatalf("status = %d, userID = %q, want %d and %q", recorder.Code, gotUserID, tt.wantStatus, tt.wantUserID)
+			}
+			if reached != (tt.wantStatus == http.StatusOK) {
+				t.Fatalf("handler reached = %v", reached)
+			}
+		})
+	}
+}
