@@ -385,7 +385,14 @@ func whereStringFromFilters(filters catalog.AdvertisementFilters) (string, []int
 		argIndex++
 	}
 	if filters.Category != nil {
-		conditions = append(conditions, "category_id = $"+strconv.Itoa(argIndex))
+		conditions = append(conditions, `category_id IN (
+			WITH RECURSIVE subtree AS (
+				SELECT id FROM categories WHERE id = $`+strconv.Itoa(argIndex)+`
+				UNION ALL
+				SELECT c.id FROM categories c JOIN subtree s ON c.parent_category_id = s.id
+			)
+			SELECT id FROM subtree
+		)`)
 		args = append(args, *filters.Category)
 		argIndex++
 	}

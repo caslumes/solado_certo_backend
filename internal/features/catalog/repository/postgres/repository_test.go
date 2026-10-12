@@ -246,8 +246,9 @@ func TestGetAdvertisementsPaginates(t *testing.T) {
 func TestGetAdvertisementsAppliesEachFilter(t *testing.T) {
 	f := newFixture(t)
 	otherCategory := testutil.InsertCategory(t, f.pool, nil)
+	subcategory := testutil.InsertCategory(t, f.pool, &otherCategory.ID)
 	f.insertAd(t, testutil.Ad{
-		Title: "Palmilha ortopédica", Description: "Para fascite", Price: "150.00", CategoryID: otherCategory.ID,
+		Title: "Palmilha ortopédica", Description: "Para fascite", Price: "150.00", CategoryID: subcategory.ID,
 		PrescriptionRequired: true, CustomMadeAllowed: true,
 		Side: helpers.StringPtr("left"), Size: helpers.StringPtr("38"), Material: helpers.StringPtr("EVA"),
 		Rigidity: helpers.StringPtr("rigid"), UsageIndication: helpers.StringPtr("running"),
@@ -264,7 +265,8 @@ func TestGetAdvertisementsAppliesEachFilter(t *testing.T) {
 	}{
 		"query in title, any case":  {catalog.AdvertisementFilters{Query: helpers.StringPtr("PALMILHA")}, []string{"Palmilha ortopédica"}},
 		"query in description":      {catalog.AdvertisementFilters{Query: helpers.StringPtr("silicone")}, []string{"Calcanheira"}},
-		"category":                  {catalog.AdvertisementFilters{Category: &otherCategory.ID}, []string{"Palmilha ortopédica"}},
+		"category":                  {catalog.AdvertisementFilters{Category: &subcategory.ID}, []string{"Palmilha ortopédica"}},
+		"parent category":           {catalog.AdvertisementFilters{Category: &otherCategory.ID}, []string{"Palmilha ortopédica"}},
 		"minimum price":             {catalog.AdvertisementFilters{PriceMin: ptr(100.0)}, []string{"Palmilha ortopédica"}},
 		"maximum price":             {catalog.AdvertisementFilters{PriceMax: ptr(100.0)}, []string{"Calcanheira"}},
 		"price range is inclusive":  {catalog.AdvertisementFilters{PriceMin: ptr(50.0), PriceMax: ptr(150.0)}, []string{"Palmilha ortopédica", "Calcanheira"}},
