@@ -1,6 +1,9 @@
 package app
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 var ErrInvalidInput = errors.New("invalid input")
 var ErrInvalidCredentials = errors.New("invalid credentials")
@@ -18,3 +21,20 @@ var ErrOnboardingNotFound = errors.New("onboarding not found")
 var ErrOnboardingStepNotFound = errors.New("onboarding step not found")
 var ErrOnboardingAlreadyCompleted = errors.New("onboarding already completed")
 var ErrAdvertisementNotFound = errors.New("advertisement not found")
+var ErrCategoryNotFound = errors.New("category not found")
+var ErrForbidden = errors.New("forbidden")
+var ErrInvalidStatusTransition = errors.New("invalid status transition")
+var ErrMissingRequiredFields = errors.New("missing required fields")
+
+// MissingFieldsError lists the JSON names of the fields that must be filled.
+type MissingFieldsError struct {
+	Fields []string
+}
+
+func (e *MissingFieldsError) Error() string {
+	return ErrMissingRequiredFields.Error() + ": " + strings.Join(e.Fields, ", ")
+}
+
+func (e *MissingFieldsError) Unwrap() error {
+	return ErrMissingRequiredFields
+}

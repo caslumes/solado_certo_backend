@@ -569,6 +569,22 @@ func TestGetAdvertisementByIDReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestGetAdvertisementByIDHidesUnpublishedAds(t *testing.T) {
+	f := newFixture(t)
+
+	for _, status := range []string{"draft", "paused", "archived", "removed"} {
+		t.Run(status, func(t *testing.T) {
+			ad := f.insertAd(t, testutil.Ad{Status: status})
+
+			_, err := f.r.GetAdvertisementByID(context.Background(), ad.ID)
+
+			if !errors.Is(err, app.ErrAdvertisementNotFound) {
+				t.Fatalf("err = %v, want %v", err, app.ErrAdvertisementNotFound)
+			}
+		})
+	}
+}
+
 func TestCountAdvertisementsMatchesFilteredList(t *testing.T) {
 	f := newFixture(t)
 	for range 3 {

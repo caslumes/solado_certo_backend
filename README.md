@@ -105,7 +105,7 @@ Never run the stack on two machines at the same time.
 
 ## API
 
-All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under `/me` need an `Authorization: Bearer <access_token>` header.
+All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under `/me` and `/seller` need an `Authorization: Bearer <access_token>` header; `/seller` also needs the `seller` role (403 otherwise). A request missing fields needed to save or publish an ad gets 422 with `{"error": "missing required fields", "fields": [...]}` (JSON field names).
 
 | Method | Path | Description |
 |---|---|---|
@@ -127,6 +127,10 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `GET` | `/catalog` | List published ads. Query: `page`, `limit` (max 100), `q`, `category`, `price_min`, `price_max`, `prescription_required`, `custom_made_allowed`, `side`, `size`, `material`, `rigidity`, `usage_indication` |
 | `GET` | `/catalog/items/:advertisementID` | One ad |
 | `GET` | `/catalog/categories` | Categories |
+| `GET` | `/seller/ads` | The seller's ads except removed ones, most recently changed first. Optional `status` (`draft`, `published`, `paused`). Each ad has `sold_out` (published with stock 0) and `missing_fields` (what blocks publishing) |
+| `POST` | `/seller/ads` | Create a draft. Needs `title` and `category_id`; also `description`, `price` (decimal string), `stock`, `prescription_required`, `custom_made_allowed`, `side` (`left`, `right`, `both`), `size`, `material`, `rigidity` (`flexible`, `semi_rigid`, `rigid`), `usage_indication`, `safety_alerts`, `contraindications`, `shipping_notes`, `purposes` (codes), `condition_ids` and `shipping_options` (`id` to keep an existing one, `name`, `carrier`, `price`, `delivery_days`) |
+| `GET` / `PATCH` / `DELETE` | `/seller/ads/:advertisementID` | Read / edit (only the fields sent; `""` clears a text, `[]` a list; a published ad must stay complete) / remove (soft delete). 403 for another seller's ad |
+| `POST` | `/seller/ads/:advertisementID/publish` · `/pause` · `/reactivate` | `draft → published`, `published → paused`, `paused → published`. 409 from any other status; publishing an incomplete ad is 422 |
 | `GET` | `/files/public/*path` | A public uploaded file (e.g. `/files/public/ads/<name>.jpg`). Private files are only served by the endpoints that own them |
 
 ## Project structure
@@ -140,6 +144,7 @@ internal/
     me/                profile, addresses, podological profile, consents, roles, onboarding
     catalog/           ads and categories
     files/             serves public uploaded files
+    seller/            seller ads: CRUD and status changes
       <feature>/       service.go (use cases), entity/input/output types,
                        repository/postgres (SQL), transport/http (Gin handlers)
   middleware/          JWT auth, role checks (RequireRole) and per-IP rate limiting

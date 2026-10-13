@@ -147,7 +147,11 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 }
 
 func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string) (*catalog.AdvertisementDetailEntity, error) {
-	m, err := scanAdvertisement(r.pool.QueryRow(ctx, "SELECT "+advertisementColumns+" FROM advertisements WHERE id = $1", id))
+	m, err := scanAdvertisement(r.pool.QueryRow(
+		ctx,
+		"SELECT "+advertisementColumns+" FROM advertisements WHERE id = $1 AND status = $2",
+		id, catalog.AdvertisementStatusPublished,
+	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, app.ErrAdvertisementNotFound

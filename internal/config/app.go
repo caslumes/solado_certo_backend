@@ -15,6 +15,9 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	meRepository "github.com/caslumes/solado_certo_backend/internal/features/me/repository/postgres"
 	httpme "github.com/caslumes/solado_certo_backend/internal/features/me/transport/http"
+	"github.com/caslumes/solado_certo_backend/internal/features/seller"
+	sellerRepository "github.com/caslumes/solado_certo_backend/internal/features/seller/repository/postgres"
+	httpseller "github.com/caslumes/solado_certo_backend/internal/features/seller/transport/http"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	rolemiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/role"
 	"github.com/caslumes/solado_certo_backend/pkg/storage"
@@ -29,6 +32,7 @@ type App struct {
 	MeHandler      *httpme.Handler
 	CatalogHandler *httpcatalog.Handler
 	FilesHandler   *httpfiles.Handler
+	SellerHandler  *httpseller.Handler
 }
 
 func InitApp(ctx context.Context) (*App, error) {
@@ -49,6 +53,7 @@ func InitApp(ctx context.Context) (*App, error) {
 
 	authService := auth.NewService(authRepository.NewPostgresRepository(dbPool), envs.SecretKey)
 	meService := me.NewService(meRepository.NewPostgresRepository(dbPool))
+	sellerService := seller.NewService(sellerRepository.NewPostgresRepository(dbPool))
 	catalogService := catalog.NewService(catalogRepository.NewPostgresRepository(dbPool), meService)
 
 	return &App{
@@ -60,5 +65,6 @@ func InitApp(ctx context.Context) (*App, error) {
 		MeHandler:      httpme.NewHandler(meService),
 		CatalogHandler: httpcatalog.NewHandler(catalogService),
 		FilesHandler:   httpfiles.NewHandler(fileStorage),
+		SellerHandler:  httpseller.NewHandler(sellerService),
 	}, nil
 }

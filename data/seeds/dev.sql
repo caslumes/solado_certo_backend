@@ -37,6 +37,11 @@ INSERT INTO categories (id, parent_category_id, name, slug) VALUES
 ('00000000-0000-0000-0000-000000000305', '00000000-0000-0000-0000-000000000301', 'Palmilhas sob medida', 'palmilhas-sob-medida')
 ON CONFLICT (slug) DO NOTHING;
 
+UPDATE categories SET required_attributes = '{side,size,material,rigidity,usage_indication}'
+WHERE slug IN ('palmilhas', 'palmilhas-sob-medida', 'orteses');
+UPDATE categories SET required_attributes = '{size,material}'
+WHERE slug IN ('calcados-ortopedicos', 'meias-terapeuticas');
+
 INSERT INTO podological_purposes (id, code, name, description) VALUES
 ('00000000-0000-0000-0000-000000000401', 'prevention', 'Prevenção', 'Evitar o surgimento de lesões e desconfortos'),
 ('00000000-0000-0000-0000-000000000402', 'pain_relief', 'Alívio de dor', 'Reduzir dores já existentes'),

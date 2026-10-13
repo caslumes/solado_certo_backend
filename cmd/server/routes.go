@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/config"
 	"github.com/caslumes/solado_certo_backend/internal/middleware/ratelimit"
 	"github.com/gin-gonic/gin"
@@ -57,6 +58,18 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		catalogGroup.GET("/categories", a.CatalogHandler.GetCategories)
 		catalogGroup.GET("/purposes", a.CatalogHandler.GetPurposes)
 		catalogGroup.GET("/conditions", a.CatalogHandler.GetConditions)
+	}
+
+	sellerGroup := r.Group("/seller", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleSeller))
+	{
+		sellerGroup.GET("/ads", a.SellerHandler.ListAdvertisements)
+		sellerGroup.POST("/ads", a.SellerHandler.CreateAdvertisement)
+		sellerGroup.GET("/ads/:advertisementID", a.SellerHandler.GetAdvertisement)
+		sellerGroup.PATCH("/ads/:advertisementID", a.SellerHandler.EditAdvertisement)
+		sellerGroup.DELETE("/ads/:advertisementID", a.SellerHandler.RemoveAdvertisement)
+		sellerGroup.POST("/ads/:advertisementID/publish", a.SellerHandler.PublishAdvertisement)
+		sellerGroup.POST("/ads/:advertisementID/pause", a.SellerHandler.PauseAdvertisement)
+		sellerGroup.POST("/ads/:advertisementID/reactivate", a.SellerHandler.ReactivateAdvertisement)
 	}
 
 	r.GET("/files/public/*path", a.FilesHandler.ServePublic)
