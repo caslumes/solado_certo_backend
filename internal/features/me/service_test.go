@@ -1,6 +1,7 @@
 package me
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
 const testUserID = "user-1"
@@ -265,7 +267,7 @@ func (f *fakeRepository) UpdateOnboarding(_ context.Context, userID string, onbo
 func startOnboarding(t *testing.T) (*service, *fakeRepository) {
 	t.Helper()
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 
 	onboarding, err := s.GetOnboardingByUserID(context.Background(), testUserID)
 	if err != nil {
@@ -400,7 +402,7 @@ func validPodologicalProfileInput() PodologicalProfileInput {
 
 func TestEditPodologicalProfileRequiresConsent(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 
 	_, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput())
 
@@ -417,7 +419,7 @@ func TestEditPodologicalProfileRequiresCurrentTermsVersion(t *testing.T) {
 	repository.consents = append(repository.consents, &ConsentEntity{
 		UserID: testUserID, Purpose: ConsentPurposePodologicalProfile, TermsVersion: "podological-profile-v0",
 	})
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 
 	_, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput())
 
@@ -428,7 +430,7 @@ func TestEditPodologicalProfileRequiresCurrentTermsVersion(t *testing.T) {
 
 func TestEditPodologicalProfileSavesNormalizedDataWithConsent(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	grantPodologicalConsent(t, s)
 
 	profile, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput())
@@ -451,7 +453,7 @@ func TestEditPodologicalProfileSavesNormalizedDataWithConsent(t *testing.T) {
 }
 
 func TestEditPodologicalProfileAllowsEmptyClinicalCondition(t *testing.T) {
-	s := NewService(newFakeRepository())
+	s := NewService(newFakeRepository(), storage.NewMemoryStorage())
 	grantPodologicalConsent(t, s)
 
 	profile, err := s.EditPodologicalProfile(context.Background(), testUserID, PodologicalProfileInput{FootstrikeType: "neutral"})
@@ -476,7 +478,7 @@ func TestEditPodologicalProfileRejectsInvalidInput(t *testing.T) {
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
 			repository := newFakeRepository()
-			s := NewService(repository)
+			s := NewService(repository, storage.NewMemoryStorage())
 			grantPodologicalConsent(t, s)
 			input := validPodologicalProfileInput()
 			mutate(&input)
@@ -495,7 +497,7 @@ func TestEditPodologicalProfileRejectsInvalidInput(t *testing.T) {
 
 func TestGrantConsentIsIdempotent(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	input := ConsentInput{Purpose: "podological_profile", TermsVersion: "podological-profile-v1"}
 
 	first, created, err := s.GrantConsent(context.Background(), testUserID, input)
@@ -526,7 +528,7 @@ func TestGrantConsentRejectsUnknownPurposeOrOutdatedTerms(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			repository := newFakeRepository()
 
-			_, _, err := NewService(repository).GrantConsent(context.Background(), testUserID, input)
+			_, _, err := NewService(repository, storage.NewMemoryStorage()).GrantConsent(context.Background(), testUserID, input)
 
 			if !errors.Is(err, app.ErrInvalidInput) {
 				t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
@@ -540,7 +542,7 @@ func TestGrantConsentRejectsUnknownPurposeOrOutdatedTerms(t *testing.T) {
 
 func TestRevokePodologicalConsentDeletesProfile(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	grantPodologicalConsent(t, s)
 	if _, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput()); err != nil {
 		t.Fatalf("EditPodologicalProfile: %v", err)
@@ -571,7 +573,7 @@ func TestRevokePodologicalConsentDeletesProfile(t *testing.T) {
 }
 
 func TestRevokeConsentRejectsUnknownPurpose(t *testing.T) {
-	err := NewService(newFakeRepository()).RevokeConsent(context.Background(), testUserID, "marketing")
+	err := NewService(newFakeRepository(), storage.NewMemoryStorage()).RevokeConsent(context.Background(), testUserID, "marketing")
 	if !errors.Is(err, app.ErrInvalidInput) {
 		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
 	}
@@ -631,13 +633,17 @@ func (failingRepository) AddRole(context.Context, string, enum.Role) (bool, erro
 	return false, errDatabase
 }
 
+func (failingRepository) UpdateAvatar(context.Context, string, *string) error {
+	return errDatabase
+}
+
 func (failingRepository) GetOnboardingByUserID(context.Context, string) (*OnboardingEntity, error) {
 	return nil, errDatabase
 }
 
 func TestServicePropagatesRepositoryErrors(t *testing.T) {
 	ctx := context.Background()
-	s := NewService(failingRepository{})
+	s := NewService(failingRepository{}, storage.NewMemoryStorage())
 	tests := map[string]func() error{
 		"get profile":   func() error { _, err := s.GetProfileByUserID(ctx, testUserID); return err },
 		"edit profile":  func() error { _, err := s.EditProfile(ctx, testUserID, ProfileInput{}); return err },
@@ -660,6 +666,8 @@ func TestServicePropagatesRepositoryErrors(t *testing.T) {
 			return err
 		},
 		"revoke consent": func() error { return s.RevokeConsent(ctx, testUserID, "podological_profile") },
+		"change avatar":  func() error { _, err := s.ChangeAvatar(ctx, testUserID, bytes.NewReader(pngBytes)); return err },
+		"remove avatar":  func() error { _, err := s.RemoveAvatar(ctx, testUserID); return err },
 		"get roles":      func() error { _, err := s.GetRoles(ctx, testUserID); return err },
 		"has role":       func() error { _, err := s.HasRole(ctx, testUserID, enum.RoleSeller); return err },
 		"become seller":  func() error { _, _, err := s.BecomeSeller(ctx, testUserID); return err },
@@ -682,7 +690,7 @@ func TestGetProfileReturnsStoredProfile(t *testing.T) {
 	repository := newFakeRepository()
 	repository.profiles[testUserID].Name = "Maria"
 
-	profile, err := NewService(repository).GetProfileByUserID(context.Background(), testUserID)
+	profile, err := NewService(repository, storage.NewMemoryStorage()).GetProfileByUserID(context.Background(), testUserID)
 	if err != nil {
 		t.Fatalf("GetProfileByUserID: %v", err)
 	}
@@ -692,7 +700,7 @@ func TestGetProfileReturnsStoredProfile(t *testing.T) {
 }
 
 func TestGetProfileReturnsNotFoundForUnknownUser(t *testing.T) {
-	_, err := NewService(newFakeRepository()).GetProfileByUserID(context.Background(), "unknown")
+	_, err := NewService(newFakeRepository(), storage.NewMemoryStorage()).GetProfileByUserID(context.Background(), "unknown")
 	if !errors.Is(err, app.ErrUserNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
 	}
@@ -700,17 +708,17 @@ func TestGetProfileReturnsNotFoundForUnknownUser(t *testing.T) {
 
 func validProfileInput() ProfileInput {
 	return ProfileInput{
-		Name:      "  Maria Silva ",
-		Email:     " Maria@Example.COM ",
-		Phone:     "(11) 91234-5678",
-		AvatarURL: "https://example.com/avatar.png",
+		Name:  "  Maria Silva ",
+		Email: " Maria@Example.COM ",
+		Phone: "(11) 91234-5678",
 	}
 }
 
-func TestEditProfileSavesNormalizedData(t *testing.T) {
+func TestEditProfileSavesNormalizedDataAndKeepsAvatar(t *testing.T) {
 	repository := newFakeRepository()
+	repository.profiles[testUserID].AvatarURL = "/files/public/avatars/0123456789abcdef0123456789abcdef.png"
 
-	profile, err := NewService(repository).EditProfile(context.Background(), testUserID, validProfileInput())
+	profile, err := NewService(repository, storage.NewMemoryStorage()).EditProfile(context.Background(), testUserID, validProfileInput())
 	if err != nil {
 		t.Fatalf("EditProfile: %v", err)
 	}
@@ -720,7 +728,7 @@ func TestEditProfileSavesNormalizedData(t *testing.T) {
 		Name:      "Maria Silva",
 		Email:     "maria@example.com",
 		Phone:     "11912345678",
-		AvatarURL: "https://example.com/avatar.png",
+		AvatarURL: "/files/public/avatars/0123456789abcdef0123456789abcdef.png",
 		Status:    enum.ProfileStatusPending,
 	}
 	if *profile != want {
@@ -746,7 +754,7 @@ func TestEditProfileRejectsInvalidInput(t *testing.T) {
 			input := validProfileInput()
 			mutate(&input)
 
-			_, err := NewService(repository).EditProfile(context.Background(), testUserID, input)
+			_, err := NewService(repository, storage.NewMemoryStorage()).EditProfile(context.Background(), testUserID, input)
 
 			if !errors.Is(err, app.ErrInvalidInput) {
 				t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
@@ -759,7 +767,7 @@ func TestEditProfileRejectsInvalidInput(t *testing.T) {
 }
 
 func TestEditProfileReturnsNotFoundForUnknownUser(t *testing.T) {
-	_, err := NewService(newFakeRepository()).EditProfile(context.Background(), "unknown", validProfileInput())
+	_, err := NewService(newFakeRepository(), storage.NewMemoryStorage()).EditProfile(context.Background(), "unknown", validProfileInput())
 	if !errors.Is(err, app.ErrUserNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
 	}
@@ -790,7 +798,7 @@ func addAddress(t *testing.T, s *service, userID string) *AddressEntity {
 }
 
 func TestAddAddressStoresItForTheUser(t *testing.T) {
-	s := NewService(newFakeRepository())
+	s := NewService(newFakeRepository(), storage.NewMemoryStorage())
 
 	address := addAddress(t, s, testUserID)
 
@@ -807,7 +815,7 @@ func TestAddAddressStoresItForTheUser(t *testing.T) {
 }
 
 func TestGetAddressesReturnsOnlyTheUsersAddresses(t *testing.T) {
-	s := NewService(newFakeRepository())
+	s := NewService(newFakeRepository(), storage.NewMemoryStorage())
 	addAddress(t, s, "other-user")
 
 	addresses, err := s.GetAddressesByUserID(context.Background(), testUserID)
@@ -821,7 +829,7 @@ func TestGetAddressesReturnsOnlyTheUsersAddresses(t *testing.T) {
 
 func TestEditAddressUpdatesOwnAddress(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	address := addAddress(t, s, testUserID)
 	input := validAddressInput()
 	input.Number = "200"
@@ -844,7 +852,7 @@ func TestEditAddressUpdatesOwnAddress(t *testing.T) {
 
 func TestEditAddressHidesOtherUsersAddress(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	address := addAddress(t, s, "other-user")
 	input := validAddressInput()
 	input.Street = "Rua Invasora"
@@ -860,7 +868,7 @@ func TestEditAddressHidesOtherUsersAddress(t *testing.T) {
 }
 
 func TestEditAddressReturnsNotFoundForUnknownAddress(t *testing.T) {
-	_, err := NewService(newFakeRepository()).EditAddress(context.Background(), testUserID, "missing", validAddressInput())
+	_, err := NewService(newFakeRepository(), storage.NewMemoryStorage()).EditAddress(context.Background(), testUserID, "missing", validAddressInput())
 	if !errors.Is(err, app.ErrAddressNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrAddressNotFound)
 	}
@@ -868,7 +876,7 @@ func TestEditAddressReturnsNotFoundForUnknownAddress(t *testing.T) {
 
 func TestDeleteAddressRemovesOwnAddress(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	address := addAddress(t, s, testUserID)
 
 	if err := s.DeleteAddress(context.Background(), testUserID, address.ID); err != nil {
@@ -881,7 +889,7 @@ func TestDeleteAddressRemovesOwnAddress(t *testing.T) {
 
 func TestDeleteAddressHidesOtherUsersAddress(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	address := addAddress(t, s, "other-user")
 
 	err := s.DeleteAddress(context.Background(), testUserID, address.ID)
@@ -895,14 +903,14 @@ func TestDeleteAddressHidesOtherUsersAddress(t *testing.T) {
 }
 
 func TestDeleteAddressReturnsNotFoundForUnknownAddress(t *testing.T) {
-	err := NewService(newFakeRepository()).DeleteAddress(context.Background(), testUserID, "missing")
+	err := NewService(newFakeRepository(), storage.NewMemoryStorage()).DeleteAddress(context.Background(), testUserID, "missing")
 	if !errors.Is(err, app.ErrAddressNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrAddressNotFound)
 	}
 }
 
 func TestGetPodologicalProfileReturnsEmptyProfileWhenNoneSaved(t *testing.T) {
-	profile, err := NewService(newFakeRepository()).GetPodologicalProfileByUserID(context.Background(), testUserID)
+	profile, err := NewService(newFakeRepository(), storage.NewMemoryStorage()).GetPodologicalProfileByUserID(context.Background(), testUserID)
 	if err != nil {
 		t.Fatalf("GetPodologicalProfileByUserID: %v", err)
 	}
@@ -912,7 +920,7 @@ func TestGetPodologicalProfileReturnsEmptyProfileWhenNoneSaved(t *testing.T) {
 }
 
 func TestGetPodologicalProfileReturnsSavedProfile(t *testing.T) {
-	s := NewService(newFakeRepository())
+	s := NewService(newFakeRepository(), storage.NewMemoryStorage())
 	grantPodologicalConsent(t, s)
 	if _, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput()); err != nil {
 		t.Fatalf("EditPodologicalProfile: %v", err)
@@ -928,7 +936,7 @@ func TestGetPodologicalProfileReturnsSavedProfile(t *testing.T) {
 }
 
 func TestGetPainPointsReturnsAll(t *testing.T) {
-	painPoints, err := NewService(newFakeRepository()).GetPainPoints(context.Background())
+	painPoints, err := NewService(newFakeRepository(), storage.NewMemoryStorage()).GetPainPoints(context.Background())
 	if err != nil {
 		t.Fatalf("GetPainPoints: %v", err)
 	}
@@ -939,7 +947,7 @@ func TestGetPainPointsReturnsAll(t *testing.T) {
 
 func TestRevokePrescriptionConsentKeepsPodologicalProfile(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	grantPodologicalConsent(t, s)
 	if _, err := s.EditPodologicalProfile(context.Background(), testUserID, validPodologicalProfileInput()); err != nil {
 		t.Fatalf("EditPodologicalProfile: %v", err)
@@ -1020,7 +1028,7 @@ func TestOnboardingRejectsInvalidTransitions(t *testing.T) {
 }
 
 func TestChangeOnboardingStepRequiresExistingOnboarding(t *testing.T) {
-	err := NewService(newFakeRepository()).ChangeOnboardingStep(context.Background(), testUserID, OnboardingInput{Step: "welcome", Action: "advance"})
+	err := NewService(newFakeRepository(), storage.NewMemoryStorage()).ChangeOnboardingStep(context.Background(), testUserID, OnboardingInput{Step: "welcome", Action: "advance"})
 	if !errors.Is(err, app.ErrOnboardingNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrOnboardingNotFound)
 	}
@@ -1031,7 +1039,7 @@ func TestGetConsentedPodologicalProfileRequiresConsent(t *testing.T) {
 	repository.consents = append(repository.consents, &ConsentEntity{
 		UserID: testUserID, Purpose: ConsentPurposePodologicalProfile, TermsVersion: "podological-profile-v0",
 	})
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 
 	for name, userID := range map[string]string{"no consent": "00000000-0000-0000-0000-0000000000ff", "outdated terms": testUserID} {
 		t.Run(name, func(t *testing.T) {
@@ -1044,7 +1052,7 @@ func TestGetConsentedPodologicalProfileRequiresConsent(t *testing.T) {
 }
 
 func TestGetConsentedPodologicalProfileReturnsProfileWithConsent(t *testing.T) {
-	s := NewService(newFakeRepository())
+	s := NewService(newFakeRepository(), storage.NewMemoryStorage())
 	grantPodologicalConsent(t, s)
 
 	empty, err := s.GetConsentedPodologicalProfile(context.Background(), testUserID)
@@ -1069,7 +1077,7 @@ func TestGetConsentedPodologicalProfileReturnsProfileWithConsent(t *testing.T) {
 
 func TestBecomeSellerAddsRoleOnce(t *testing.T) {
 	repository := newFakeRepository()
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 
 	roles, created, err := s.BecomeSeller(context.Background(), testUserID)
 	if err != nil {
@@ -1089,14 +1097,14 @@ func TestBecomeSellerAddsRoleOnce(t *testing.T) {
 }
 
 func TestBecomeSellerReturnsNotFoundForUnknownUser(t *testing.T) {
-	_, _, err := NewService(newFakeRepository()).BecomeSeller(context.Background(), "unknown")
+	_, _, err := NewService(newFakeRepository(), storage.NewMemoryStorage()).BecomeSeller(context.Background(), "unknown")
 	if !errors.Is(err, app.ErrUserNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
 	}
 }
 
 func TestHasRole(t *testing.T) {
-	s := NewService(newFakeRepository())
+	s := NewService(newFakeRepository(), storage.NewMemoryStorage())
 	tests := map[enum.Role]bool{enum.RoleBuyer: true, enum.RoleSeller: false, enum.RoleAdmin: false}
 
 	for role, want := range tests {
@@ -1109,5 +1117,135 @@ func TestHasRole(t *testing.T) {
 				t.Fatalf("HasRole(%q) = %v, want %v", role, got, want)
 			}
 		})
+	}
+}
+
+var pngBytes = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D}
+
+func (f *fakeRepository) UpdateAvatar(_ context.Context, userID string, avatarURL *string) error {
+	profile, ok := f.profiles[userID]
+	if !ok {
+		return app.ErrUserNotFound
+	}
+	profile.AvatarURL = ""
+	if avatarURL != nil {
+		profile.AvatarURL = *avatarURL
+	}
+	return nil
+}
+
+type failingAvatarRepository struct {
+	*fakeRepository
+}
+
+func (failingAvatarRepository) UpdateAvatar(context.Context, string, *string) error {
+	return errDatabase
+}
+
+func TestChangeAvatarStoresFileAndReplacesTheOldOne(t *testing.T) {
+	repository := newFakeRepository()
+	files := storage.NewMemoryStorage()
+	s := NewService(repository, files)
+
+	first, err := s.ChangeAvatar(context.Background(), testUserID, bytes.NewReader(pngBytes))
+	if err != nil {
+		t.Fatalf("ChangeAvatar: %v", err)
+	}
+	firstKey, ok := storage.KeyFromPublicPath(first.AvatarURL)
+	if !ok || !strings.HasPrefix(firstKey, "avatars/") || repository.profiles[testUserID].AvatarURL != first.AvatarURL {
+		t.Fatalf("avatar url = %q", first.AvatarURL)
+	}
+
+	second, err := s.ChangeAvatar(context.Background(), testUserID, bytes.NewReader(pngBytes))
+	if err != nil {
+		t.Fatalf("ChangeAvatar again: %v", err)
+	}
+	secondKey, _ := storage.KeyFromPublicPath(second.AvatarURL)
+	if files.Has(storage.AreaPublic, firstKey) || !files.Has(storage.AreaPublic, secondKey) || files.Count() != 1 {
+		t.Fatalf("old avatar kept or new one missing: %d files", files.Count())
+	}
+}
+
+func TestChangeAvatarKeepsFilesThatAreNotOurs(t *testing.T) {
+	repository := newFakeRepository()
+	repository.profiles[testUserID].AvatarURL = "https://example.com/avatar.png"
+	files := storage.NewMemoryStorage()
+
+	if _, err := NewService(repository, files).ChangeAvatar(context.Background(), testUserID, bytes.NewReader(pngBytes)); err != nil {
+		t.Fatalf("ChangeAvatar: %v", err)
+	}
+	if files.Count() != 1 {
+		t.Fatalf("files = %d, want 1", files.Count())
+	}
+}
+
+func TestChangeAvatarRejectsInvalidFiles(t *testing.T) {
+	tests := map[string]struct {
+		content []byte
+		want    error
+	}{
+		"pdf":       {[]byte("%PDF-1.7\n"), storage.ErrUnsupportedType},
+		"text":      {[]byte("hello"), storage.ErrUnsupportedType},
+		"over 5 MB": {append(append([]byte{}, pngBytes...), make([]byte, app.MaxUploadSize)...), storage.ErrTooLarge},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			repository := newFakeRepository()
+			files := storage.NewMemoryStorage()
+
+			_, err := NewService(repository, files).ChangeAvatar(context.Background(), testUserID, bytes.NewReader(test.content))
+
+			if !errors.Is(err, test.want) {
+				t.Fatalf("err = %v, want %v", err, test.want)
+			}
+			if files.Count() != 0 || repository.profiles[testUserID].AvatarURL != "" {
+				t.Fatal("avatar was stored")
+			}
+		})
+	}
+}
+
+func TestChangeAvatarDeletesFileWhenProfileUpdateFails(t *testing.T) {
+	files := storage.NewMemoryStorage()
+
+	_, err := NewService(failingAvatarRepository{newFakeRepository()}, files).ChangeAvatar(context.Background(), testUserID, bytes.NewReader(pngBytes))
+
+	if !errors.Is(err, errDatabase) {
+		t.Fatalf("err = %v, want %v", err, errDatabase)
+	}
+	if files.Count() != 0 {
+		t.Fatal("the file was left behind")
+	}
+}
+
+func TestRemoveAvatarClearsUrlAndDeletesFile(t *testing.T) {
+	repository := newFakeRepository()
+	files := storage.NewMemoryStorage()
+	s := NewService(repository, files)
+	changed, err := s.ChangeAvatar(context.Background(), testUserID, bytes.NewReader(pngBytes))
+	if err != nil {
+		t.Fatalf("ChangeAvatar: %v", err)
+	}
+
+	profile, err := s.RemoveAvatar(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("RemoveAvatar: %v", err)
+	}
+
+	key, _ := storage.KeyFromPublicPath(changed.AvatarURL)
+	if profile.AvatarURL != "" || repository.profiles[testUserID].AvatarURL != "" || files.Has(storage.AreaPublic, key) {
+		t.Fatalf("avatar = %q, file kept = %v", profile.AvatarURL, files.Has(storage.AreaPublic, key))
+	}
+}
+
+func TestAvatarReturnsNotFoundForUnknownUser(t *testing.T) {
+	s := NewService(newFakeRepository(), storage.NewMemoryStorage())
+
+	if _, err := s.ChangeAvatar(context.Background(), "unknown", bytes.NewReader(pngBytes)); !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("ChangeAvatar: err = %v", err)
+	}
+	if _, err := s.RemoveAvatar(context.Background(), "unknown"); !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("RemoveAvatar: err = %v", err)
 	}
 }

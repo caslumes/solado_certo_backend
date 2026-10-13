@@ -2,20 +2,22 @@ package httpme
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 	"github.com/gin-gonic/gin"
 )
 
 type editProfileRequest struct {
-	Name      string `json:"name"`
-	Email     string `json:"email"`
-	Phone     string `json:"phone"`
-	AvatarURL string `json:"avatar_url"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	Phone string `json:"phone"`
 }
 
 type addressRequest struct {
@@ -78,6 +80,8 @@ type Service interface {
 	me.GetConsentsUseCase
 	me.GrantConsentUseCase
 	me.RevokeConsentUseCase
+	me.ChangeAvatarUseCase
+	me.RemoveAvatarUseCase
 	me.GetRolesUseCase
 	me.BecomeSellerUseCase
 	me.GetOnboardingUseCase
@@ -133,10 +137,9 @@ func (h *Handler) EditProfile(c *gin.Context) {
 	}
 
 	input := me.ProfileInput{
-		Name:      request.Name,
-		Email:     request.Email,
-		Phone:     request.Phone,
-		AvatarURL: request.AvatarURL,
+		Name:  request.Name,
+		Email: request.Email,
+		Phone: request.Phone,
 	}
 
 	profile, err := h.service.EditProfile(c.Request.Context(), userID, input)
@@ -487,4 +490,53 @@ func (h *Handler) ChangeOnboardingStep(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) ChangeAvatar(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	file, err := helpers.FormFile(c, "avatar", app.MaxUploadSize)
+	if err != nil && !errors.Is(err, storage.ErrTooLarge) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "send the photo as multipart form field \"avatar\""})
+		return
+	}
+	var profile *me.ProfileEntity
+	if err == nil {
+		defer file.Close()
+		profile, err = h.service.ChangeAvatar(c.Request.Context(), userID, file)
+	}
+	switch {
+	case errors.Is(err, storage.ErrTooLarge):
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("the file must have at most %d MB", app.MaxUploadSize>>20)})
+	case errors.Is(err, storage.ErrUnsupportedType):
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "the image must be JPEG, PNG or WebP"})
+	case errors.Is(err, app.ErrUserNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not change avatar"})
+	default:
+		c.JSON(http.StatusOK, profile.ToOutput())
+	}
+}
+
+func (h *Handler) RemoveAvatar(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	profile, err := h.service.RemoveAvatar(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, app.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove avatar"})
+		return
+	}
+	c.JSON(http.StatusOK, profile.ToOutput())
 }

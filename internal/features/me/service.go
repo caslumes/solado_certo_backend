@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
 type GetProfileUseCase interface {
@@ -63,6 +65,14 @@ type RevokeConsentUseCase interface {
 	RevokeConsent(context context.Context, userID string, purpose string) error
 }
 
+type ChangeAvatarUseCase interface {
+	ChangeAvatar(context context.Context, userID string, content io.Reader) (*ProfileEntity, error)
+}
+
+type RemoveAvatarUseCase interface {
+	RemoveAvatar(context context.Context, userID string) (*ProfileEntity, error)
+}
+
 type GetRolesUseCase interface {
 	GetRoles(context context.Context, userID string) ([]enum.Role, error)
 }
@@ -82,6 +92,7 @@ type ChangeOnboardingStepUseCase interface {
 type repository interface {
 	GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error)
 	UpdateProfile(context context.Context, profile *ProfileEntity) error
+	UpdateAvatar(context context.Context, userID string, avatarURL *string) error
 	GetAddressesByUserID(context context.Context, userID string) ([]*AddressEntity, error)
 	GetAddressByID(context context.Context, addressID string) (*AddressEntity, error)
 	CreateAddress(context context.Context, userID string, address *AddressEntity) (*AddressEntity, error)
@@ -106,11 +117,12 @@ type repository interface {
 }
 
 type service struct {
-	r repository
+	r     repository
+	files storage.Storage
 }
 
-func NewService(r repository) *service {
-	return &service{r: r}
+func NewService(r repository, files storage.Storage) *service {
+	return &service{r: r, files: files}
 }
 
 func (s *service) GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error) {
@@ -149,8 +161,6 @@ func (s *service) EditProfile(context context.Context, userID string, input Prof
 	profile.Name = name
 	profile.Email = email
 	profile.Phone = phone
-	profile.AvatarURL = input.AvatarURL
-
 	err = s.r.UpdateProfile(context, profile)
 	if err != nil {
 		slog.ErrorContext(context, "EditProfile failed", "user_id", userID, "error", err)
@@ -625,4 +635,62 @@ func (s *service) resolveNextOnboardingStep(context context.Context, currentStep
 	}
 
 	return nextStep, nil
+}
+
+const avatarsPath = "avatars"
+
+// ChangeAvatar stores the new photo, points the profile to it and then deletes the old one.
+func (s *service) ChangeAvatar(context context.Context, userID string, content io.Reader) (*ProfileEntity, error) {
+	profile, err := s.GetProfileByUserID(context, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	upload, err := storage.ReadUpload(content, app.MaxUploadSize, storage.Images)
+	if err != nil {
+		return nil, err
+	}
+	key, err := s.files.Save(context, storage.AreaPublic, avatarsPath, upload.Extension, upload.Reader())
+	if err != nil {
+		slog.ErrorContext(context, "ChangeAvatar could not save file", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	url := storage.PublicPath(key)
+	if err := s.r.UpdateAvatar(context, userID, &url); err != nil {
+		slog.ErrorContext(context, "ChangeAvatar failed", "user_id", userID, "error", err)
+		s.deleteAvatarFile(context, url)
+		return nil, err
+	}
+
+	s.deleteAvatarFile(context, profile.AvatarURL)
+	profile.AvatarURL = url
+	return profile, nil
+}
+
+func (s *service) RemoveAvatar(context context.Context, userID string) (*ProfileEntity, error) {
+	profile, err := s.GetProfileByUserID(context, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.r.UpdateAvatar(context, userID, nil); err != nil {
+		slog.ErrorContext(context, "RemoveAvatar failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	s.deleteAvatarFile(context, profile.AvatarURL)
+	profile.AvatarURL = ""
+	return profile, nil
+}
+
+// deleteAvatarFile ignores URLs that were not uploaded here and only logs a failure.
+func (s *service) deleteAvatarFile(context context.Context, url string) {
+	key, ok := storage.KeyFromPublicPath(url)
+	if !ok {
+		return
+	}
+	if err := s.files.Delete(context, storage.AreaPublic, key); err != nil {
+		slog.ErrorContext(context, "could not delete avatar file", "key", key, "error", err)
+	}
 }

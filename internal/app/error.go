@@ -25,6 +25,8 @@ var ErrCategoryNotFound = errors.New("category not found")
 var ErrForbidden = errors.New("forbidden")
 var ErrInvalidStatusTransition = errors.New("invalid status transition")
 var ErrMissingRequiredFields = errors.New("missing required fields")
+var ErrImageNotFound = errors.New("image not found")
+var ErrTooManyImages = errors.New("too many images")
 
 // MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {

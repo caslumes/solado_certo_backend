@@ -12,6 +12,7 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
 type ListAdvertisementsUseCase interface {
@@ -48,6 +49,9 @@ type repository interface {
 	UpdateAdvertisement(ctx context.Context, ad *AdvertisementEntity, expectedStatus AdvertisementStatus) error
 	ChangeStatus(ctx context.Context, id string, from AdvertisementStatus, to AdvertisementStatus) error
 	RemoveAdvertisement(ctx context.Context, id string) error
+	AddImage(ctx context.Context, advertisementID string, url string, altText *string, maxImages int) error
+	RemoveImage(ctx context.Context, advertisementID string, imageID string) error
+	ReorderImages(ctx context.Context, advertisementID string, imageIDs []string, coverImageID string) error
 }
 
 const (
@@ -66,11 +70,21 @@ const (
 var pricePattern = regexp.MustCompile(`^\d{1,8}(\.\d{1,2})?$`)
 
 type service struct {
-	r repository
+	r     repository
+	files storage.Storage
 }
 
-func NewService(r repository) *service {
-	return &service{r: r}
+func NewService(r repository, files storage.Storage) *service {
+	return &service{r: r, files: files}
+}
+
+func isExpected(err error, expected ...error) bool {
+	for _, target := range expected {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *service) ListAdvertisements(ctx context.Context, sellerID string, status string) ([]*AdvertisementEntity, error) {

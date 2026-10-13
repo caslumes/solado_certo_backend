@@ -105,7 +105,7 @@ Never run the stack on two machines at the same time.
 
 ## API
 
-All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under `/me` and `/seller` need an `Authorization: Bearer <access_token>` header; `/seller` also needs the `seller` role (403 otherwise). A request missing fields needed to save or publish an ad gets 422 with `{"error": "missing required fields", "fields": [...]}` (JSON field names).
+All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under `/me` and `/seller` need an `Authorization: Bearer <access_token>` header; `/seller` also needs the `seller` role (403 otherwise). A request missing fields needed to save or publish an ad gets 422 with `{"error": "missing required fields", "fields": [...]}` (JSON field names). Uploads accept JPEG, PNG and WebP up to 5 MB; the type is read from the file content, not its name (413 too large, 415 other types).
 
 | Method | Path | Description |
 |---|---|---|
@@ -114,7 +114,8 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `POST` | `/auth/login` | Returns `access_token` and `refresh_token`. Rate limited: 5/min per IP |
 | `POST` | `/auth/refresh-token` | Exchange a refresh token for a new token pair (the old one is revoked) |
 | `POST` | `/auth/logout` | Revoke a refresh token |
-| `GET` / `PATCH` | `/me/profile` | Read / edit name, email, phone, avatar |
+| `GET` / `PATCH` | `/me/profile` | Read / edit name, email and phone (`avatar_url` is ignored; it changes only through `/me/avatar`) |
+| `PUT` / `DELETE` | `/me/avatar` | Upload the profile photo (multipart field `avatar`) / remove it. The old file is deleted. Returns the profile |
 | `GET` / `POST` | `/me/addresses` | List / add addresses |
 | `PATCH` / `DELETE` | `/me/addresses/:addressID` | Edit / delete an address |
 | `GET` / `PUT` | `/me/podological-profile` | Read / save `footstrike_type` (`neutral`, `pronated`, `supinated`, `unknown`), optional `clinical_condition` and `obs`, and `pain_point_ids`. Saving needs an active `podological_profile` consent (403 otherwise) |
@@ -131,6 +132,9 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `POST` | `/seller/ads` | Create a draft. Needs `title` and `category_id`; also `description`, `price` (decimal string), `stock`, `prescription_required`, `custom_made_allowed`, `side` (`left`, `right`, `both`), `size`, `material`, `rigidity` (`flexible`, `semi_rigid`, `rigid`), `usage_indication`, `safety_alerts`, `contraindications`, `shipping_notes`, `purposes` (codes), `condition_ids` and `shipping_options` (`id` to keep an existing one, `name`, `carrier`, `price`, `delivery_days`) |
 | `GET` / `PATCH` / `DELETE` | `/seller/ads/:advertisementID` | Read / edit (only the fields sent; `""` clears a text, `[]` a list; a published ad must stay complete) / remove (soft delete). 403 for another seller's ad |
 | `POST` | `/seller/ads/:advertisementID/publish` · `/pause` · `/reactivate` | `draft → published`, `published → paused`, `paused → published`. 409 from any other status; publishing an incomplete ad is 422 |
+| `POST` | `/seller/ads/:advertisementID/images` | Add a photo (multipart field `image`, optional `alt_text`). At most 6 per ad (409); the first becomes the cover. Returns the ad |
+| `PATCH` | `/seller/ads/:advertisementID/images/order` | `image_ids` (every image of the ad, in the new order) and optional `cover_image_id` (keeps the current cover when absent) |
+| `DELETE` | `/seller/ads/:advertisementID/images/:imageID` | Remove a photo and its file; the rest are renumbered and the first becomes the cover if the cover was removed. A published ad keeps its last photo (422) |
 | `GET` | `/files/public/*path` | A public uploaded file (e.g. `/files/public/ads/<name>.jpg`). Private files are only served by the endpoints that own them |
 
 ## Project structure

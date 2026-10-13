@@ -30,6 +30,8 @@ func initRoutes(r *gin.Engine, a *config.App) {
 	{
 		meGroup.GET("/profile", a.MeHandler.GetProfile)
 		meGroup.PATCH("/profile", a.MeHandler.EditProfile)
+		meGroup.PUT("/avatar", a.MeHandler.ChangeAvatar)
+		meGroup.DELETE("/avatar", a.MeHandler.RemoveAvatar)
 
 		meGroup.GET("/addresses", a.MeHandler.GetAddresses)
 		meGroup.POST("/addresses", a.MeHandler.AddAddress)
@@ -70,6 +72,9 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		sellerGroup.POST("/ads/:advertisementID/publish", a.SellerHandler.PublishAdvertisement)
 		sellerGroup.POST("/ads/:advertisementID/pause", a.SellerHandler.PauseAdvertisement)
 		sellerGroup.POST("/ads/:advertisementID/reactivate", a.SellerHandler.ReactivateAdvertisement)
+		sellerGroup.POST("/ads/:advertisementID/images", a.SellerHandler.AddImage)
+		sellerGroup.PATCH("/ads/:advertisementID/images/order", a.SellerHandler.ReorderImages)
+		sellerGroup.DELETE("/ads/:advertisementID/images/:imageID", a.SellerHandler.RemoveImage)
 	}
 
 	r.GET("/files/public/*path", a.FilesHandler.ServePublic)

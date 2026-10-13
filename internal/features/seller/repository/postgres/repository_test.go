@@ -348,3 +348,138 @@ func TestCountPurposesAndConditions(t *testing.T) {
 		t.Fatalf("conditions = %d, err = %v; want 1", conditions, err)
 	}
 }
+
+func (f fixture) addImages(t *testing.T, adID string, n int) []seller.ImageEntity {
+	t.Helper()
+	for i := range n {
+		if err := f.r.AddImage(context.Background(), adID, "/files/public/ads/"+string(rune('a'+i))+".jpg", nil, 6); err != nil {
+			t.Fatalf("AddImage: %v", err)
+		}
+	}
+	return f.get(t, adID).Images
+}
+
+func coverCount(images []seller.ImageEntity) int {
+	count := 0
+	for _, image := range images {
+		if image.IsCover {
+			count++
+		}
+	}
+	return count
+}
+
+func TestAddImageNumbersPositionsAndSetsFirstCover(t *testing.T) {
+	f := newFixture(t)
+	ad := f.create(t, f.newAd())
+	if err := f.r.AddImage(context.Background(), ad.ID, "/files/public/ads/a.jpg", ptr("Frente"), 6); err != nil {
+		t.Fatalf("AddImage: %v", err)
+	}
+
+	images := f.addImages(t, ad.ID, 2)
+
+	if len(images) != 3 || images[0].AltText != "Frente" || !images[0].IsCover || coverCount(images) != 1 {
+		t.Fatalf("images = %+v", images)
+	}
+	for i, image := range images {
+		if image.Position != i+1 {
+			t.Fatalf("image %d has position %d", i, image.Position)
+		}
+	}
+}
+
+func TestAddImageStopsAtTheLimit(t *testing.T) {
+	f := newFixture(t)
+	ad := f.create(t, f.newAd())
+	f.addImages(t, ad.ID, 2)
+
+	err := f.r.AddImage(context.Background(), ad.ID, "/files/public/ads/z.jpg", nil, 2)
+
+	if !errors.Is(err, app.ErrTooManyImages) {
+		t.Fatalf("err = %v, want %v", err, app.ErrTooManyImages)
+	}
+}
+
+func TestAddImageReturnsNotFoundForRemovedAd(t *testing.T) {
+	f := newFixture(t)
+	ad := f.create(t, f.newAd())
+	if err := f.r.RemoveAdvertisement(context.Background(), ad.ID); err != nil {
+		t.Fatalf("RemoveAdvertisement: %v", err)
+	}
+
+	err := f.r.AddImage(context.Background(), ad.ID, "/files/public/ads/a.jpg", nil, 6)
+
+	if !errors.Is(err, app.ErrAdvertisementNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrAdvertisementNotFound)
+	}
+}
+
+func TestRemoveImageRenumbersAndMovesCover(t *testing.T) {
+	f := newFixture(t)
+	ad := f.create(t, f.newAd())
+	images := f.addImages(t, ad.ID, 3)
+
+	if err := f.r.RemoveImage(context.Background(), ad.ID, images[0].ID); err != nil {
+		t.Fatalf("RemoveImage: %v", err)
+	}
+
+	left := f.get(t, ad.ID).Images
+	if len(left) != 2 || left[0].ID != images[1].ID || left[0].Position != 1 || left[1].Position != 2 {
+		t.Fatalf("images = %+v", left)
+	}
+	if !left[0].IsCover || coverCount(left) != 1 {
+		t.Fatalf("cover was not moved: %+v", left)
+	}
+}
+
+func TestRemoveImageKeepsExistingCover(t *testing.T) {
+	f := newFixture(t)
+	ad := f.create(t, f.newAd())
+	images := f.addImages(t, ad.ID, 3)
+
+	if err := f.r.RemoveImage(context.Background(), ad.ID, images[1].ID); err != nil {
+		t.Fatalf("RemoveImage: %v", err)
+	}
+
+	left := f.get(t, ad.ID).Images
+	if left[0].ID != images[0].ID || !left[0].IsCover || coverCount(left) != 1 || left[1].Position != 2 {
+		t.Fatalf("images = %+v", left)
+	}
+}
+
+func TestRemoveImageOnlyFromItsAd(t *testing.T) {
+	f := newFixture(t)
+	ad := f.create(t, f.newAd())
+	other := f.create(t, f.newAd())
+	images := f.addImages(t, ad.ID, 1)
+
+	err := f.r.RemoveImage(context.Background(), other.ID, images[0].ID)
+
+	if !errors.Is(err, app.ErrImageNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrImageNotFound)
+	}
+	if len(f.get(t, ad.ID).Images) != 1 {
+		t.Fatal("the image was removed")
+	}
+}
+
+func TestReorderImagesSetsPositionsAndCover(t *testing.T) {
+	f := newFixture(t)
+	ad := f.create(t, f.newAd())
+	images := f.addImages(t, ad.ID, 3)
+	order := []string{images[2].ID, images[0].ID, images[1].ID}
+
+	if err := f.r.ReorderImages(context.Background(), ad.ID, order, images[1].ID); err != nil {
+		t.Fatalf("ReorderImages: %v", err)
+	}
+
+	got := f.get(t, ad.ID).Images
+	for i, id := range order {
+		if got[i].ID != id || got[i].Position != i+1 {
+			t.Fatalf("images = %+v, want order %v", got, order)
+		}
+	}
+	if !got[2].IsCover || coverCount(got) != 1 {
+		t.Fatalf("cover = %+v", got)
+	}
+}

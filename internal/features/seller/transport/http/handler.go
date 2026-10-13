@@ -2,11 +2,14 @@ package httpseller
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/seller"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -82,6 +85,9 @@ type Service interface {
 	seller.EditAdvertisementUseCase
 	seller.ChangeAdvertisementStatusUseCase
 	seller.RemoveAdvertisementUseCase
+	seller.AddImageUseCase
+	seller.RemoveImageUseCase
+	seller.ReorderImagesUseCase
 }
 
 type Handler struct {
@@ -109,6 +115,14 @@ func writeError(c *gin.Context, err error, fallback string) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, app.ErrAdvertisementNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "advertisement not found"})
+	case errors.Is(err, app.ErrImageNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "image not found"})
+	case errors.Is(err, app.ErrTooManyImages):
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("an ad can have at most %d images", seller.MaxImages)})
+	case errors.Is(err, storage.ErrTooLarge):
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("the file must have at most %d MB", app.MaxUploadSize>>20)})
+	case errors.Is(err, storage.ErrUnsupportedType):
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "the image must be JPEG, PNG or WebP"})
 	case errors.Is(err, app.ErrForbidden):
 		c.JSON(http.StatusForbidden, gin.H{"error": "advertisement belongs to another seller"})
 	case errors.Is(err, app.ErrInvalidStatusTransition):
@@ -228,4 +242,74 @@ func (h *Handler) RemoveAdvertisement(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+type imageOrderRequest struct {
+	ImageIDs     []string `json:"image_ids"`
+	CoverImageID *string  `json:"cover_image_id"`
+}
+
+func (h *Handler) AddImage(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	file, err := helpers.FormFile(c, "image", app.MaxUploadSize)
+	if err != nil {
+		if errors.Is(err, storage.ErrTooLarge) {
+			writeError(c, err, "")
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "send the photo as multipart form field \"image\""})
+		return
+	}
+	defer file.Close()
+
+	ad, err := h.service.AddImage(c.Request.Context(), userID, c.Param("advertisementID"), seller.ImageInput{
+		Content: file,
+		AltText: c.PostForm("alt_text"),
+	})
+	if err != nil {
+		writeError(c, err, "could not add image")
+		return
+	}
+	c.JSON(http.StatusCreated, ad.ToOutput())
+}
+
+func (h *Handler) RemoveImage(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	ad, err := h.service.RemoveImage(c.Request.Context(), userID, c.Param("advertisementID"), c.Param("imageID"))
+	if err != nil {
+		writeError(c, err, "could not remove image")
+		return
+	}
+	c.JSON(http.StatusOK, ad.ToOutput())
+}
+
+func (h *Handler) ReorderImages(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var request imageOrderRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
+		return
+	}
+
+	ad, err := h.service.ReorderImages(c.Request.Context(), userID, c.Param("advertisementID"), seller.ImageOrderInput{
+		ImageIDs:     request.ImageIDs,
+		CoverImageID: request.CoverImageID,
+	})
+	if err != nil {
+		writeError(c, err, "could not reorder images")
+		return
+	}
+	c.JSON(http.StatusOK, ad.ToOutput())
 }

@@ -1,9 +1,12 @@
 package httpme
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +17,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -37,6 +41,8 @@ type fakeService struct {
 	getConsents            func(context.Context, string) ([]*me.ConsentEntity, error)
 	grantConsent           func(context.Context, string, me.ConsentInput) (*me.ConsentEntity, bool, error)
 	revokeConsent          func(context.Context, string, string) error
+	changeAvatar           func(context.Context, string, io.Reader) (*me.ProfileEntity, error)
+	removeAvatar           func(context.Context, string) (*me.ProfileEntity, error)
 	getRoles               func(context.Context, string) ([]enum.Role, error)
 	becomeSeller           func(context.Context, string) ([]enum.Role, bool, error)
 	getOnboarding          func(context.Context, string) (*me.OnboardingEntity, error)
@@ -91,6 +97,14 @@ func (f fakeService) RevokeConsent(ctx context.Context, userID string, purpose s
 	return f.revokeConsent(ctx, userID, purpose)
 }
 
+func (f fakeService) ChangeAvatar(ctx context.Context, userID string, content io.Reader) (*me.ProfileEntity, error) {
+	return f.changeAvatar(ctx, userID, content)
+}
+
+func (f fakeService) RemoveAvatar(ctx context.Context, userID string) (*me.ProfileEntity, error) {
+	return f.removeAvatar(ctx, userID)
+}
+
 func (f fakeService) GetRoles(ctx context.Context, userID string) ([]enum.Role, error) {
 	return f.getRoles(ctx, userID)
 }
@@ -126,6 +140,8 @@ func newRouter(handler *Handler, authenticated bool) *gin.Engine {
 	router.GET("/me/consents", handler.GetConsents)
 	router.POST("/me/consents", handler.GrantConsent)
 	router.DELETE("/me/consents/:purpose", handler.RevokeConsent)
+	router.PUT("/me/avatar", handler.ChangeAvatar)
+	router.DELETE("/me/avatar", handler.RemoveAvatar)
 	router.GET("/me/roles", handler.GetRoles)
 	router.POST("/me/roles/seller", handler.BecomeSeller)
 	router.GET("/me/onboarding", handler.GetOnboarding)
@@ -361,6 +377,7 @@ var userEndpoints = map[string]endpoint{
 	"get consents":             {http.MethodGet, "/me/consents", ""},
 	"grant consent":            {http.MethodPost, "/me/consents", `{"purpose":"podological_profile"}`},
 	"revoke consent":           {http.MethodDelete, "/me/consents/podological_profile", ""},
+	"remove avatar":            {http.MethodDelete, "/me/avatar", ""},
 	"get roles":                {http.MethodGet, "/me/roles", ""},
 	"become seller":            {http.MethodPost, "/me/roles/seller", ""},
 	"get onboarding":           {http.MethodGet, "/me/onboarding", ""},
@@ -416,6 +433,7 @@ func failingService() fakeService {
 			return nil, false, errUnexpected
 		},
 		revokeConsent:        func(context.Context, string, string) error { return errUnexpected },
+		removeAvatar:         func(context.Context, string) (*me.ProfileEntity, error) { return nil, errUnexpected },
 		getRoles:             func(context.Context, string) ([]enum.Role, error) { return nil, errUnexpected },
 		becomeSeller:         func(context.Context, string) ([]enum.Role, bool, error) { return nil, false, errUnexpected },
 		getOnboarding:        func(context.Context, string) (*me.OnboardingEntity, error) { return nil, errUnexpected },
@@ -488,7 +506,7 @@ func TestEditProfileDecodesRequest(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
-	want := me.ProfileInput{Name: "Maria", Email: "maria@example.com", Phone: "11912345678", AvatarURL: "https://example.com/a.png"}
+	want := me.ProfileInput{Name: "Maria", Email: "maria@example.com", Phone: "11912345678"}
 	if received != want {
 		t.Fatalf("input = %+v, want %+v", received, want)
 	}
@@ -769,6 +787,113 @@ func TestBecomeSellerMapsNotFound(t *testing.T) {
 	recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/me/roles/seller", nil))
 
 	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
+func avatarRequest(t *testing.T, field string, content []byte) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile(field, "avatar.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	part.Write(content)
+	writer.Close()
+
+	r := httptest.NewRequest(http.MethodPut, "/me/avatar", &body)
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	return r
+}
+
+func TestChangeAvatarPassesFileAndReturnsProfile(t *testing.T) {
+	var received []byte
+	handler := NewHandler(fakeService{
+		changeAvatar: func(_ context.Context, _ string, content io.Reader) (*me.ProfileEntity, error) {
+			received, _ = io.ReadAll(content)
+			return &me.ProfileEntity{Name: "Maria", AvatarURL: "/files/public/avatars/a.png"}, nil
+		},
+	})
+
+	recorder := serve(handler, avatarRequest(t, "avatar", []byte("png bytes")))
+
+	if recorder.Code != http.StatusOK || string(received) != "png bytes" {
+		t.Fatalf("status = %d, content = %q", recorder.Code, received)
+	}
+	if !strings.Contains(recorder.Body.String(), `"avatar_url":"/files/public/avatars/a.png"`) {
+		t.Fatalf("body = %s", recorder.Body.String())
+	}
+}
+
+func TestChangeAvatarRequiresTheAvatarField(t *testing.T) {
+	recorder := serve(NewHandler(fakeService{}), avatarRequest(t, "photo", []byte("png")))
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestChangeAvatarRequiresAuthenticatedUser(t *testing.T) {
+	recorder := serveAnonymous(NewHandler(fakeService{}), avatarRequest(t, "avatar", []byte("png")))
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestChangeAvatarRejectsHugeBodyBeforeTheService(t *testing.T) {
+	recorder := serve(NewHandler(fakeService{}), avatarRequest(t, "avatar", make([]byte, app.MaxUploadSize+2<<20)))
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestChangeAvatarMapsErrors(t *testing.T) {
+	tests := map[int]error{
+		http.StatusRequestEntityTooLarge: storage.ErrTooLarge,
+		http.StatusUnsupportedMediaType:  storage.ErrUnsupportedType,
+		http.StatusNotFound:              app.ErrUserNotFound,
+		http.StatusInternalServerError:   errUnexpected,
+	}
+
+	for status, err := range tests {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			handler := NewHandler(fakeService{
+				changeAvatar: func(context.Context, string, io.Reader) (*me.ProfileEntity, error) { return nil, err },
+			})
+
+			recorder := serve(handler, avatarRequest(t, "avatar", []byte("png")))
+
+			if recorder.Code != status {
+				t.Fatalf("status = %d, want %d", recorder.Code, status)
+			}
+			if strings.Contains(recorder.Body.String(), errUnexpected.Error()) {
+				t.Fatalf("body leaks the internal error: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestRemoveAvatarReturnsProfile(t *testing.T) {
+	handler := NewHandler(fakeService{
+		removeAvatar: func(context.Context, string) (*me.ProfileEntity, error) { return &me.ProfileEntity{Name: "Maria"}, nil },
+	})
+
+	recorder := serve(handler, request(http.MethodDelete, "/me/avatar", ""))
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"avatar_url":""`) {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestRemoveAvatarMapsNotFound(t *testing.T) {
+	handler := NewHandler(fakeService{
+		removeAvatar: func(context.Context, string) (*me.ProfileEntity, error) { return nil, app.ErrUserNotFound },
+	})
+
+	if recorder := serve(handler, request(http.MethodDelete, "/me/avatar", "")); recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
 	}
 }

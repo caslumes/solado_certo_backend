@@ -49,11 +49,10 @@ func (r *postgresRepository) GetProfileByUserID(ctx context.Context, userID stri
 func (r *postgresRepository) UpdateProfile(ctx context.Context, profile *me.ProfileEntity) error {
 	_, err := r.pool.Exec(
 		ctx,
-		"UPDATE users SET name = $1, email = $2, phone = $3, avatar_url = $4, status = $5 WHERE id = $6",
+		"UPDATE users SET name = $1, email = $2, phone = $3, status = $4 WHERE id = $5",
 		profile.Name,
 		profile.Email,
 		profile.Phone,
-		profile.AvatarURL,
 		profile.Status,
 		profile.ID,
 	)
@@ -615,4 +614,15 @@ func (r *postgresRepository) AddRole(ctx context.Context, userID string, role en
 	}
 
 	return result.RowsAffected() == 1, nil
+}
+
+func (r *postgresRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL *string) error {
+	result, err := r.pool.Exec(ctx, "UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2", avatarURL, userID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return app.ErrUserNotFound
+	}
+	return nil
 }

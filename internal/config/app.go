@@ -52,8 +52,8 @@ func InitApp(ctx context.Context) (*App, error) {
 	}
 
 	authService := auth.NewService(authRepository.NewPostgresRepository(dbPool), envs.SecretKey)
-	meService := me.NewService(meRepository.NewPostgresRepository(dbPool))
-	sellerService := seller.NewService(sellerRepository.NewPostgresRepository(dbPool))
+	meService := me.NewService(meRepository.NewPostgresRepository(dbPool), fileStorage)
+	sellerService := seller.NewService(sellerRepository.NewPostgresRepository(dbPool), fileStorage)
 	catalogService := catalog.NewService(catalogRepository.NewPostgresRepository(dbPool), meService)
 
 	return &App{

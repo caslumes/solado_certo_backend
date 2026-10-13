@@ -53,7 +53,7 @@ func TestUpdateProfileChangesUser(t *testing.T) {
 	user := testutil.InsertUser(t, pool)
 	want := me.ProfileEntity{
 		ID: user.ID, Name: "Maria Lima", Email: "maria.lima@example.com", Phone: "19988887777",
-		AvatarURL: "https://example.com/a.png", Status: enum.ProfileStatusPending,
+		Status: enum.ProfileStatusPending,
 	}
 
 	if err := r.UpdateProfile(ctx, &want); err != nil {
@@ -591,6 +591,54 @@ func TestAddRoleReturnsNotFoundForUnknownUser(t *testing.T) {
 	_, err := r.AddRole(context.Background(), unknownID, enum.RoleSeller)
 
 	if !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
+	}
+}
+
+func TestUpdateProfileKeepsAvatar(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	user := testutil.InsertUser(t, pool)
+	if err := r.UpdateAvatar(ctx, user.ID, helpers.StringPtr("/files/public/avatars/a.png")); err != nil {
+		t.Fatalf("UpdateAvatar: %v", err)
+	}
+
+	profile := &me.ProfileEntity{ID: user.ID, Name: "Maria", Email: user.Email, Phone: user.Phone, Status: enum.ProfileStatusActive}
+	if err := r.UpdateProfile(ctx, profile); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+
+	got, err := r.GetProfileByUserID(ctx, user.ID)
+	if err != nil || got.AvatarURL != "/files/public/avatars/a.png" {
+		t.Fatalf("avatar = %q, err = %v", got.AvatarURL, err)
+	}
+}
+
+func TestUpdateAvatarSetsAndClears(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	user := testutil.InsertUser(t, pool)
+
+	if err := r.UpdateAvatar(ctx, user.ID, helpers.StringPtr("/files/public/avatars/a.png")); err != nil {
+		t.Fatalf("UpdateAvatar: %v", err)
+	}
+	if got, _ := r.GetProfileByUserID(ctx, user.ID); got.AvatarURL != "/files/public/avatars/a.png" {
+		t.Fatalf("avatar = %q", got.AvatarURL)
+	}
+
+	if err := r.UpdateAvatar(ctx, user.ID, nil); err != nil {
+		t.Fatalf("UpdateAvatar(nil): %v", err)
+	}
+	var stored *string
+	if err := pool.QueryRow(ctx, "SELECT avatar_url FROM users WHERE id = $1", user.ID).Scan(&stored); err != nil || stored != nil {
+		t.Fatalf("avatar_url = %v, err = %v; want NULL", stored, err)
+	}
+}
+
+func TestUpdateAvatarReturnsNotFoundForUnknownUser(t *testing.T) {
+	r, _ := newRepository(t)
+
+	if err := r.UpdateAvatar(context.Background(), unknownID, nil); !errors.Is(err, app.ErrUserNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
 	}
 }

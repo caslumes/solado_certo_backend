@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
 const (
@@ -175,7 +176,7 @@ func validInput() AdvertisementInput {
 func TestCreateAdvertisementSavesDraft(t *testing.T) {
 	repository := newFakeRepository()
 
-	ad, err := NewService(repository).CreateAdvertisement(context.Background(), testSellerID, validInput())
+	ad, err := NewService(repository, storage.NewMemoryStorage()).CreateAdvertisement(context.Background(), testSellerID, validInput())
 	if err != nil {
 		t.Fatalf("CreateAdvertisement: %v", err)
 	}
@@ -198,7 +199,7 @@ func TestCreateAdvertisementSavesDraft(t *testing.T) {
 }
 
 func TestCreateAdvertisementDraftNeedsTitleAndCategory(t *testing.T) {
-	_, err := NewService(newFakeRepository()).CreateAdvertisement(context.Background(), testSellerID, AdvertisementInput{Title: strPtr("  ")})
+	_, err := NewService(newFakeRepository(), storage.NewMemoryStorage()).CreateAdvertisement(context.Background(), testSellerID, AdvertisementInput{Title: strPtr("  ")})
 
 	var missing *app.MissingFieldsError
 	if !errors.As(err, &missing) || !slices.Equal(missing.Fields, []string{"title", "category_id"}) {
@@ -249,7 +250,7 @@ func TestCreateAdvertisementRejectsInvalidInput(t *testing.T) {
 			input := validInput()
 			mutate(&input)
 
-			_, err := NewService(repository).CreateAdvertisement(context.Background(), testSellerID, input)
+			_, err := NewService(repository, storage.NewMemoryStorage()).CreateAdvertisement(context.Background(), testSellerID, input)
 
 			if !errors.Is(err, app.ErrInvalidInput) {
 				t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
@@ -278,7 +279,7 @@ func TestListAdvertisementsFiltersByStatus(t *testing.T) {
 	repository.add(&AdvertisementEntity{Title: "published", Status: AdvertisementStatusPublished})
 	repository.add(&AdvertisementEntity{Title: "removed", Status: AdvertisementStatusRemoved})
 	repository.add(&AdvertisementEntity{Title: "other seller", Status: AdvertisementStatusDraft, SellerID: otherSellerID})
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 
 	all, err := s.ListAdvertisements(context.Background(), testSellerID, "")
 	if err != nil || len(all) != 2 {
@@ -292,7 +293,7 @@ func TestListAdvertisementsFiltersByStatus(t *testing.T) {
 
 func TestListAdvertisementsRejectsUnknownStatus(t *testing.T) {
 	for _, status := range []string{"removed", "archived", "sold_out"} {
-		_, err := NewService(newFakeRepository()).ListAdvertisements(context.Background(), testSellerID, status)
+		_, err := NewService(newFakeRepository(), storage.NewMemoryStorage()).ListAdvertisements(context.Background(), testSellerID, status)
 		if !errors.Is(err, app.ErrInvalidInput) {
 			t.Errorf("status %q: err = %v, want %v", status, err, app.ErrInvalidInput)
 		}
@@ -302,7 +303,7 @@ func TestListAdvertisementsRejectsUnknownStatus(t *testing.T) {
 func TestOwnershipIsChecked(t *testing.T) {
 	repository := newFakeRepository()
 	ad := repository.add(&AdvertisementEntity{Title: "x", CategoryID: insolesID, Status: AdvertisementStatusPublished, SellerID: otherSellerID})
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 	ctx := context.Background()
 
 	calls := map[string]func() error{
@@ -332,7 +333,7 @@ func TestOwnershipIsChecked(t *testing.T) {
 func TestGetAdvertisementReturnsNotFound(t *testing.T) {
 	repository := newFakeRepository()
 	removed := repository.add(&AdvertisementEntity{Status: AdvertisementStatusRemoved})
-	s := NewService(repository)
+	s := NewService(repository, storage.NewMemoryStorage())
 
 	for _, id := range []string{"not-a-uuid", unknownID, removed.ID} {
 		if _, err := s.GetAdvertisement(context.Background(), testSellerID, id); !errors.Is(err, app.ErrAdvertisementNotFound) {
@@ -365,7 +366,7 @@ func TestStatusTransitions(t *testing.T) {
 			repository := newFakeRepository()
 			ad := adWithStatus(repository, test.from)
 
-			changed, err := NewService(repository).ChangeAdvertisementStatus(context.Background(), testSellerID, ad.ID, test.action)
+			changed, err := NewService(repository, storage.NewMemoryStorage()).ChangeAdvertisementStatus(context.Background(), testSellerID, ad.ID, test.action)
 			if err != nil {
 				t.Fatalf("ChangeAdvertisementStatus: %v", err)
 			}
@@ -394,7 +395,7 @@ func TestInvalidStatusTransitions(t *testing.T) {
 			repository := newFakeRepository()
 			ad := adWithStatus(repository, test.from)
 
-			_, err := NewService(repository).ChangeAdvertisementStatus(context.Background(), testSellerID, ad.ID, test.action)
+			_, err := NewService(repository, storage.NewMemoryStorage()).ChangeAdvertisementStatus(context.Background(), testSellerID, ad.ID, test.action)
 
 			if !errors.Is(err, app.ErrInvalidStatusTransition) {
 				t.Fatalf("err = %v, want %v", err, app.ErrInvalidStatusTransition)
@@ -410,7 +411,7 @@ func TestChangeStatusRejectsUnknownAction(t *testing.T) {
 	repository := newFakeRepository()
 	ad := adWithStatus(repository, AdvertisementStatusDraft)
 
-	_, err := NewService(repository).ChangeAdvertisementStatus(context.Background(), testSellerID, ad.ID, "archive")
+	_, err := NewService(repository, storage.NewMemoryStorage()).ChangeAdvertisementStatus(context.Background(), testSellerID, ad.ID, "archive")
 
 	if !errors.Is(err, app.ErrInvalidInput) {
 		t.Fatalf("err = %v, want %v", err, app.ErrInvalidInput)
@@ -426,7 +427,7 @@ func TestPublishingRequiresCompleteAd(t *testing.T) {
 			repository.ads[ad.ID].Images = nil
 			repository.ads[ad.ID].Material = nil
 
-			_, err := NewService(repository).ChangeAdvertisementStatus(context.Background(), testSellerID, ad.ID, action)
+			_, err := NewService(repository, storage.NewMemoryStorage()).ChangeAdvertisementStatus(context.Background(), testSellerID, ad.ID, action)
 
 			var missing *app.MissingFieldsError
 			if !errors.As(err, &missing) || !slices.Equal(missing.Fields, []string{"material", "images"}) {
@@ -443,7 +444,7 @@ func TestEditAdvertisementChangesOnlyGivenFields(t *testing.T) {
 	repository := newFakeRepository()
 	ad := adWithStatus(repository, AdvertisementStatusDraft)
 
-	edited, err := NewService(repository).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{
+	edited, err := NewService(repository, storage.NewMemoryStorage()).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{
 		Price:         strPtr("120"),
 		ShippingNotes: strPtr("Enviado em 2 dias"),
 		Material:      strPtr(""),
@@ -464,7 +465,7 @@ func TestEditAdvertisementKeepsPublishedAdComplete(t *testing.T) {
 	repository := newFakeRepository()
 	ad := adWithStatus(repository, AdvertisementStatusPublished)
 
-	_, err := NewService(repository).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{
+	_, err := NewService(repository, storage.NewMemoryStorage()).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{
 		ShippingOptions: &[]ShippingOptionInput{},
 	})
 
@@ -481,7 +482,7 @@ func TestEditAdvertisementChangingCategoryUsesItsRequirements(t *testing.T) {
 	repository := newFakeRepository()
 	ad := adWithStatus(repository, AdvertisementStatusPublished)
 
-	edited, err := NewService(repository).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{
+	edited, err := NewService(repository, storage.NewMemoryStorage()).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{
 		CategoryID: strPtr(socksID),
 		Side:       strPtr(""),
 		Rigidity:   strPtr(""),
@@ -499,7 +500,7 @@ func TestEditAdvertisementUpdatesExistingShippingOption(t *testing.T) {
 	ad := adWithStatus(repository, AdvertisementStatusDraft)
 	optionID := ad.ShippingOptions[0].ID
 
-	edited, err := NewService(repository).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{
+	edited, err := NewService(repository, storage.NewMemoryStorage()).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{
 		ShippingOptions: &[]ShippingOptionInput{
 			{ID: &optionID, Name: "PAC", Price: "21.50", DeliveryDays: 6},
 			{Name: "SEDEX", Price: "34.90", DeliveryDays: 2},
@@ -519,7 +520,7 @@ func TestEditAdvertisementFailsWhenStatusChangedMeanwhile(t *testing.T) {
 	ad := adWithStatus(repository, AdvertisementStatusDraft)
 	repository.changedStatus = AdvertisementStatusPublished
 
-	_, err := NewService(repository).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{Title: strPtr("Novo")})
+	_, err := NewService(repository, storage.NewMemoryStorage()).EditAdvertisement(context.Background(), testSellerID, ad.ID, AdvertisementInput{Title: strPtr("Novo")})
 
 	if !errors.Is(err, app.ErrInvalidStatusTransition) {
 		t.Fatalf("err = %v, want %v", err, app.ErrInvalidStatusTransition)
@@ -531,7 +532,7 @@ func TestRemoveAdvertisement(t *testing.T) {
 		t.Run(string(status), func(t *testing.T) {
 			repository := newFakeRepository()
 			ad := adWithStatus(repository, status)
-			s := NewService(repository)
+			s := NewService(repository, storage.NewMemoryStorage())
 
 			if err := s.RemoveAdvertisement(context.Background(), testSellerID, ad.ID); err != nil {
 				t.Fatalf("RemoveAdvertisement: %v", err)
@@ -563,7 +564,7 @@ func (failingRepository) GetCategoryRequiredAttributes(context.Context, string) 
 
 func TestServicePropagatesRepositoryErrors(t *testing.T) {
 	ctx := context.Background()
-	s := NewService(failingRepository{})
+	s := NewService(failingRepository{}, storage.NewMemoryStorage())
 	calls := map[string]func() error{
 		"list":   func() error { _, err := s.ListAdvertisements(ctx, testSellerID, ""); return err },
 		"get":    func() error { _, err := s.GetAdvertisement(ctx, testSellerID, unknownID); return err },

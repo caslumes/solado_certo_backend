@@ -390,3 +390,87 @@ func (r *postgresRepository) RemoveAdvertisement(ctx context.Context, id string)
 	}
 	return nil
 }
+
+// AddImage locks the ad row so concurrent uploads can't go past maxImages. The first image becomes the cover.
+func (r *postgresRepository) AddImage(ctx context.Context, advertisementID string, url string, altText *string, maxImages int) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var locked string
+	err = tx.QueryRow(ctx, "SELECT id FROM advertisements WHERE id = $1 AND removed_at IS NULL FOR UPDATE", advertisementID).Scan(&locked)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return app.ErrAdvertisementNotFound
+		}
+		return err
+	}
+
+	var count, lastPosition int
+	err = tx.QueryRow(
+		ctx,
+		"SELECT COUNT(*), COALESCE(MAX(position), 0) FROM advertisement_images WHERE advertisement_id = $1",
+		advertisementID,
+	).Scan(&count, &lastPosition)
+	if err != nil {
+		return err
+	}
+	if count >= maxImages {
+		return app.ErrTooManyImages
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		"INSERT INTO advertisement_images (advertisement_id, url, alt_text, position, is_cover) VALUES ($1, $2, $3, $4, $5)",
+		advertisementID, url, altText, lastPosition+1, count == 0,
+	)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// RemoveImage deletes the image, renumbers the others from 1 and, if the cover was removed,
+// makes the first remaining image the cover.
+func (r *postgresRepository) RemoveImage(ctx context.Context, advertisementID string, imageID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	result, err := tx.Exec(ctx, "DELETE FROM advertisement_images WHERE id = $1 AND advertisement_id = $2", imageID, advertisementID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return app.ErrImageNotFound
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		"UPDATE advertisement_images ai SET position = o.position, "+
+			"is_cover = ai.is_cover OR (o.position = 1 AND NOT EXISTS "+
+			"(SELECT 1 FROM advertisement_images c WHERE c.advertisement_id = $1 AND c.is_cover)) "+
+			"FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY position, id) AS position FROM advertisement_images "+
+			"WHERE advertisement_id = $1) o WHERE ai.id = o.id",
+		advertisementID,
+	)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *postgresRepository) ReorderImages(ctx context.Context, advertisementID string, imageIDs []string, coverImageID string) error {
+	_, err := r.pool.Exec(
+		ctx,
+		"UPDATE advertisement_images ai SET position = o.position, is_cover = (ai.id = $3) "+
+			"FROM unnest($2::uuid[]) WITH ORDINALITY AS o(id, position) "+
+			"WHERE ai.id = o.id AND ai.advertisement_id = $1",
+		advertisementID, imageIDs, coverImageID,
+	)
+	return err
+}

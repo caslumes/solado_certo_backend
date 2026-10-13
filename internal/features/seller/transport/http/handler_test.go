@@ -1,9 +1,12 @@
 package httpseller
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +15,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/seller"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,6 +36,21 @@ type fakeService struct {
 	edit         func(context.Context, string, string, seller.AdvertisementInput) (*seller.AdvertisementEntity, error)
 	changeStatus func(context.Context, string, string, seller.StatusAction) (*seller.AdvertisementEntity, error)
 	remove       func(context.Context, string, string) error
+	addImage     func(context.Context, string, string, seller.ImageInput) (*seller.AdvertisementEntity, error)
+	removeImage  func(context.Context, string, string, string) (*seller.AdvertisementEntity, error)
+	reorder      func(context.Context, string, string, seller.ImageOrderInput) (*seller.AdvertisementEntity, error)
+}
+
+func (f fakeService) AddImage(ctx context.Context, sellerID string, id string, input seller.ImageInput) (*seller.AdvertisementEntity, error) {
+	return f.addImage(ctx, sellerID, id, input)
+}
+
+func (f fakeService) RemoveImage(ctx context.Context, sellerID string, id string, imageID string) (*seller.AdvertisementEntity, error) {
+	return f.removeImage(ctx, sellerID, id, imageID)
+}
+
+func (f fakeService) ReorderImages(ctx context.Context, sellerID string, id string, input seller.ImageOrderInput) (*seller.AdvertisementEntity, error) {
+	return f.reorder(ctx, sellerID, id, input)
 }
 
 func (f fakeService) ListAdvertisements(ctx context.Context, sellerID string, status string) ([]*seller.AdvertisementEntity, error) {
@@ -73,6 +92,9 @@ func newRouter(handler *Handler, authenticated bool) *gin.Engine {
 	router.POST("/seller/ads/:advertisementID/publish", handler.PublishAdvertisement)
 	router.POST("/seller/ads/:advertisementID/pause", handler.PauseAdvertisement)
 	router.POST("/seller/ads/:advertisementID/reactivate", handler.ReactivateAdvertisement)
+	router.POST("/seller/ads/:advertisementID/images", handler.AddImage)
+	router.PATCH("/seller/ads/:advertisementID/images/order", handler.ReorderImages)
+	router.DELETE("/seller/ads/:advertisementID/images/:imageID", handler.RemoveImage)
 	return router
 }
 
@@ -97,14 +119,16 @@ type endpoint struct {
 }
 
 var endpoints = map[string]endpoint{
-	"list":       {http.MethodGet, "/seller/ads", ""},
-	"create":     {http.MethodPost, "/seller/ads", `{"title":"Palmilha"}`},
-	"get":        {http.MethodGet, "/seller/ads/" + testAdID, ""},
-	"edit":       {http.MethodPatch, "/seller/ads/" + testAdID, `{"title":"Palmilha"}`},
-	"remove":     {http.MethodDelete, "/seller/ads/" + testAdID, ""},
-	"publish":    {http.MethodPost, "/seller/ads/" + testAdID + "/publish", ""},
-	"pause":      {http.MethodPost, "/seller/ads/" + testAdID + "/pause", ""},
-	"reactivate": {http.MethodPost, "/seller/ads/" + testAdID + "/reactivate", ""},
+	"list":           {http.MethodGet, "/seller/ads", ""},
+	"create":         {http.MethodPost, "/seller/ads", `{"title":"Palmilha"}`},
+	"get":            {http.MethodGet, "/seller/ads/" + testAdID, ""},
+	"edit":           {http.MethodPatch, "/seller/ads/" + testAdID, `{"title":"Palmilha"}`},
+	"remove":         {http.MethodDelete, "/seller/ads/" + testAdID, ""},
+	"publish":        {http.MethodPost, "/seller/ads/" + testAdID + "/publish", ""},
+	"pause":          {http.MethodPost, "/seller/ads/" + testAdID + "/pause", ""},
+	"reactivate":     {http.MethodPost, "/seller/ads/" + testAdID + "/reactivate", ""},
+	"remove image":   {http.MethodDelete, "/seller/ads/" + testAdID + "/images/image-1", ""},
+	"reorder images": {http.MethodPatch, "/seller/ads/" + testAdID + "/images/order", `{"image_ids":["image-1"]}`},
 }
 
 func serviceReturning(err error) fakeService {
@@ -121,6 +145,13 @@ func serviceReturning(err error) fakeService {
 			return nil, err
 		},
 		remove: func(context.Context, string, string) error { return err },
+		addImage: func(context.Context, string, string, seller.ImageInput) (*seller.AdvertisementEntity, error) {
+			return nil, err
+		},
+		removeImage: func(context.Context, string, string, string) (*seller.AdvertisementEntity, error) { return nil, err },
+		reorder: func(context.Context, string, string, seller.ImageOrderInput) (*seller.AdvertisementEntity, error) {
+			return nil, err
+		},
 	}
 }
 
@@ -179,7 +210,7 @@ func TestMissingFieldsAreListed(t *testing.T) {
 }
 
 func TestBodyEndpointsRejectMalformedJSON(t *testing.T) {
-	for _, name := range []string{"create", "edit"} {
+	for _, name := range []string{"create", "edit", "reorder images"} {
 		e := endpoints[name]
 		t.Run(name, func(t *testing.T) {
 			recorder := serve(NewHandler(fakeService{}), e.method, e.target, `{"title":`)
@@ -301,5 +332,112 @@ func TestRemoveReturnsNoContent(t *testing.T) {
 
 	if recorder := serve(handler, http.MethodDelete, "/seller/ads/"+testAdID, ""); recorder.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
+	}
+}
+
+func multipartRequest(t *testing.T, field string, content []byte, altText string) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile(field, "foto.jpg")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	part.Write(content)
+	if altText != "" {
+		writer.WriteField("alt_text", altText)
+	}
+	writer.Close()
+
+	request := httptest.NewRequest(http.MethodPost, "/seller/ads/"+testAdID+"/images", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	return request
+}
+
+func serveRequest(handler *Handler, request *http.Request) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	newRouter(handler, true).ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestAddImagePassesFileAndAltText(t *testing.T) {
+	var receivedContent []byte
+	var receivedAlt, receivedID string
+	handler := NewHandler(fakeService{
+		addImage: func(_ context.Context, _ string, id string, input seller.ImageInput) (*seller.AdvertisementEntity, error) {
+			receivedID, receivedAlt = id, input.AltText
+			receivedContent, _ = io.ReadAll(input.Content)
+			return sampleAd(seller.AdvertisementStatusDraft, 1), nil
+		},
+	})
+
+	recorder := serveRequest(handler, multipartRequest(t, "image", []byte("photo bytes"), "Frente"))
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body.String())
+	}
+	if receivedID != testAdID || receivedAlt != "Frente" || string(receivedContent) != "photo bytes" {
+		t.Fatalf("id = %q, alt = %q, content = %q", receivedID, receivedAlt, receivedContent)
+	}
+}
+
+func TestAddImageNeedsTheImageField(t *testing.T) {
+	recorder := serveRequest(NewHandler(fakeService{}), multipartRequest(t, "file", []byte("photo"), ""))
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestAddImageRejectsHugeBodyBeforeTheService(t *testing.T) {
+	recorder := serveRequest(NewHandler(fakeService{}), multipartRequest(t, "image", make([]byte, app.MaxUploadSize+2<<20), ""))
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestAddImageMapsErrors(t *testing.T) {
+	tests := map[int]error{
+		http.StatusRequestEntityTooLarge: storage.ErrTooLarge,
+		http.StatusUnsupportedMediaType:  storage.ErrUnsupportedType,
+		http.StatusConflict:              app.ErrTooManyImages,
+		http.StatusForbidden:             app.ErrForbidden,
+		http.StatusNotFound:              app.ErrAdvertisementNotFound,
+		http.StatusInternalServerError:   errors.New("disk unavailable"),
+	}
+
+	for status, err := range tests {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			recorder := serveRequest(NewHandler(serviceReturning(err)), multipartRequest(t, "image", []byte("photo"), ""))
+
+			if recorder.Code != status {
+				t.Fatalf("status = %d, want %d", recorder.Code, status)
+			}
+		})
+	}
+}
+
+func TestRemoveImageMapsImageNotFound(t *testing.T) {
+	recorder := serve(NewHandler(serviceReturning(app.ErrImageNotFound)), http.MethodDelete, "/seller/ads/"+testAdID+"/images/image-9", "")
+
+	if recorder.Code != http.StatusNotFound || !strings.Contains(recorder.Body.String(), "image not found") {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestReorderImagesDecodesRequest(t *testing.T) {
+	var received seller.ImageOrderInput
+	handler := NewHandler(fakeService{
+		reorder: func(_ context.Context, _ string, _ string, input seller.ImageOrderInput) (*seller.AdvertisementEntity, error) {
+			received = input
+			return sampleAd(seller.AdvertisementStatusDraft, 1), nil
+		},
+	})
+
+	recorder := serve(handler, http.MethodPatch, "/seller/ads/"+testAdID+"/images/order", `{"image_ids":["b","a"],"cover_image_id":"a"}`)
+
+	if recorder.Code != http.StatusOK || len(received.ImageIDs) != 2 || received.ImageIDs[0] != "b" || *received.CoverImageID != "a" {
+		t.Fatalf("status = %d, input = %+v", recorder.Code, received)
 	}
 }
