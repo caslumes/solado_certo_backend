@@ -58,6 +58,8 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		catalogGroup.GET("/purposes", a.CatalogHandler.GetPurposes)
 		catalogGroup.GET("/conditions", a.CatalogHandler.GetConditions)
 	}
+
+	r.GET("/files/public/*path", a.FilesHandler.ServePublic)
 }
 
 func health(db *pgxpool.Pool) gin.HandlerFunc {

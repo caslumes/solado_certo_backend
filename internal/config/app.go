@@ -11,11 +11,13 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 	catalogRepository "github.com/caslumes/solado_certo_backend/internal/features/catalog/repository/postgres"
 	httpcatalog "github.com/caslumes/solado_certo_backend/internal/features/catalog/transport/http"
+	httpfiles "github.com/caslumes/solado_certo_backend/internal/features/files/transport/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	meRepository "github.com/caslumes/solado_certo_backend/internal/features/me/repository/postgres"
 	httpme "github.com/caslumes/solado_certo_backend/internal/features/me/transport/http"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	rolemiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/role"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
 type App struct {
@@ -26,6 +28,7 @@ type App struct {
 	AuthHandler    *httpauth.Handler
 	MeHandler      *httpme.Handler
 	CatalogHandler *httpcatalog.Handler
+	FilesHandler   *httpfiles.Handler
 }
 
 func InitApp(ctx context.Context) (*App, error) {
@@ -35,6 +38,11 @@ func InitApp(ctx context.Context) (*App, error) {
 	}
 
 	dbPool, err := InitDatabase(ctx, envs.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	fileStorage, err := storage.NewLocalStorage(envs.UploadsDir)
 	if err != nil {
 		return nil, err
 	}
@@ -51,5 +59,6 @@ func InitApp(ctx context.Context) (*App, error) {
 		AuthHandler:    httpauth.NewHandler(authService),
 		MeHandler:      httpme.NewHandler(meService),
 		CatalogHandler: httpcatalog.NewHandler(catalogService),
+		FilesHandler:   httpfiles.NewHandler(fileStorage),
 	}, nil
 }

@@ -48,6 +48,7 @@ The server reloads automatically ([Air](https://github.com/air-verse/air)) when 
 | `SERVER_PORT` | No (default `3000`) | HTTP port |
 | `DATABASE_URL` | Yes | PostgreSQL connection string. Inside Compose the host is `db` |
 | `SECRET_KEY` | Yes | JWT signing key, at least 32 bytes |
+| `UPLOADS_DIR` | No (default `data/uploads`) | Folder for uploaded files, with a `public` area (ad photos, avatars) and a `private` one (prescriptions, reports). Git ignores it; like `data/postgres`, it stays in the project folder |
 
 The server exits with a clear error at startup if a required variable is missing or the database is unreachable.
 
@@ -126,6 +127,7 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `GET` | `/catalog` | List published ads. Query: `page`, `limit` (max 100), `q`, `category`, `price_min`, `price_max`, `prescription_required`, `custom_made_allowed`, `side`, `size`, `material`, `rigidity`, `usage_indication` |
 | `GET` | `/catalog/items/:advertisementID` | One ad |
 | `GET` | `/catalog/categories` | Categories |
+| `GET` | `/files/public/*path` | A public uploaded file (e.g. `/files/public/ads/<name>.jpg`). Private files are only served by the endpoints that own them |
 
 ## Project structure
 
@@ -137,11 +139,14 @@ internal/
     auth/              register, login, refresh, logout (JWT + bcrypt)
     me/                profile, addresses, podological profile, consents, roles, onboarding
     catalog/           ads and categories
+    files/             serves public uploaded files
       <feature>/       service.go (use cases), entity/input/output types,
                        repository/postgres (SQL), transport/http (Gin handlers)
   middleware/          JWT auth, role checks (RequireRole) and per-IP rate limiting
   app/                 shared errors and enums
   helpers/             small shared helpers
+pkg/
+  storage/             Storage interface for uploaded files and its local-disk implementation (no dependency on internal/)
 data/migrations/       SQL migrations (run on first start)
 .setup/build/          Dockerfiles (dev: Air hot reload; prod: compiled binary)
 ```

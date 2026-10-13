@@ -8,12 +8,14 @@ import (
 const (
 	minSecretKeyLength = 32
 	defaultServerPort  = "3000"
+	defaultUploadsDir  = "data/uploads"
 )
 
 type Envs struct {
 	ServerPort  string
 	DatabaseURL string
 	SecretKey   string
+	UploadsDir  string
 }
 
 func LoadEnvs() (*Envs, error) {
@@ -34,6 +36,7 @@ func LoadEnvs() (*Envs, error) {
 		ServerPort:  getString("SERVER_PORT", defaultServerPort),
 		DatabaseURL: databaseURL,
 		SecretKey:   secretKey,
+		UploadsDir:  getString("UPLOADS_DIR", defaultUploadsDir),
 	}, nil
 }
 

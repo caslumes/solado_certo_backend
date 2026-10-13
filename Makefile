@@ -36,7 +36,7 @@ test:
 test-db:
 	${EXEC} -T -e DB_USER=${DB_USER} -e TEST_DB_NAME=${TEST_DB_NAME} ${DB_CONTAINER} sh -s < data/test-init/create-test-db.sh
 coverage:
-	TEST_DATABASE_URL='${TEST_DATABASE_URL}' go test ./... -coverpkg=./internal/... -coverprofile=${COVERAGE_FILE}
+	TEST_DATABASE_URL='${TEST_DATABASE_URL}' go test ./... -coverpkg=./internal/...,./pkg/... -coverprofile=${COVERAGE_FILE}
 	@grep -v '/internal/testutil/' ${COVERAGE_FILE} > ${COVERAGE_FILE}.tmp && mv ${COVERAGE_FILE}.tmp ${COVERAGE_FILE}
 	@go tool cover -func=${COVERAGE_FILE} | tail -n 1
 format:

@@ -23,6 +23,7 @@ func TestLoadEnvs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("SERVER_PORT", "")
+			t.Setenv("UPLOADS_DIR", "")
 			t.Setenv("DATABASE_URL", tt.databaseURL)
 			t.Setenv("SECRET_KEY", tt.secretKey)
 
@@ -37,7 +38,7 @@ func TestLoadEnvs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadEnvs: %v", err)
 			}
-			if envs.SecretKey != tt.secretKey || envs.DatabaseURL != tt.databaseURL || envs.ServerPort != defaultServerPort {
+			if envs.SecretKey != tt.secretKey || envs.DatabaseURL != tt.databaseURL || envs.ServerPort != defaultServerPort || envs.UploadsDir != defaultUploadsDir {
 				t.Fatalf("envs = %+v", envs)
 			}
 		})
