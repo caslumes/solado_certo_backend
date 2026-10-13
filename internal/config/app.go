@@ -15,12 +15,14 @@ import (
 	meRepository "github.com/caslumes/solado_certo_backend/internal/features/me/repository/postgres"
 	httpme "github.com/caslumes/solado_certo_backend/internal/features/me/transport/http"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	rolemiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/role"
 )
 
 type App struct {
 	Envs           *Envs
 	DB             *pgxpool.Pool
 	AuthMiddleware *authmiddleware.AuthMiddleware
+	RoleMiddleware *rolemiddleware.RoleMiddleware
 	AuthHandler    *httpauth.Handler
 	MeHandler      *httpme.Handler
 	CatalogHandler *httpcatalog.Handler
@@ -45,6 +47,7 @@ func InitApp(ctx context.Context) (*App, error) {
 		Envs:           envs,
 		DB:             dbPool,
 		AuthMiddleware: authmiddleware.NewAuthMiddleware(authService),
+		RoleMiddleware: rolemiddleware.NewRoleMiddleware(meService),
 		AuthHandler:    httpauth.NewHandler(authService),
 		MeHandler:      httpme.NewHandler(meService),
 		CatalogHandler: httpcatalog.NewHandler(catalogService),

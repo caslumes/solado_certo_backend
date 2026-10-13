@@ -15,7 +15,7 @@ import (
 
 const lockKey = 20261008
 
-var keptTables = map[string]bool{"onboarding_steps": true}
+var keptTables = map[string]bool{"onboarding_steps": true, "roles": true}
 
 var sequence atomic.Int64
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -62,6 +63,14 @@ type RevokeConsentUseCase interface {
 	RevokeConsent(context context.Context, userID string, purpose string) error
 }
 
+type GetRolesUseCase interface {
+	GetRoles(context context.Context, userID string) ([]enum.Role, error)
+}
+
+type BecomeSellerUseCase interface {
+	BecomeSeller(context context.Context, userID string) (roles []enum.Role, created bool, err error)
+}
+
 type GetOnboardingUseCase interface {
 	GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error)
 }
@@ -87,6 +96,8 @@ type repository interface {
 	GrantConsent(context context.Context, consent *ConsentEntity) (created bool, err error)
 	RevokeConsent(context context.Context, userID string, purpose ConsentPurpose) error
 	RevokeConsentAndDeletePodologicalProfile(context context.Context, userID string) error
+	GetRolesByUserID(context context.Context, userID string) ([]enum.Role, error)
+	AddRole(context context.Context, userID string, role enum.Role) (created bool, err error)
 	CreateOnboarding(context context.Context, onboarding *OnboardingEntity) error
 	GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error)
 	GetOnboardingStepByTag(context context.Context, tag string) (*OnboardingStepEntity, error)
@@ -438,6 +449,40 @@ func (s *service) RevokeConsent(context context.Context, userID string, purpose 
 	}
 
 	return nil
+}
+
+func (s *service) GetRoles(context context.Context, userID string) ([]enum.Role, error) {
+	roles, err := s.r.GetRolesByUserID(context, userID)
+	if err != nil {
+		slog.ErrorContext(context, "GetRoles failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	return roles, nil
+}
+
+func (s *service) HasRole(context context.Context, userID string, role enum.Role) (bool, error) {
+	roles, err := s.GetRoles(context, userID)
+	if err != nil {
+		return false, err
+	}
+
+	return slices.Contains(roles, role), nil
+}
+
+func (s *service) BecomeSeller(context context.Context, userID string) ([]enum.Role, bool, error) {
+	created, err := s.r.AddRole(context, userID, enum.RoleSeller)
+	if err != nil {
+		slog.ErrorContext(context, "BecomeSeller failed", "user_id", userID, "error", err)
+		return nil, false, err
+	}
+
+	roles, err := s.GetRoles(context, userID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return roles, created, nil
 }
 
 func (s *service) GetOnboardingByUserID(context context.Context, userID string) (*OnboardingEntity, error) {

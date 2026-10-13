@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	"github.com/caslumes/solado_certo_backend/internal/features/me/repository"
 	"github.com/jackc/pgx/v5"
@@ -12,7 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const uniqueViolationCode = "23505"
+const (
+	uniqueViolationCode     = "23505"
+	foreignKeyViolationCode = "23503"
+)
 
 type postgresRepository struct {
 	pool *pgxpool.Pool
@@ -579,4 +583,36 @@ func (r *postgresRepository) UpdateOnboarding(ctx context.Context, userID string
 	}
 
 	return nil
+}
+
+func (r *postgresRepository) GetRolesByUserID(ctx context.Context, userID string) ([]enum.Role, error) {
+	rows, err := r.pool.Query(
+		ctx,
+		"SELECT r.code FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1 ORDER BY r.code",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return pgx.CollectRows(rows, pgx.RowTo[enum.Role])
+}
+
+func (r *postgresRepository) AddRole(ctx context.Context, userID string, role enum.Role) (bool, error) {
+	result, err := r.pool.Exec(
+		ctx,
+		"INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE code = $2 ON CONFLICT DO NOTHING",
+		userID,
+		role,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolationCode {
+			return false, app.ErrUserNotFound
+		}
+
+		return false, err
+	}
+
+	return result.RowsAffected() == 1, nil
 }

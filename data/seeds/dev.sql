@@ -4,12 +4,6 @@
 
 BEGIN;
 
-INSERT INTO roles (id, code, name, description) VALUES
-('00000000-0000-0000-0000-000000000101', 'buyer', 'Comprador', 'Compra produtos no marketplace'),
-('00000000-0000-0000-0000-000000000102', 'seller', 'Vendedor', 'Publica e gerencia anúncios'),
-('00000000-0000-0000-0000-000000000103', 'admin', 'Administrador', 'Modera usuários e anúncios')
-ON CONFLICT (code) DO NOTHING;
-
 INSERT INTO users (id, name, email, phone, password_hash, status, created_at, updated_at) VALUES
 ('00000000-0000-0000-0000-000000000001', 'Maria Souza', 'maria@example.com', '19999990001', crypt('senha12345', gen_salt('bf', 10)), 'active', NOW(), NOW()),
 ('00000000-0000-0000-0000-000000000002', 'João Pereira', 'joao@example.com', '19999990002', crypt('senha12345', gen_salt('bf', 10)), 'active', NOW(), NOW()),

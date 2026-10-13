@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
@@ -25,14 +26,20 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 }
 
 func (r *postgresRepository) CreateUser(ctx context.Context, ue *auth.UserEntity) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
 	now := time.Now().UTC()
-	_, err := r.pool.Exec(
+	var userID string
+	err = tx.QueryRow(
 		ctx,
 		"INSERT INTO users (name, email, phone, password_hash, status, created_at, updated_at) "+
-			"VALUES ($1, $2, $3, $4, $5, $6, $7)",
+			"VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
 		ue.Name, ue.Email, ue.Phone, ue.PasswordHash, enum.ProfileStatusPending, now, now,
-	)
-
+	).Scan(&userID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolationCode {
@@ -42,7 +49,19 @@ func (r *postgresRepository) CreateUser(ctx context.Context, ue *auth.UserEntity
 		return err
 	}
 
-	return nil
+	result, err := tx.Exec(
+		ctx,
+		"INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE code = $2",
+		userID, enum.RoleBuyer,
+	)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("role %q not found", enum.RoleBuyer)
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *postgresRepository) GetUserByEmail(ctx context.Context, email string) (*auth.UserEntity, error) {

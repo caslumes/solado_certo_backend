@@ -5,6 +5,6 @@ type GetAdvertisementsInput struct {
 	Limit   uint
 	Sort    AdvertisementSort
 	Filters *AdvertisementFilters
-	ForMe  bool
-	UserID string
+	ForMe   bool
+	UserID  string
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	"github.com/gin-gonic/gin"
@@ -36,6 +37,8 @@ type fakeService struct {
 	getConsents            func(context.Context, string) ([]*me.ConsentEntity, error)
 	grantConsent           func(context.Context, string, me.ConsentInput) (*me.ConsentEntity, bool, error)
 	revokeConsent          func(context.Context, string, string) error
+	getRoles               func(context.Context, string) ([]enum.Role, error)
+	becomeSeller           func(context.Context, string) ([]enum.Role, bool, error)
 	getOnboarding          func(context.Context, string) (*me.OnboardingEntity, error)
 	changeOnboardingStep   func(context.Context, string, me.OnboardingInput) error
 }
@@ -88,6 +91,14 @@ func (f fakeService) RevokeConsent(ctx context.Context, userID string, purpose s
 	return f.revokeConsent(ctx, userID, purpose)
 }
 
+func (f fakeService) GetRoles(ctx context.Context, userID string) ([]enum.Role, error) {
+	return f.getRoles(ctx, userID)
+}
+
+func (f fakeService) BecomeSeller(ctx context.Context, userID string) ([]enum.Role, bool, error) {
+	return f.becomeSeller(ctx, userID)
+}
+
 func (f fakeService) GetOnboardingByUserID(ctx context.Context, userID string) (*me.OnboardingEntity, error) {
 	return f.getOnboarding(ctx, userID)
 }
@@ -115,6 +126,8 @@ func newRouter(handler *Handler, authenticated bool) *gin.Engine {
 	router.GET("/me/consents", handler.GetConsents)
 	router.POST("/me/consents", handler.GrantConsent)
 	router.DELETE("/me/consents/:purpose", handler.RevokeConsent)
+	router.GET("/me/roles", handler.GetRoles)
+	router.POST("/me/roles/seller", handler.BecomeSeller)
 	router.GET("/me/onboarding", handler.GetOnboarding)
 	router.PUT("/me/onboarding", handler.ChangeOnboardingStep)
 	return router
@@ -348,6 +361,8 @@ var userEndpoints = map[string]endpoint{
 	"get consents":             {http.MethodGet, "/me/consents", ""},
 	"grant consent":            {http.MethodPost, "/me/consents", `{"purpose":"podological_profile"}`},
 	"revoke consent":           {http.MethodDelete, "/me/consents/podological_profile", ""},
+	"get roles":                {http.MethodGet, "/me/roles", ""},
+	"become seller":            {http.MethodPost, "/me/roles/seller", ""},
 	"get onboarding":           {http.MethodGet, "/me/onboarding", ""},
 	"change onboarding step":   {http.MethodPut, "/me/onboarding", `{"step":"welcome","action":"advance"}`},
 }
@@ -401,6 +416,8 @@ func failingService() fakeService {
 			return nil, false, errUnexpected
 		},
 		revokeConsent:        func(context.Context, string, string) error { return errUnexpected },
+		getRoles:             func(context.Context, string) ([]enum.Role, error) { return nil, errUnexpected },
+		becomeSeller:         func(context.Context, string) ([]enum.Role, bool, error) { return nil, false, errUnexpected },
 		getOnboarding:        func(context.Context, string) (*me.OnboardingEntity, error) { return nil, errUnexpected },
 		changeOnboardingStep: func(context.Context, string, me.OnboardingInput) error { return errUnexpected },
 	}
@@ -678,5 +695,80 @@ func TestChangeOnboardingStepDecodesRequest(t *testing.T) {
 
 	if received != (me.OnboardingInput{Step: "address_setup", Action: "skip"}) {
 		t.Fatalf("input = %+v", received)
+	}
+}
+
+func TestGetRolesReturnsCodes(t *testing.T) {
+	handler := NewHandler(fakeService{
+		getRoles: func(context.Context, string) ([]enum.Role, error) {
+			return []enum.Role{enum.RoleBuyer, enum.RoleSeller}, nil
+		},
+	})
+
+	recorder := serve(handler, httptest.NewRequest(http.MethodGet, "/me/roles", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if body := recorder.Body.String(); body != `{"roles":["buyer","seller"]}` {
+		t.Fatalf("body = %s", body)
+	}
+}
+
+func TestGetRolesReturnsEmptyList(t *testing.T) {
+	handler := NewHandler(fakeService{
+		getRoles: func(context.Context, string) ([]enum.Role, error) { return nil, nil },
+	})
+
+	recorder := serve(handler, httptest.NewRequest(http.MethodGet, "/me/roles", nil))
+
+	if body := recorder.Body.String(); body != `{"roles":[]}` {
+		t.Fatalf("body = %s", body)
+	}
+}
+
+func TestBecomeSellerReturnsCreatedOrOK(t *testing.T) {
+	tests := map[string]struct {
+		created bool
+		want    int
+	}{
+		"new role":       {true, http.StatusCreated},
+		"already seller": {false, http.StatusOK},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			var receivedUserID string
+			handler := NewHandler(fakeService{
+				becomeSeller: func(_ context.Context, userID string) ([]enum.Role, bool, error) {
+					receivedUserID = userID
+					return []enum.Role{enum.RoleBuyer, enum.RoleSeller}, test.created, nil
+				},
+			})
+
+			recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/me/roles/seller", nil))
+
+			if recorder.Code != test.want {
+				t.Fatalf("status = %d, want %d", recorder.Code, test.want)
+			}
+			if receivedUserID != testUserID {
+				t.Fatalf("userID = %q", receivedUserID)
+			}
+			if roles := decode[me.RolesOutput](t, recorder).Roles; len(roles) != 2 || roles[1] != "seller" {
+				t.Fatalf("roles = %v", roles)
+			}
+		})
+	}
+}
+
+func TestBecomeSellerMapsNotFound(t *testing.T) {
+	handler := NewHandler(fakeService{
+		becomeSeller: func(context.Context, string) ([]enum.Role, bool, error) { return nil, false, app.ErrUserNotFound },
+	})
+
+	recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/me/roles/seller", nil))
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
 	}
 }

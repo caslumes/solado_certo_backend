@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,7 @@ type fakeRepository struct {
 	consents            []*ConsentEntity
 	addresses           map[string]*AddressEntity
 	nextAddressID       int
+	roles               map[string][]enum.Role
 }
 
 func newFakeRepository() *fakeRepository {
@@ -49,7 +51,23 @@ func newFakeRepository() *fakeRepository {
 			painPointArch: {ID: painPointArch, Name: "Arco plantar"},
 		},
 		addresses: map[string]*AddressEntity{},
+		roles:     map[string][]enum.Role{testUserID: {enum.RoleBuyer}},
 	}
+}
+
+func (f *fakeRepository) GetRolesByUserID(_ context.Context, userID string) ([]enum.Role, error) {
+	return slices.Clone(f.roles[userID]), nil
+}
+
+func (f *fakeRepository) AddRole(_ context.Context, userID string, role enum.Role) (bool, error) {
+	if _, ok := f.profiles[userID]; !ok {
+		return false, app.ErrUserNotFound
+	}
+	if slices.Contains(f.roles[userID], role) {
+		return false, nil
+	}
+	f.roles[userID] = append(f.roles[userID], role)
+	return true, nil
 }
 
 func (f *fakeRepository) GetAddressesByUserID(_ context.Context, userID string) ([]*AddressEntity, error) {
@@ -605,6 +623,14 @@ func (failingRepository) RevokeConsentAndDeletePodologicalProfile(context.Contex
 	return errDatabase
 }
 
+func (failingRepository) GetRolesByUserID(context.Context, string) ([]enum.Role, error) {
+	return nil, errDatabase
+}
+
+func (failingRepository) AddRole(context.Context, string, enum.Role) (bool, error) {
+	return false, errDatabase
+}
+
 func (failingRepository) GetOnboardingByUserID(context.Context, string) (*OnboardingEntity, error) {
 	return nil, errDatabase
 }
@@ -634,6 +660,9 @@ func TestServicePropagatesRepositoryErrors(t *testing.T) {
 			return err
 		},
 		"revoke consent": func() error { return s.RevokeConsent(ctx, testUserID, "podological_profile") },
+		"get roles":      func() error { _, err := s.GetRoles(ctx, testUserID); return err },
+		"has role":       func() error { _, err := s.HasRole(ctx, testUserID, enum.RoleSeller); return err },
+		"become seller":  func() error { _, _, err := s.BecomeSeller(ctx, testUserID); return err },
 		"get onboarding": func() error { _, err := s.GetOnboardingByUserID(ctx, testUserID); return err },
 		"change onboarding step": func() error {
 			return s.ChangeOnboardingStep(ctx, testUserID, OnboardingInput{Step: "welcome", Action: "advance"})
@@ -1035,5 +1064,50 @@ func TestGetConsentedPodologicalProfileReturnsProfileWithConsent(t *testing.T) {
 	}
 	if profile.ClinicalCondition == nil || *profile.ClinicalCondition != "Fascite plantar" || len(profile.PainPoints) != 2 {
 		t.Fatalf("profile = %+v", profile)
+	}
+}
+
+func TestBecomeSellerAddsRoleOnce(t *testing.T) {
+	repository := newFakeRepository()
+	s := NewService(repository)
+
+	roles, created, err := s.BecomeSeller(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("BecomeSeller: %v", err)
+	}
+	if !created || !slices.Equal(roles, []enum.Role{enum.RoleBuyer, enum.RoleSeller}) {
+		t.Fatalf("roles = %v, created = %v", roles, created)
+	}
+
+	roles, created, err = s.BecomeSeller(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf("BecomeSeller again: %v", err)
+	}
+	if created || len(roles) != 2 {
+		t.Fatalf("second call: roles = %v, created = %v", roles, created)
+	}
+}
+
+func TestBecomeSellerReturnsNotFoundForUnknownUser(t *testing.T) {
+	_, _, err := NewService(newFakeRepository()).BecomeSeller(context.Background(), "unknown")
+	if !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
+	}
+}
+
+func TestHasRole(t *testing.T) {
+	s := NewService(newFakeRepository())
+	tests := map[enum.Role]bool{enum.RoleBuyer: true, enum.RoleSeller: false, enum.RoleAdmin: false}
+
+	for role, want := range tests {
+		t.Run(string(role), func(t *testing.T) {
+			got, err := s.HasRole(context.Background(), testUserID, role)
+			if err != nil {
+				t.Fatalf("HasRole: %v", err)
+			}
+			if got != want {
+				t.Fatalf("HasRole(%q) = %v, want %v", role, got, want)
+			}
+		})
 	}
 }

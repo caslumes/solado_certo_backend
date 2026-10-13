@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	"github.com/gin-gonic/gin"
@@ -77,6 +78,8 @@ type Service interface {
 	me.GetConsentsUseCase
 	me.GrantConsentUseCase
 	me.RevokeConsentUseCase
+	me.GetRolesUseCase
+	me.BecomeSellerUseCase
 	me.GetOnboardingUseCase
 	me.ChangeOnboardingStepUseCase
 }
@@ -379,6 +382,53 @@ func (h *Handler) RevokeConsent(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func rolesOutput(roles []enum.Role) me.RolesOutput {
+	output := me.RolesOutput{Roles: make([]string, 0, len(roles))}
+	for _, role := range roles {
+		output.Roles = append(output.Roles, string(role))
+	}
+	return output
+}
+
+func (h *Handler) GetRoles(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	roles, err := h.service.GetRoles(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get roles"})
+		return
+	}
+
+	c.JSON(http.StatusOK, rolesOutput(roles))
+}
+
+func (h *Handler) BecomeSeller(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	roles, created, err := h.service.BecomeSeller(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, app.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add seller role"})
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	c.JSON(status, rolesOutput(roles))
 }
 
 func (h *Handler) GetOnboarding(c *gin.Context) {

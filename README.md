@@ -65,7 +65,7 @@ It runs every file in `data/migrations` in name order against the running databa
 
 To start from scratch instead: `make down`, delete `data/postgres`, `make up` (this erases all data; restore with `make restore` if needed).
 
-The migrations create the schema and the onboarding steps only. `make seed` loads development data (users, categories, ads).
+The migrations create the schema, the onboarding steps and the roles (`buyer`, `seller`, `admin`) only. `make seed` loads development data (users, categories, ads).
 
 From the host, Postgres listens on port `2345` (user `postgres`, password `postgres`, database `solado_certo`).
 
@@ -109,7 +109,7 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Liveness and database check |
-| `POST` | `/auth/register` | Create an account (`name`, `email`, `phone`, `password`). Rate limited: 5/min per IP |
+| `POST` | `/auth/register` | Create an account (`name`, `email`, `phone`, `password`) with the `buyer` role. Rate limited: 5/min per IP |
 | `POST` | `/auth/login` | Returns `access_token` and `refresh_token`. Rate limited: 5/min per IP |
 | `POST` | `/auth/refresh-token` | Exchange a refresh token for a new token pair (the old one is revoked) |
 | `POST` | `/auth/logout` | Revoke a refresh token |
@@ -120,6 +120,8 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `GET` | `/me/pain-points` | Pain points the user can pick |
 | `GET` / `POST` | `/me/consents` | List active consents / grant one (`purpose`, `terms_version`; 201 when new, 200 when already active) |
 | `DELETE` | `/me/consents/:purpose` | Revoke a consent. Revoking `podological_profile` also deletes the podological profile |
+| `GET` | `/me/roles` | The user's roles: `{"roles": ["buyer", "seller"]}` |
+| `POST` | `/me/roles/seller` | Become a seller (no approval step; 201 when new, 200 when already a seller). Returns the roles |
 | `GET` / `PUT` | `/me/onboarding` | Read the current onboarding step / change it (`action`: `advance`, `retreat`, `skip`, `dismiss`, `complete`) |
 | `GET` | `/catalog` | List published ads. Query: `page`, `limit` (max 100), `q`, `category`, `price_min`, `price_max`, `prescription_required`, `custom_made_allowed`, `side`, `size`, `material`, `rigidity`, `usage_indication` |
 | `GET` | `/catalog/items/:advertisementID` | One ad |
@@ -133,11 +135,11 @@ internal/
   config/              environment variables, database pool, dependency wiring (InitApp)
   features/
     auth/              register, login, refresh, logout (JWT + bcrypt)
-    me/                profile, addresses, podological profile, onboarding
+    me/                profile, addresses, podological profile, consents, roles, onboarding
     catalog/           ads and categories
       <feature>/       service.go (use cases), entity/input/output types,
                        repository/postgres (SQL), transport/http (Gin handlers)
-  middleware/          JWT auth and per-IP rate limiting
+  middleware/          JWT auth, role checks (RequireRole) and per-IP rate limiting
   app/                 shared errors and enums
   helpers/             small shared helpers
 data/migrations/       SQL migrations (run on first start)

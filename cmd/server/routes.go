@@ -43,6 +43,9 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		meGroup.POST("/consents", a.MeHandler.GrantConsent)
 		meGroup.DELETE("/consents/:purpose", a.MeHandler.RevokeConsent)
 
+		meGroup.GET("/roles", a.MeHandler.GetRoles)
+		meGroup.POST("/roles/seller", a.MeHandler.BecomeSeller)
+
 		meGroup.GET("/onboarding", a.MeHandler.GetOnboarding)
 		meGroup.PUT("/onboarding", a.MeHandler.ChangeOnboardingStep)
 	}

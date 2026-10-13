@@ -10,6 +10,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 	"github.com/caslumes/solado_certo_backend/internal/testutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -48,6 +49,27 @@ func TestCreateUserStoresPendingUser(t *testing.T) {
 	}
 	if user.CreatedAt == nil || user.UpdatedAt == nil {
 		t.Fatalf("timestamps were not set: %+v", user)
+	}
+}
+
+func TestCreateUserAssignsBuyerRole(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+
+	if err := r.CreateUser(ctx, newUser()); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	rows, err := pool.Query(ctx, "SELECT r.code FROM user_roles ur JOIN roles r ON r.id = ur.role_id JOIN users u ON u.id = ur.user_id WHERE u.email = $1", "maria@example.com")
+	if err != nil {
+		t.Fatalf("query roles: %v", err)
+	}
+	roles, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("collect roles: %v", err)
+	}
+	if len(roles) != 1 || roles[0] != string(enum.RoleBuyer) {
+		t.Fatalf("roles = %v, want [buyer]", roles)
 	}
 }
 

@@ -55,6 +55,10 @@ type ConsentOutput struct {
 	GrantedAt    time.Time `json:"granted_at"`
 }
 
+type RolesOutput struct {
+	Roles []string `json:"roles"`
+}
+
 type OnboardingOutput struct {
 	Status      string  `json:"status"`
 	CurrentStep *string `json:"current_step"`

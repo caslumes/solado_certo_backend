@@ -242,7 +242,7 @@ type AdvertisementFilters struct {
 	Conditions           []string
 	RatingMin            *float64
 	State                *string
-	Profile *ProfileMatch
+	Profile              *ProfileMatch
 }
 
 type ProfileMatch struct {

@@ -541,3 +541,56 @@ func TestGetOnboardingStepByTagAndOrder(t *testing.T) {
 		t.Fatalf("unknown order err = %v, want %v", err, app.ErrOnboardingStepNotFound)
 	}
 }
+
+func TestGetRolesByUserIDReturnsCodesSorted(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	user := testutil.InsertUser(t, pool)
+
+	roles, err := r.GetRolesByUserID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetRolesByUserID: %v", err)
+	}
+	if len(roles) != 0 {
+		t.Fatalf("roles = %v, want none", roles)
+	}
+
+	for _, role := range []enum.Role{enum.RoleSeller, enum.RoleBuyer} {
+		if _, err := r.AddRole(ctx, user.ID, role); err != nil {
+			t.Fatalf("AddRole(%q): %v", role, err)
+		}
+	}
+
+	roles, err = r.GetRolesByUserID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetRolesByUserID: %v", err)
+	}
+	if len(roles) != 2 || roles[0] != enum.RoleBuyer || roles[1] != enum.RoleSeller {
+		t.Fatalf("roles = %v, want [buyer seller]", roles)
+	}
+}
+
+func TestAddRoleIsIdempotent(t *testing.T) {
+	r, pool := newRepository(t)
+	user := testutil.InsertUser(t, pool)
+
+	created, err := r.AddRole(context.Background(), user.ID, enum.RoleSeller)
+	if err != nil || !created {
+		t.Fatalf("first AddRole: created = %v, err = %v", created, err)
+	}
+
+	created, err = r.AddRole(context.Background(), user.ID, enum.RoleSeller)
+	if err != nil || created {
+		t.Fatalf("second AddRole: created = %v, err = %v", created, err)
+	}
+}
+
+func TestAddRoleReturnsNotFoundForUnknownUser(t *testing.T) {
+	r, _ := newRepository(t)
+
+	_, err := r.AddRole(context.Background(), unknownID, enum.RoleSeller)
+
+	if !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
+	}
+}
