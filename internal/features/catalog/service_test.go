@@ -336,7 +336,7 @@ func TestGetCategoriesBuildsTree(t *testing.T) {
 func TestGetCategoriesOutputKeepsNesting(t *testing.T) {
 	repository := &fakeRepository{categories: []*CategoryEntity{
 		{ID: "insoles", Name: "Palmilhas", Slug: "palmilhas", Active: true},
-		{ID: "heel-cup", ParentCategoryID: helpers.StringPtr("insoles"), Name: "Calcanheiras", Slug: "calcanheiras", Active: true},
+		{ID: "heel-cup", ParentCategoryID: helpers.StringPtr("insoles"), Name: "Calcanheiras", Slug: "calcanheiras", Active: true, RequiredAttributes: []string{"size"}},
 	}}
 
 	categories, err := newService(repository).GetCategories(context.Background())
@@ -345,11 +345,15 @@ func TestGetCategoriesOutputKeepsNesting(t *testing.T) {
 	}
 
 	output := categories.ToOutput().Categories
+	if output[0].RequiredAttributes == nil || len(output[0].RequiredAttributes) != 0 {
+		t.Fatalf("root required attributes = %#v, want an empty list", output[0].RequiredAttributes)
+	}
 	if len(output) != 1 || output[0].Slug != "palmilhas" || len(output[0].Children) != 1 {
 		t.Fatalf("output = %+v", output)
 	}
 	child := output[0].Children[0]
-	if child.Slug != "calcanheiras" || child.ParentCategoryID == nil || *child.ParentCategoryID != "insoles" {
+	if child.Slug != "calcanheiras" || child.ParentCategoryID == nil || *child.ParentCategoryID != "insoles" ||
+		len(child.RequiredAttributes) != 1 || child.RequiredAttributes[0] != "size" {
 		t.Fatalf("child = %+v", child)
 	}
 }

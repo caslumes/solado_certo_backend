@@ -198,6 +198,7 @@ type CategoryEntity struct {
 	Name             string
 	Slug             string
 	Active           bool
+	RequiredAttributes []string
 }
 
 func (c *CategoryEntity) ToOutput() *CategoryOutput {
@@ -209,6 +210,7 @@ func (c *CategoryEntity) ToOutput() *CategoryOutput {
 		Name:             c.Name,
 		Slug:             c.Slug,
 		Active:           c.Active,
+		RequiredAttributes: append([]string{}, c.RequiredAttributes...),
 	}
 }
 

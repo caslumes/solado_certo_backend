@@ -305,7 +305,7 @@ func (r *postgresRepository) GetCategories(ctx context.Context) ([]*catalog.Cate
 	var categories []*catalog.CategoryEntity
 	rows, err := r.pool.Query(
 		ctx,
-		"SELECT id, parent_category_id, name, slug, active FROM categories",
+		"SELECT id, parent_category_id, name, slug, active, required_attributes FROM categories",
 	)
 	if err != nil {
 		return nil, err
@@ -320,6 +320,7 @@ func (r *postgresRepository) GetCategories(ctx context.Context) ([]*catalog.Cate
 			&c.Name,
 			&c.Slug,
 			&c.Active,
+			&c.RequiredAttributes,
 		)
 		if err != nil {
 			return nil, err

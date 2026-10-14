@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -650,6 +651,10 @@ func TestImageWithoutAltTextIsReadAsEmpty(t *testing.T) {
 func TestGetCategoriesReturnsAllWithParents(t *testing.T) {
 	f := newFixture(t)
 	child := testutil.InsertCategory(t, f.pool, &f.category.ID)
+	_, err := f.pool.Exec(context.Background(), "UPDATE categories SET required_attributes = '{size,material}' WHERE id = $1", child.ID)
+	if err != nil {
+		t.Fatalf("set required attributes: %v", err)
+	}
 
 	categories, err := f.r.GetCategories(context.Background())
 	if err != nil {
@@ -664,8 +669,12 @@ func TestGetCategoriesReturnsAllWithParents(t *testing.T) {
 	if len(categories) != 2 || !ok || root.ParentCategoryID != nil || root.Slug != f.category.Slug || !root.Active {
 		t.Fatalf("categories = %+v", categories)
 	}
-	if got := byID[child.ID]; got == nil || got.ParentCategoryID == nil || *got.ParentCategoryID != f.category.ID {
+	if got := byID[child.ID]; got == nil || got.ParentCategoryID == nil || *got.ParentCategoryID != f.category.ID ||
+		!slices.Equal(got.RequiredAttributes, []string{"size", "material"}) {
 		t.Fatalf("child = %+v", got)
+	}
+	if len(root.RequiredAttributes) != 0 {
+		t.Fatalf("root required attributes = %v, want none", root.RequiredAttributes)
 	}
 }
 
