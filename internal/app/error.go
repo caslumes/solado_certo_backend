@@ -34,6 +34,7 @@ var ErrCartEmpty = errors.New("cart is empty")
 var ErrCartChanged = errors.New("cart changed")
 var ErrPricesChanged = errors.New("prices changed")
 var ErrShippingRequired = errors.New("shipping option required")
+var ErrOrderNotFound = errors.New("order not found")
 
 // MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {

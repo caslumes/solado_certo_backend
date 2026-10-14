@@ -85,3 +85,62 @@ func (c *CheckoutEntity) ToOutput() *CheckoutOutput {
 	output.Total = total.String()
 	return output
 }
+
+type StatusChangeEntity struct {
+	From      *OrderStatus
+	To        OrderStatus
+	Reason    *string
+	CreatedAt time.Time
+}
+
+type StatusChange struct {
+	OrderID string
+	ChangedBy string
+	From      OrderStatus
+	To        OrderStatus
+	Reason    string
+	ReleaseStock bool
+}
+
+type OrderDetail struct {
+	Order   *OrderEntity
+	History []StatusChangeEntity
+}
+
+func (d *OrderDetail) ToOutput() *OrderDetailOutput {
+	history := make([]StatusChangeOutput, len(d.History))
+	for i, change := range d.History {
+		history[i] = StatusChangeOutput{To: string(change.To), Reason: change.Reason, CreatedAt: change.CreatedAt}
+		if change.From != nil {
+			from := string(*change.From)
+			history[i].From = &from
+		}
+	}
+	return &OrderDetailOutput{
+		OrderOutput: d.Order.ToOutput(),
+		History:     history,
+		CanCancel:   d.Order.Status == OrderStatusAwaitingPayment,
+	}
+}
+
+type OrderPage struct {
+	Items       []*OrderEntity
+	CurrentPage uint
+	TotalPages  uint
+	TotalItems  uint
+}
+
+func (p *OrderPage) ToOutput() *OrderPageOutput {
+	items := make([]OrderOutput, len(p.Items))
+	for i, order := range p.Items {
+		items[i] = order.ToOutput()
+	}
+	return &OrderPageOutput{
+		Items:       items,
+		CurrentPage: p.CurrentPage,
+		TotalPages:  p.TotalPages,
+		TotalItems:  p.TotalItems,
+		HasNext:     p.CurrentPage < p.TotalPages,
+		HasPrevious: p.CurrentPage > 1,
+	}
+}

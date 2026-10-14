@@ -93,3 +93,25 @@ type CheckoutOutput struct {
 	Orders []OrderOutput `json:"orders"`
 	Total  string        `json:"total"`
 }
+
+type StatusChangeOutput struct {
+	From      *string   `json:"from"`
+	To        string    `json:"to"`
+	Reason    *string   `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type OrderDetailOutput struct {
+	OrderOutput
+	History   []StatusChangeOutput `json:"history"`
+	CanCancel bool                 `json:"can_cancel"`
+}
+
+type OrderPageOutput struct {
+	Items       []OrderOutput `json:"items"`
+	CurrentPage uint          `json:"current_page"`
+	TotalPages  uint          `json:"total_pages"`
+	TotalItems  uint          `json:"total_items"`
+	HasNext     bool          `json:"has_next"`
+	HasPrevious bool          `json:"has_previous"`
+}

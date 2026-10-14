@@ -91,6 +91,13 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		checkoutGroup.POST("/preview", a.OrdersHandler.PreviewCheckout)
 	}
 
+	ordersGroup := r.Group("/orders", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleBuyer))
+	{
+		ordersGroup.GET("", a.OrdersHandler.ListOrders)
+		ordersGroup.GET("/:orderID", a.OrdersHandler.GetOrder)
+		ordersGroup.POST("/:orderID/cancel", a.OrdersHandler.CancelOrder)
+	}
+
 	r.GET("/files/public/*path", a.FilesHandler.ServePublic)
 }
 

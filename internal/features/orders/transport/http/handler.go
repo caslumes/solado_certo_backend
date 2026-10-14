@@ -17,6 +17,9 @@ type Service interface {
 	orders.RemoveCartItemUseCase
 	orders.PreviewCheckoutUseCase
 	orders.CheckoutUseCase
+	orders.ListOrdersUseCase
+	orders.GetOrderUseCase
+	orders.CancelOrderUseCase
 }
 
 type Handler struct {
@@ -55,6 +58,10 @@ func writeErrorWith(c *gin.Context, err error, fallback string, extra gin.H) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": app.ErrShippingRequired.Error(), "advertisement_ids": shippingRequired.AdvertisementIDs})
 	case errors.Is(err, app.ErrCartEmpty):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrOrderNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+	case errors.Is(err, app.ErrInvalidStatusTransition):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, app.ErrAddressNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "address not found"})
 	case errors.Is(err, app.ErrInvalidInput):
@@ -221,4 +228,57 @@ func (h *Handler) writeCheckoutError(c *gin.Context, userID string, err error, f
 		}
 	}
 	writeErrorWith(c, err, fallback, extra)
+}
+
+type listOrdersQuery struct {
+	Page  uint `form:"page,default=1" binding:"min=1"`
+	Limit uint `form:"limit,default=10" binding:"min=1,max=100"`
+}
+
+func (h *Handler) ListOrders(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var query listOrdersQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters: page and limit must be positive integers (limit at most 100)"})
+		return
+	}
+
+	page, err := h.service.ListOrders(c.Request.Context(), userID, query.Page, query.Limit)
+	if err != nil {
+		writeError(c, err, "could not get orders")
+		return
+	}
+	c.JSON(http.StatusOK, page.ToOutput())
+}
+
+func (h *Handler) GetOrder(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	detail, err := h.service.GetOrder(c.Request.Context(), userID, c.Param("orderID"))
+	if err != nil {
+		writeError(c, err, "could not get order")
+		return
+	}
+	c.JSON(http.StatusOK, detail.ToOutput())
+}
+
+func (h *Handler) CancelOrder(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	detail, err := h.service.CancelOrder(c.Request.Context(), userID, c.Param("orderID"))
+	if err != nil {
+		writeError(c, err, "could not cancel order")
+		return
+	}
+	c.JSON(http.StatusOK, detail.ToOutput())
 }

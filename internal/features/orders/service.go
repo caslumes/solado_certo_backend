@@ -34,6 +34,18 @@ type CheckoutUseCase interface {
 	Checkout(ctx context.Context, userID string, idempotencyKey string, input CheckoutInput) (checkout *CheckoutEntity, created bool, err error)
 }
 
+type ListOrdersUseCase interface {
+	ListOrders(ctx context.Context, userID string, page uint, limit uint) (*OrderPage, error)
+}
+
+type GetOrderUseCase interface {
+	GetOrder(ctx context.Context, userID string, id string) (*OrderDetail, error)
+}
+
+type CancelOrderUseCase interface {
+	CancelOrder(ctx context.Context, userID string, id string) (*OrderDetail, error)
+}
+
 type repository interface {
 	GetActiveCart(ctx context.Context, userID string) (*CartEntity, error)
 	GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error)
@@ -45,11 +57,18 @@ type repository interface {
 	GetCheckoutID(ctx context.Context, buyerID string, idempotencyKey string) (id string, found bool, err error)
 	CreateCheckout(ctx context.Context, buyerID string, idempotencyKey string, plan *CheckoutPlan) (id string, created bool, err error)
 	GetOrdersByCheckout(ctx context.Context, checkoutID string) ([]*OrderEntity, error)
+	CountOrdersByBuyer(ctx context.Context, buyerID string) (uint, error)
+	GetOrdersByBuyer(ctx context.Context, buyerID string, limit uint, offset uint) ([]*OrderEntity, error)
+	GetOrder(ctx context.Context, id string) (*OrderEntity, error)
+	GetStatusHistory(ctx context.Context, orderID string) ([]StatusChangeEntity, error)
+	ChangeOrderStatus(ctx context.Context, change StatusChange) error
 }
 
 const (
 	MaxItemQuantity         = 99
 	maxIdempotencyKeyLength = 120
+	defaultOrdersPerPage    = 10
+	maxOrdersPerPage        = 100
 )
 
 type service struct {
@@ -270,4 +289,103 @@ func (s *service) checkout(ctx context.Context, id string) (*CheckoutEntity, err
 		return nil, err
 	}
 	return &CheckoutEntity{ID: id, Orders: orders}, nil
+}
+
+// ListOrders returns the buyer's orders, newest first.
+func (s *service) ListOrders(ctx context.Context, userID string, page uint, limit uint) (*OrderPage, error) {
+	if page == 0 {
+		page = 1
+	}
+	if limit == 0 {
+		limit = defaultOrdersPerPage
+	}
+	if limit > maxOrdersPerPage {
+		return nil, fmt.Errorf("%w: limit must be at most %d", app.ErrInvalidInput, maxOrdersPerPage)
+	}
+
+	total, err := s.r.CountOrdersByBuyer(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "CountOrdersByBuyer failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+	orders, err := s.r.GetOrdersByBuyer(ctx, userID, limit, (page-1)*limit)
+	if err != nil {
+		slog.ErrorContext(ctx, "GetOrdersByBuyer failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+	return &OrderPage{Items: orders, CurrentPage: page, TotalPages: (total + limit - 1) / limit, TotalItems: total}, nil
+}
+
+func (s *service) GetOrder(ctx context.Context, userID string, id string) (*OrderDetail, error) {
+	order, err := s.ownedOrder(ctx, userID, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.detail(ctx, order)
+}
+
+// CancelOrder lets the buyer give up an order before paying; its units go back on sale.
+func (s *service) CancelOrder(ctx context.Context, userID string, id string) (*OrderDetail, error) {
+	order, err := s.ownedOrder(ctx, userID, id)
+	if err != nil {
+		return nil, err
+	}
+	if order.Status != OrderStatusAwaitingPayment {
+		return nil, fmt.Errorf("%w: only an order awaiting payment can be cancelled, this one is %s", app.ErrInvalidStatusTransition, order.Status)
+	}
+
+	err = s.changeStatus(ctx, StatusChange{
+		OrderID:      order.ID,
+		ChangedBy:    userID,
+		From:         order.Status,
+		To:           OrderStatusCancelled,
+		Reason:       ReasonBuyerCancelled,
+		ReleaseStock: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetOrder(ctx, userID, id)
+}
+
+// changeStatus is the single way an order changes status, so every change follows the status machine
+// and is recorded in the history and the audit log (RNF-010).
+func (s *service) changeStatus(ctx context.Context, change StatusChange) error {
+	if !change.From.CanBecome(change.To) {
+		return fmt.Errorf("%w: an order cannot go from %s to %s", app.ErrInvalidStatusTransition, change.From, change.To)
+	}
+	if err := s.r.ChangeOrderStatus(ctx, change); err != nil {
+		if !errors.Is(err, app.ErrInvalidStatusTransition) {
+			slog.ErrorContext(ctx, "ChangeOrderStatus failed", "order_id", change.OrderID, "to", change.To, "error", err)
+		}
+		return err
+	}
+	return nil
+}
+
+// ownedOrder answers 404 for another buyer's order, so order IDs can't be probed.
+func (s *service) ownedOrder(ctx context.Context, userID string, id string) (*OrderEntity, error) {
+	if !helpers.IsUUID(id) {
+		return nil, app.ErrOrderNotFound
+	}
+	order, err := s.r.GetOrder(ctx, id)
+	if err != nil {
+		if !errors.Is(err, app.ErrOrderNotFound) {
+			slog.ErrorContext(ctx, "GetOrder failed", "order_id", id, "error", err)
+		}
+		return nil, err
+	}
+	if order.BuyerID != userID {
+		return nil, app.ErrOrderNotFound
+	}
+	return order, nil
+}
+
+func (s *service) detail(ctx context.Context, order *OrderEntity) (*OrderDetail, error) {
+	history, err := s.r.GetStatusHistory(ctx, order.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "GetStatusHistory failed", "order_id", order.ID, "error", err)
+		return nil, err
+	}
+	return &OrderDetail{Order: order, History: history}, nil
 }

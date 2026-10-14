@@ -34,6 +34,11 @@ type fakeRepository struct {
 	concurrentCheckoutID string
 	plans                []*CheckoutPlan
 	refreshedCarts       []string
+	placed               []*OrderEntity
+	history              map[string][]StatusChangeEntity
+	changes              []StatusChange
+	// changeErr is returned by ChangeOrderStatus, as if another request changed the order first.
+	changeErr error
 }
 
 func newFakeRepository() *fakeRepository {
@@ -380,4 +385,65 @@ func (f *fakeRepository) CreateCheckout(_ context.Context, buyerID string, key s
 
 func (f *fakeRepository) GetOrdersByCheckout(_ context.Context, checkoutID string) ([]*OrderEntity, error) {
 	return f.orders[checkoutID], nil
+}
+
+func (f *fakeRepository) CountOrdersByBuyer(_ context.Context, buyerID string) (uint, error) {
+	count := uint(0)
+	for _, order := range f.placed {
+		if order.BuyerID == buyerID {
+			count++
+		}
+	}
+	return count, f.err
+}
+
+func (f *fakeRepository) GetOrdersByBuyer(_ context.Context, buyerID string, limit uint, offset uint) ([]*OrderEntity, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	mine := []*OrderEntity{}
+	for _, order := range f.placed {
+		if order.BuyerID == buyerID {
+			mine = append(mine, order)
+		}
+	}
+	start := min(int(offset), len(mine))
+	end := min(start+int(limit), len(mine))
+	return mine[start:end], nil
+}
+
+func (f *fakeRepository) GetOrder(_ context.Context, id string) (*OrderEntity, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	for _, order := range f.placed {
+		if order.ID == id {
+			copied := *order
+			return &copied, nil
+		}
+	}
+	return nil, app.ErrOrderNotFound
+}
+
+func (f *fakeRepository) GetStatusHistory(_ context.Context, orderID string) ([]StatusChangeEntity, error) {
+	return f.history[orderID], nil
+}
+
+func (f *fakeRepository) ChangeOrderStatus(_ context.Context, change StatusChange) error {
+	if f.changeErr != nil {
+		return f.changeErr
+	}
+	f.changes = append(f.changes, change)
+	for _, order := range f.placed {
+		if order.ID == change.OrderID {
+			order.Status = change.To
+		}
+	}
+	from := change.From
+	reason := change.Reason
+	if f.history == nil {
+		f.history = map[string][]StatusChangeEntity{}
+	}
+	f.history[change.OrderID] = append(f.history[change.OrderID], StatusChangeEntity{From: &from, To: change.To, Reason: &reason})
+	return nil
 }

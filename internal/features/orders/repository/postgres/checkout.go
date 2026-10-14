@@ -298,11 +298,16 @@ func insertOrder(ctx context.Context, tx pgx.Tx, buyerID string, checkoutID stri
 }
 
 // recordStatusChange writes the order's history and the audit log (RNF-010). Every status change goes through it.
+// An empty userID records a change made by the system.
 func recordStatusChange(ctx context.Context, tx pgx.Tx, orderID string, userID string, from *orders.OrderStatus, to orders.OrderStatus, reason string, auditContext map[string]any, now time.Time) error {
+	var changedBy *string
+	if userID != "" {
+		changedBy = &userID
+	}
 	_, err := tx.Exec(
 		ctx,
 		"INSERT INTO order_status_history (order_id, changed_by, previous_status, new_status, reason, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
-		orderID, userID, from, to, reason, now,
+		orderID, changedBy, from, to, reason, now,
 	)
 	if err != nil {
 		return err
@@ -317,7 +322,7 @@ func recordStatusChange(ctx context.Context, tx pgx.Tx, orderID string, userID s
 	_, err = tx.Exec(
 		ctx,
 		"INSERT INTO audit_logs (user_id, entity, entity_id, action, context, created_at) VALUES ($1, 'order', $2, 'order.status_changed', $3, $4)",
-		userID, orderID, auditJSON, now,
+		changedBy, orderID, auditJSON, now,
 	)
 	return err
 }

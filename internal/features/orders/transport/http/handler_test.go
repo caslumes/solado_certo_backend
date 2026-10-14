@@ -32,6 +32,21 @@ type fakeService struct {
 	remove   func(context.Context, string, string) (*orders.CartEntity, error)
 	preview  func(context.Context, string, orders.CheckoutInput) (*orders.CheckoutPlan, error)
 	checkout func(context.Context, string, string, orders.CheckoutInput) (*orders.CheckoutEntity, bool, error)
+	list     func(context.Context, string, uint, uint) (*orders.OrderPage, error)
+	getOrder func(context.Context, string, string) (*orders.OrderDetail, error)
+	cancel   func(context.Context, string, string) (*orders.OrderDetail, error)
+}
+
+func (f fakeService) ListOrders(ctx context.Context, userID string, page uint, limit uint) (*orders.OrderPage, error) {
+	return f.list(ctx, userID, page, limit)
+}
+
+func (f fakeService) GetOrder(ctx context.Context, userID string, id string) (*orders.OrderDetail, error) {
+	return f.getOrder(ctx, userID, id)
+}
+
+func (f fakeService) CancelOrder(ctx context.Context, userID string, id string) (*orders.OrderDetail, error) {
+	return f.cancel(ctx, userID, id)
 }
 
 func (f fakeService) PreviewCheckout(ctx context.Context, userID string, input orders.CheckoutInput) (*orders.CheckoutPlan, error) {
@@ -71,6 +86,9 @@ func newRouter(handler *Handler, authenticated bool) *gin.Engine {
 	router.DELETE("/cart/items/:advertisementID", handler.RemoveCartItem)
 	router.POST("/checkout/preview", handler.PreviewCheckout)
 	router.POST("/checkout", handler.Checkout)
+	router.GET("/orders", handler.ListOrders)
+	router.GET("/orders/:orderID", handler.GetOrder)
+	router.POST("/orders/:orderID/cancel", handler.CancelOrder)
 	return router
 }
 
