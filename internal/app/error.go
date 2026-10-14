@@ -30,6 +30,10 @@ var ErrTooManyImages = errors.New("too many images")
 var ErrCartItemNotFound = errors.New("cart item not found")
 var ErrOwnAdvertisement = errors.New("cannot buy your own advertisement")
 var ErrOutOfStock = errors.New("out of stock")
+var ErrCartEmpty = errors.New("cart is empty")
+var ErrCartChanged = errors.New("cart changed")
+var ErrPricesChanged = errors.New("prices changed")
+var ErrShippingRequired = errors.New("shipping option required")
 
 // MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {
@@ -61,4 +65,17 @@ func (e *OutOfStockError) Error() string {
 
 func (e *OutOfStockError) Unwrap() error {
 	return ErrOutOfStock
+}
+
+// ShippingRequiredError lists the cart items without a valid shipping option.
+type ShippingRequiredError struct {
+	AdvertisementIDs []string
+}
+
+func (e *ShippingRequiredError) Error() string {
+	return ErrShippingRequired.Error() + ": " + strings.Join(e.AdvertisementIDs, ", ")
+}
+
+func (e *ShippingRequiredError) Unwrap() error {
+	return ErrShippingRequired
 }

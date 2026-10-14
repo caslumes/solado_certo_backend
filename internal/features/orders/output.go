@@ -1,5 +1,7 @@
 package orders
 
+import "time"
+
 type ShippingOptionOutput struct {
 	ID           string  `json:"id"`
 	Name         string  `json:"name"`
@@ -41,4 +43,53 @@ type CartOutput struct {
 	Subtotal        string            `json:"subtotal"`
 	HasProblems     bool              `json:"has_problems"`
 	HasPriceChanges bool              `json:"has_price_changes"`
+}
+
+type OrderItemOutput struct {
+	AdvertisementID string               `json:"advertisement_id"`
+	Title           string               `json:"title"`
+	CoverImageURL   *string              `json:"cover_image_url"`
+	Quantity        int                  `json:"quantity"`
+	UnitPrice       string               `json:"unit_price"`
+	Subtotal        string               `json:"subtotal"`
+	ShippingOption  ShippingOptionOutput `json:"shipping_option"`
+}
+
+type PlannedOrderOutput struct {
+	Seller        SellerOutput      `json:"seller"`
+	Items         []OrderItemOutput `json:"items"`
+	Subtotal      string            `json:"subtotal"`
+	ShippingTotal string            `json:"shipping_total"`
+	DiscountTotal string            `json:"discount_total"`
+	Total         string            `json:"total"`
+}
+
+type CheckoutPreviewOutput struct {
+	Address       AddressSnapshot      `json:"address"`
+	Orders        []PlannedOrderOutput `json:"orders"`
+	Subtotal      string               `json:"subtotal"`
+	ShippingTotal string               `json:"shipping_total"`
+	DiscountTotal string               `json:"discount_total"`
+	Total         string               `json:"total"`
+}
+
+type OrderOutput struct {
+	ID            string            `json:"id"`
+	Number        string            `json:"number"`
+	Status        string            `json:"status"`
+	Seller        SellerOutput      `json:"seller"`
+	Address       AddressSnapshot   `json:"address"`
+	Items         []OrderItemOutput `json:"items"`
+	Subtotal      string            `json:"subtotal"`
+	ShippingTotal string            `json:"shipping_total"`
+	DiscountTotal string            `json:"discount_total"`
+	Total         string            `json:"total"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+}
+
+type CheckoutOutput struct {
+	ID     string        `json:"id"`
+	Orders []OrderOutput `json:"orders"`
+	Total  string        `json:"total"`
 }

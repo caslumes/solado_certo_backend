@@ -15,6 +15,8 @@ type Service interface {
 	orders.AddCartItemUseCase
 	orders.ChangeCartItemQuantityUseCase
 	orders.RemoveCartItemUseCase
+	orders.PreviewCheckoutUseCase
+	orders.CheckoutUseCase
 }
 
 type Handler struct {
@@ -34,10 +36,27 @@ func requireUserID(c *gin.Context) (string, bool) {
 }
 
 func writeError(c *gin.Context, err error, fallback string) {
+	writeErrorWith(c, err, fallback, gin.H{})
+}
+
+// writeErrorWith adds extra to the body of conflicts, so checkout can send the updated cart along.
+func writeErrorWith(c *gin.Context, err error, fallback string, extra gin.H) {
 	var outOfStock *app.OutOfStockError
+	var shippingRequired *app.ShippingRequiredError
 	switch {
 	case errors.As(err, &outOfStock):
-		c.JSON(http.StatusConflict, gin.H{"error": app.ErrOutOfStock.Error(), "items": outOfStock.Items})
+		extra["error"] = app.ErrOutOfStock.Error()
+		extra["items"] = outOfStock.Items
+		c.JSON(http.StatusConflict, extra)
+	case errors.Is(err, app.ErrPricesChanged), errors.Is(err, app.ErrCartChanged):
+		extra["error"] = err.Error()
+		c.JSON(http.StatusConflict, extra)
+	case errors.As(err, &shippingRequired):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": app.ErrShippingRequired.Error(), "advertisement_ids": shippingRequired.AdvertisementIDs})
+	case errors.Is(err, app.ErrCartEmpty):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrAddressNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "address not found"})
 	case errors.Is(err, app.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, app.ErrAdvertisementNotFound):
@@ -130,4 +149,76 @@ func (h *Handler) RemoveCartItem(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, cart.ToOutput())
+}
+
+type checkoutRequest struct {
+	AddressID string `json:"address_id"`
+	Shipping  []struct {
+		AdvertisementID  string `json:"advertisement_id"`
+		ShippingOptionID string `json:"shipping_option_id"`
+	} `json:"shipping"`
+}
+
+func (r checkoutRequest) toInput() orders.CheckoutInput {
+	input := orders.CheckoutInput{AddressID: r.AddressID, Shipping: make([]orders.ShippingSelection, len(r.Shipping))}
+	for i, s := range r.Shipping {
+		input.Shipping[i] = orders.ShippingSelection{AdvertisementID: s.AdvertisementID, ShippingOptionID: s.ShippingOptionID}
+	}
+	return input
+}
+
+func (h *Handler) PreviewCheckout(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var request checkoutRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
+		return
+	}
+
+	plan, err := h.service.PreviewCheckout(c.Request.Context(), userID, request.toInput())
+	if err != nil {
+		h.writeCheckoutError(c, userID, err, "could not preview checkout")
+		return
+	}
+	c.JSON(http.StatusOK, plan.ToOutput())
+}
+
+// Checkout answers 201 with the new orders, or 200 with the same orders when the Idempotency-Key was already used.
+func (h *Handler) Checkout(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var request checkoutRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
+		return
+	}
+
+	checkout, created, err := h.service.Checkout(c.Request.Context(), userID, c.GetHeader("Idempotency-Key"), request.toInput())
+	if err != nil {
+		h.writeCheckoutError(c, userID, err, "could not check out")
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	c.JSON(status, checkout.ToOutput())
+}
+
+// writeCheckoutError sends the current cart with stock, price and cart conflicts (UC-006 alternative flow).
+func (h *Handler) writeCheckoutError(c *gin.Context, userID string, err error, fallback string) {
+	extra := gin.H{}
+	if errors.Is(err, app.ErrOutOfStock) || errors.Is(err, app.ErrPricesChanged) || errors.Is(err, app.ErrCartChanged) {
+		if cart, cartErr := h.service.GetCart(c.Request.Context(), userID); cartErr == nil {
+			extra["cart"] = cart.ToOutput()
+		}
+	}
+	writeErrorWith(c, err, fallback, extra)
 }

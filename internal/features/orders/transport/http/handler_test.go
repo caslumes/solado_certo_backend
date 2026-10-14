@@ -26,10 +26,20 @@ func init() {
 
 type fakeService struct {
 	Service
-	get    func(context.Context, string) (*orders.CartEntity, error)
-	add    func(context.Context, string, string, int) (*orders.CartEntity, error)
-	change func(context.Context, string, string, int) (*orders.CartEntity, error)
-	remove func(context.Context, string, string) (*orders.CartEntity, error)
+	get      func(context.Context, string) (*orders.CartEntity, error)
+	add      func(context.Context, string, string, int) (*orders.CartEntity, error)
+	change   func(context.Context, string, string, int) (*orders.CartEntity, error)
+	remove   func(context.Context, string, string) (*orders.CartEntity, error)
+	preview  func(context.Context, string, orders.CheckoutInput) (*orders.CheckoutPlan, error)
+	checkout func(context.Context, string, string, orders.CheckoutInput) (*orders.CheckoutEntity, bool, error)
+}
+
+func (f fakeService) PreviewCheckout(ctx context.Context, userID string, input orders.CheckoutInput) (*orders.CheckoutPlan, error) {
+	return f.preview(ctx, userID, input)
+}
+
+func (f fakeService) Checkout(ctx context.Context, userID string, key string, input orders.CheckoutInput) (*orders.CheckoutEntity, bool, error) {
+	return f.checkout(ctx, userID, key, input)
 }
 
 func (f fakeService) GetCart(ctx context.Context, userID string) (*orders.CartEntity, error) {
@@ -59,6 +69,8 @@ func newRouter(handler *Handler, authenticated bool) *gin.Engine {
 	router.POST("/cart/items", handler.AddCartItem)
 	router.PATCH("/cart/items/:advertisementID", handler.ChangeCartItemQuantity)
 	router.DELETE("/cart/items/:advertisementID", handler.RemoveCartItem)
+	router.POST("/checkout/preview", handler.PreviewCheckout)
+	router.POST("/checkout", handler.Checkout)
 	return router
 }
 

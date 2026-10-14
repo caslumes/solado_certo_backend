@@ -1,0 +1,87 @@
+package orders
+
+import (
+	"time"
+
+	"github.com/caslumes/solado_certo_backend/pkg/money"
+)
+
+// ProductSnapshot is stored in order_items.product_snapshot: what the buyer saw when the order was placed.
+type ProductSnapshot struct {
+	Title          string               `json:"title"`
+	CoverImageURL  *string              `json:"cover_image_url"`
+	SellerName     string               `json:"seller_name"`
+	ShippingOption ShippingOptionOutput `json:"shipping_option"`
+}
+
+type OrderItemEntity struct {
+	ID              string
+	AdvertisementID string
+	Quantity        int
+	UnitPrice       string
+	Subtotal        string
+	Snapshot        ProductSnapshot
+}
+
+type OrderEntity struct {
+	ID            string
+	CheckoutID    string
+	BuyerID       string
+	SellerID      string
+	SellerName    string
+	Number        string
+	Status        OrderStatus
+	Address       AddressSnapshot
+	Subtotal      string
+	ShippingTotal string
+	DiscountTotal string
+	Total         string
+	Items         []OrderItemEntity
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (o *OrderEntity) ToOutput() OrderOutput {
+	items := make([]OrderItemOutput, len(o.Items))
+	for i, item := range o.Items {
+		items[i] = OrderItemOutput{
+			AdvertisementID: item.AdvertisementID,
+			Title:           item.Snapshot.Title,
+			CoverImageURL:   item.Snapshot.CoverImageURL,
+			Quantity:        item.Quantity,
+			UnitPrice:       item.UnitPrice,
+			Subtotal:        item.Subtotal,
+			ShippingOption:  item.Snapshot.ShippingOption,
+		}
+	}
+	return OrderOutput{
+		ID:            o.ID,
+		Number:        o.Number,
+		Status:        string(o.Status),
+		Seller:        SellerOutput{ID: o.SellerID, Name: o.SellerName},
+		Address:       o.Address,
+		Items:         items,
+		Subtotal:      o.Subtotal,
+		ShippingTotal: o.ShippingTotal,
+		DiscountTotal: o.DiscountTotal,
+		Total:         o.Total,
+		CreatedAt:     o.CreatedAt,
+		UpdatedAt:     o.UpdatedAt,
+	}
+}
+
+type CheckoutEntity struct {
+	ID     string
+	Orders []*OrderEntity
+}
+
+func (c *CheckoutEntity) ToOutput() *CheckoutOutput {
+	output := &CheckoutOutput{ID: c.ID, Orders: make([]OrderOutput, len(c.Orders))}
+	var total money.Cents
+	for i, order := range c.Orders {
+		output.Orders[i] = order.ToOutput()
+		total += money.MustParse(order.Total)
+	}
+	output.Total = total.String()
+	return output
+}

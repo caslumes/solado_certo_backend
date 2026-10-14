@@ -82,8 +82,8 @@ func (f fixture) insertReview(t *testing.T, adID string, productRating int) {
 	err := f.pool.QueryRow(
 		context.Background(),
 		"WITH checkout AS (INSERT INTO checkouts (buyer_id, idempotency_key, created_at) VALUES ($1, $2, $3) RETURNING id) "+
-			"INSERT INTO orders (buyer_id, checkout_id, shipping_address_id, number, status, subtotal, total, created_at, updated_at) "+
-			"SELECT $1, checkout.id, a.id, $2, 'paid', 100, 100, $3, $3 FROM addresses a, checkout WHERE a.user_id = $1 RETURNING id",
+			"INSERT INTO orders (buyer_id, checkout_id, shipping_address_id, shipping_address, number, status, subtotal, total, created_at, updated_at) "+
+			"SELECT $1, checkout.id, a.id, '{}', $2, 'paid', 100, 100, $3, $3 FROM addresses a, checkout WHERE a.user_id = $1 RETURNING id",
 		buyer.ID, fmt.Sprintf("ORD-%d", n), now,
 	).Scan(&orderID)
 	if err != nil {

@@ -3,6 +3,7 @@ package orders
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -10,18 +11,29 @@ import (
 )
 
 const (
-	testBuyerID  = "buyer-1"
-	testSellerID = "seller-1"
-	insolesAdID  = "00000000-0000-0000-0000-000000000601"
-	socksAdID    = "00000000-0000-0000-0000-000000000602"
-	pausedAdID   = "00000000-0000-0000-0000-000000000603"
-	unknownID    = "00000000-0000-0000-0000-000000000000"
+	testBuyerID   = "buyer-1"
+	testSellerID  = "seller-1"
+	insolesAdID   = "00000000-0000-0000-0000-000000000601"
+	socksAdID     = "00000000-0000-0000-0000-000000000602"
+	pausedAdID    = "00000000-0000-0000-0000-000000000603"
+	unknownID     = "00000000-0000-0000-0000-000000000000"
+	testAddressID = "00000000-0000-0000-0000-000000000901"
 )
 
 type fakeRepository struct {
-	ads   map[string]*AdvertisementEntity
-	carts map[string][]CartItemEntity
-	err   error
+	ads       map[string]*AdvertisementEntity
+	options   map[string][]ShippingOptionEntity
+	carts     map[string][]CartItemEntity
+	addresses map[string]AddressSnapshot
+	checkouts map[string]string
+	orders    map[string][]*OrderEntity
+	err       error
+	// createErr is returned by CreateCheckout, as if the locked ads no longer matched the plan.
+	createErr error
+	// concurrentCheckoutID simulates another request with the same key committing first.
+	concurrentCheckoutID string
+	plans                []*CheckoutPlan
+	refreshedCarts       []string
 }
 
 func newFakeRepository() *fakeRepository {
@@ -31,7 +43,15 @@ func newFakeRepository() *fakeRepository {
 			socksAdID:   {ID: socksAdID, SellerID: testSellerID, Price: "29.90", Stock: 0, Status: AdvertisementStatusPublished},
 			pausedAdID:  {ID: pausedAdID, SellerID: testSellerID, Price: "50.00", Stock: 5, Status: "paused"},
 		},
-		carts: map[string][]CartItemEntity{},
+		options: map[string][]ShippingOptionEntity{
+			insolesAdID: {{ID: "pac", Name: "PAC", Price: "19.90", DeliveryDays: 7}, {ID: "sedex", Name: "SEDEX", Price: "34.90", DeliveryDays: 2}},
+			socksAdID:   {{ID: "letter", Name: "Carta", Price: "9.90", DeliveryDays: 10}},
+			pausedAdID:  {{ID: "pac-paused", Name: "PAC", Price: "19.90", DeliveryDays: 7}},
+		},
+		carts:     map[string][]CartItemEntity{},
+		addresses: map[string]AddressSnapshot{testAddressID: {Receiver: "Maria", ZIPCode: "13000000", Street: "Rua A", Number: "10", District: "Centro", City: "Campinas", State: "SP", Country: "BR"}},
+		checkouts: map[string]string{},
+		orders:    map[string][]*OrderEntity{},
 	}
 }
 
@@ -49,6 +69,8 @@ func (f *fakeRepository) GetActiveCart(_ context.Context, userID string) (*CartE
 		item.Price = ad.Price
 		item.Stock = ad.Stock
 		item.AdStatus = ad.Status
+		item.SellerName = "Loja " + item.SellerID
+		item.ShippingOptions = f.options[item.AdvertisementID]
 		cart.Items = append(cart.Items, item)
 	}
 	return cart, nil
@@ -311,4 +333,51 @@ func TestRemoveCartItem(t *testing.T) {
 	if _, err := s.RemoveCartItem(context.Background(), testBuyerID, "not-a-uuid"); !errors.Is(err, app.ErrCartItemNotFound) {
 		t.Errorf("bad ID: error = %v, want ErrCartItemNotFound", err)
 	}
+}
+
+func (f *fakeRepository) RefreshCartPrices(_ context.Context, cartID string) error {
+	f.refreshedCarts = append(f.refreshedCarts, cartID)
+	for userID, items := range f.carts {
+		if "cart-"+userID != cartID {
+			continue
+		}
+		for i := range items {
+			items[i].AddedPrice = f.ads[items[i].AdvertisementID].Price
+		}
+	}
+	return nil
+}
+
+func (f *fakeRepository) GetAddress(_ context.Context, userID string, addressID string) (*AddressSnapshot, error) {
+	address, ok := f.addresses[addressID]
+	if !ok || userID != testBuyerID {
+		return nil, app.ErrAddressNotFound
+	}
+	return &address, nil
+}
+
+func (f *fakeRepository) GetCheckoutID(_ context.Context, buyerID string, key string) (string, bool, error) {
+	id, ok := f.checkouts[buyerID+"/"+key]
+	return id, ok, nil
+}
+
+func (f *fakeRepository) CreateCheckout(_ context.Context, buyerID string, key string, plan *CheckoutPlan) (string, bool, error) {
+	if f.createErr != nil {
+		return "", false, f.createErr
+	}
+	if f.concurrentCheckoutID != "" {
+		return f.concurrentCheckoutID, false, nil
+	}
+	f.plans = append(f.plans, plan)
+	id := fmt.Sprintf("checkout-%d", len(f.plans))
+	f.checkouts[buyerID+"/"+key] = id
+	for _, order := range plan.Orders {
+		f.orders[id] = append(f.orders[id], &OrderEntity{CheckoutID: id, SellerID: order.SellerID, Status: OrderStatusAwaitingPayment, Total: order.Total().String()})
+	}
+	delete(f.carts, buyerID)
+	return id, true, nil
+}
+
+func (f *fakeRepository) GetOrdersByCheckout(_ context.Context, checkoutID string) ([]*OrderEntity, error) {
+	return f.orders[checkoutID], nil
 }

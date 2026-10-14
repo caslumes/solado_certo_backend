@@ -85,6 +85,12 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		cartGroup.DELETE("/items/:advertisementID", a.OrdersHandler.RemoveCartItem)
 	}
 
+	checkoutGroup := r.Group("/checkout", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleBuyer))
+	{
+		checkoutGroup.POST("", a.OrdersHandler.Checkout)
+		checkoutGroup.POST("/preview", a.OrdersHandler.PreviewCheckout)
+	}
+
 	r.GET("/files/public/*path", a.FilesHandler.ServePublic)
 }
 

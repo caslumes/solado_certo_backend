@@ -26,15 +26,31 @@ type RemoveCartItemUseCase interface {
 	RemoveCartItem(ctx context.Context, userID string, advertisementID string) (*CartEntity, error)
 }
 
+type PreviewCheckoutUseCase interface {
+	PreviewCheckout(ctx context.Context, userID string, input CheckoutInput) (*CheckoutPlan, error)
+}
+
+type CheckoutUseCase interface {
+	Checkout(ctx context.Context, userID string, idempotencyKey string, input CheckoutInput) (checkout *CheckoutEntity, created bool, err error)
+}
+
 type repository interface {
 	GetActiveCart(ctx context.Context, userID string) (*CartEntity, error)
 	GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error)
 	AddCartItem(ctx context.Context, userID string, advertisementID string, quantity int, unitPrice string) error
 	SetCartItemQuantity(ctx context.Context, userID string, advertisementID string, quantity int) error
 	RemoveCartItem(ctx context.Context, userID string, advertisementID string) error
+	RefreshCartPrices(ctx context.Context, cartID string) error
+	GetAddress(ctx context.Context, userID string, addressID string) (*AddressSnapshot, error)
+	GetCheckoutID(ctx context.Context, buyerID string, idempotencyKey string) (id string, found bool, err error)
+	CreateCheckout(ctx context.Context, buyerID string, idempotencyKey string, plan *CheckoutPlan) (id string, created bool, err error)
+	GetOrdersByCheckout(ctx context.Context, checkoutID string) ([]*OrderEntity, error)
 }
 
-const MaxItemQuantity = 99
+const (
+	MaxItemQuantity         = 99
+	maxIdempotencyKeyLength = 120
+)
 
 type service struct {
 	r repository
@@ -42,6 +58,15 @@ type service struct {
 
 func NewService(r repository) *service {
 	return &service{r: r}
+}
+
+func isExpected(err error, expected ...error) bool {
+	for _, target := range expected {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *service) GetCart(ctx context.Context, userID string) (*CartEntity, error) {
@@ -156,4 +181,93 @@ func (s *service) publishedAdvertisement(ctx context.Context, id string) (*Adver
 		return nil, app.ErrAdvertisementNotFound
 	}
 	return ad, nil
+}
+
+// PreviewCheckout shows the orders a checkout would create, without changing anything.
+func (s *service) PreviewCheckout(ctx context.Context, userID string, input CheckoutInput) (*CheckoutPlan, error) {
+	return s.plan(ctx, userID, input)
+}
+
+// Checkout creates one order per seller, awaiting payment, and reserves their stock (RF-014, RF-015, RF-019).
+// Repeating a key returns the orders it created (RNF-012). If a price changed since the item was added,
+// the cart takes the new prices and the buyer has to confirm again.
+func (s *service) Checkout(ctx context.Context, userID string, idempotencyKey string, input CheckoutInput) (*CheckoutEntity, bool, error) {
+	if idempotencyKey == "" || len(idempotencyKey) > maxIdempotencyKeyLength {
+		return nil, false, fmt.Errorf("%w: the Idempotency-Key header must have 1 to %d characters", app.ErrInvalidInput, maxIdempotencyKeyLength)
+	}
+
+	id, found, err := s.r.GetCheckoutID(ctx, userID, idempotencyKey)
+	if err != nil {
+		slog.ErrorContext(ctx, "GetCheckoutID failed", "user_id", userID, "error", err)
+		return nil, false, err
+	}
+	if found {
+		checkout, err := s.checkout(ctx, id)
+		return checkout, false, err
+	}
+
+	plan, err := s.plan(ctx, userID, input)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, order := range plan.Orders {
+		for _, item := range order.Items {
+			if item.PriceChanged() {
+				return nil, false, s.refreshPrices(ctx, plan.CartID)
+			}
+		}
+	}
+
+	id, created, err := s.r.CreateCheckout(ctx, userID, idempotencyKey, plan)
+	if err != nil {
+		if errors.Is(err, app.ErrPricesChanged) {
+			return nil, false, s.refreshPrices(ctx, plan.CartID)
+		}
+		if !isExpected(err, app.ErrOutOfStock, app.ErrShippingRequired, app.ErrCartChanged) {
+			slog.ErrorContext(ctx, "CreateCheckout failed", "user_id", userID, "error", err)
+		}
+		return nil, false, err
+	}
+	checkout, err := s.checkout(ctx, id)
+	return checkout, created, err
+}
+
+func (s *service) plan(ctx context.Context, userID string, input CheckoutInput) (*CheckoutPlan, error) {
+	if !helpers.IsUUID(input.AddressID) {
+		return nil, app.ErrAddressNotFound
+	}
+	address, err := s.r.GetAddress(ctx, userID, input.AddressID)
+	if err != nil {
+		if !errors.Is(err, app.ErrAddressNotFound) {
+			slog.ErrorContext(ctx, "GetAddress failed", "user_id", userID, "error", err)
+		}
+		return nil, err
+	}
+
+	cart, err := s.GetCart(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	orders, err := PlanOrders(cart, input.Shipping)
+	if err != nil {
+		return nil, err
+	}
+	return &CheckoutPlan{CartID: cart.ID, AddressID: input.AddressID, Address: *address, Orders: orders}, nil
+}
+
+func (s *service) refreshPrices(ctx context.Context, cartID string) error {
+	if err := s.r.RefreshCartPrices(ctx, cartID); err != nil {
+		slog.ErrorContext(ctx, "RefreshCartPrices failed", "cart_id", cartID, "error", err)
+		return err
+	}
+	return app.ErrPricesChanged
+}
+
+func (s *service) checkout(ctx context.Context, id string) (*CheckoutEntity, error) {
+	orders, err := s.r.GetOrdersByCheckout(ctx, id)
+	if err != nil {
+		slog.ErrorContext(ctx, "GetOrdersByCheckout failed", "checkout_id", id, "error", err)
+		return nil, err
+	}
+	return &CheckoutEntity{ID: id, Orders: orders}, nil
 }
