@@ -27,6 +27,9 @@ var ErrInvalidStatusTransition = errors.New("invalid status transition")
 var ErrMissingRequiredFields = errors.New("missing required fields")
 var ErrImageNotFound = errors.New("image not found")
 var ErrTooManyImages = errors.New("too many images")
+var ErrCartItemNotFound = errors.New("cart item not found")
+var ErrOwnAdvertisement = errors.New("cannot buy your own advertisement")
+var ErrOutOfStock = errors.New("out of stock")
 
 // MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {
@@ -39,4 +42,23 @@ func (e *MissingFieldsError) Error() string {
 
 func (e *MissingFieldsError) Unwrap() error {
 	return ErrMissingRequiredFields
+}
+
+// StockShortage is an item the buyer asked for more units of than the ad has.
+type StockShortage struct {
+	AdvertisementID string `json:"advertisement_id"`
+	Requested       int    `json:"requested"`
+	Available       int    `json:"available"`
+}
+
+type OutOfStockError struct {
+	Items []StockShortage
+}
+
+func (e *OutOfStockError) Error() string {
+	return ErrOutOfStock.Error()
+}
+
+func (e *OutOfStockError) Unwrap() error {
+	return ErrOutOfStock
 }

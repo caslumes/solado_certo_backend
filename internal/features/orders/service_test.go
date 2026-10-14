@@ -1,0 +1,314 @@
+package orders
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+
+	"github.com/caslumes/solado_certo_backend/internal/app"
+)
+
+const (
+	testBuyerID  = "buyer-1"
+	testSellerID = "seller-1"
+	insolesAdID  = "00000000-0000-0000-0000-000000000601"
+	socksAdID    = "00000000-0000-0000-0000-000000000602"
+	pausedAdID   = "00000000-0000-0000-0000-000000000603"
+	unknownID    = "00000000-0000-0000-0000-000000000000"
+)
+
+type fakeRepository struct {
+	ads   map[string]*AdvertisementEntity
+	carts map[string][]CartItemEntity
+	err   error
+}
+
+func newFakeRepository() *fakeRepository {
+	return &fakeRepository{
+		ads: map[string]*AdvertisementEntity{
+			insolesAdID: {ID: insolesAdID, SellerID: testSellerID, Price: "89.90", Stock: 5, Status: AdvertisementStatusPublished},
+			socksAdID:   {ID: socksAdID, SellerID: testSellerID, Price: "29.90", Stock: 0, Status: AdvertisementStatusPublished},
+			pausedAdID:  {ID: pausedAdID, SellerID: testSellerID, Price: "50.00", Stock: 5, Status: "paused"},
+		},
+		carts: map[string][]CartItemEntity{},
+	}
+}
+
+func (f *fakeRepository) GetActiveCart(_ context.Context, userID string) (*CartEntity, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	items, ok := f.carts[userID]
+	if !ok {
+		return &CartEntity{Items: []CartItemEntity{}}, nil
+	}
+	cart := &CartEntity{ID: "cart-" + userID, Items: []CartItemEntity{}}
+	for _, item := range items {
+		ad := f.ads[item.AdvertisementID]
+		item.Price = ad.Price
+		item.Stock = ad.Stock
+		item.AdStatus = ad.Status
+		cart.Items = append(cart.Items, item)
+	}
+	return cart, nil
+}
+
+func (f *fakeRepository) GetAdvertisement(_ context.Context, id string) (*AdvertisementEntity, error) {
+	ad, ok := f.ads[id]
+	if !ok {
+		return nil, app.ErrAdvertisementNotFound
+	}
+	copied := *ad
+	return &copied, nil
+}
+
+func (f *fakeRepository) AddCartItem(_ context.Context, userID string, advertisementID string, quantity int, unitPrice string) error {
+	items := f.carts[userID]
+	index := slices.IndexFunc(items, func(i CartItemEntity) bool { return i.AdvertisementID == advertisementID })
+	if index >= 0 {
+		items[index].Quantity += quantity
+		items[index].AddedPrice = unitPrice
+	} else {
+		items = append(items, CartItemEntity{AdvertisementID: advertisementID, SellerID: f.ads[advertisementID].SellerID, Quantity: quantity, AddedPrice: unitPrice})
+	}
+	f.carts[userID] = items
+	return nil
+}
+
+func (f *fakeRepository) SetCartItemQuantity(_ context.Context, userID string, advertisementID string, quantity int) error {
+	items := f.carts[userID]
+	index := slices.IndexFunc(items, func(i CartItemEntity) bool { return i.AdvertisementID == advertisementID })
+	if index < 0 {
+		return app.ErrCartItemNotFound
+	}
+	items[index].Quantity = quantity
+	return nil
+}
+
+func (f *fakeRepository) RemoveCartItem(_ context.Context, userID string, advertisementID string) error {
+	items := f.carts[userID]
+	index := slices.IndexFunc(items, func(i CartItemEntity) bool { return i.AdvertisementID == advertisementID })
+	if index < 0 {
+		return app.ErrCartItemNotFound
+	}
+	f.carts[userID] = slices.Delete(items, index, index+1)
+	return nil
+}
+
+func (f *fakeRepository) quantity(userID string, advertisementID string) int {
+	for _, item := range f.carts[userID] {
+		if item.AdvertisementID == advertisementID {
+			return item.Quantity
+		}
+	}
+	return 0
+}
+
+func TestGetCartWithoutCart(t *testing.T) {
+	cart, err := NewService(newFakeRepository()).GetCart(context.Background(), testBuyerID)
+	if err != nil {
+		t.Fatalf("GetCart: %v", err)
+	}
+	if cart.ID != "" || len(cart.Items) != 0 {
+		t.Errorf("cart = %+v, want empty", cart)
+	}
+}
+
+func TestGetCartPropagatesErrors(t *testing.T) {
+	r := newFakeRepository()
+	r.err = errors.New("db down")
+	if _, err := NewService(r).GetCart(context.Background(), testBuyerID); err == nil {
+		t.Error("want error")
+	}
+}
+
+func TestAddCartItem(t *testing.T) {
+	r := newFakeRepository()
+	s := NewService(r)
+
+	cart, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 2)
+	if err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+	if len(cart.Items) != 1 || cart.Items[0].Quantity != 2 || cart.Items[0].AddedPrice != "89.90" {
+		t.Fatalf("cart = %+v", cart)
+	}
+
+	if _, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 3); err != nil {
+		t.Fatalf("second AddCartItem: %v", err)
+	}
+	if got := r.quantity(testBuyerID, insolesAdID); got != 5 {
+		t.Errorf("quantity = %d, want 5 (added to the existing one)", got)
+	}
+}
+
+func TestAddCartItemUpdatesAddedPrice(t *testing.T) {
+	r := newFakeRepository()
+	s := NewService(r)
+	if _, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 1); err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+	r.ads[insolesAdID].Price = "79.90"
+
+	cart, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 1)
+	if err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+	if cart.Items[0].AddedPrice != "79.90" || cart.Items[0].PriceChanged() {
+		t.Errorf("item = %+v, want the new price as added price", cart.Items[0])
+	}
+}
+
+func TestAddCartItemOverStock(t *testing.T) {
+	r := newFakeRepository()
+	s := NewService(r)
+	if _, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 4); err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+
+	_, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 2)
+	var outOfStock *app.OutOfStockError
+	if !errors.As(err, &outOfStock) {
+		t.Fatalf("error = %v, want OutOfStockError", err)
+	}
+	want := app.StockShortage{AdvertisementID: insolesAdID, Requested: 6, Available: 5}
+	if len(outOfStock.Items) != 1 || outOfStock.Items[0] != want {
+		t.Errorf("items = %+v, want %+v", outOfStock.Items, want)
+	}
+	if got := r.quantity(testBuyerID, insolesAdID); got != 4 {
+		t.Errorf("quantity = %d, want 4 (unchanged)", got)
+	}
+}
+
+func TestAddCartItemRejects(t *testing.T) {
+	tests := []struct {
+		name     string
+		userID   string
+		adID     string
+		quantity int
+		want     error
+	}{
+		{"zero quantity", testBuyerID, insolesAdID, 0, app.ErrInvalidInput},
+		{"over the limit", testBuyerID, insolesAdID, MaxItemQuantity + 1, app.ErrInvalidInput},
+		{"bad ID", testBuyerID, "not-a-uuid", 1, app.ErrAdvertisementNotFound},
+		{"unknown ad", testBuyerID, unknownID, 1, app.ErrAdvertisementNotFound},
+		{"paused ad", testBuyerID, pausedAdID, 1, app.ErrAdvertisementNotFound},
+		{"sold out", testBuyerID, socksAdID, 1, app.ErrOutOfStock},
+		{"own ad", testSellerID, insolesAdID, 1, app.ErrOwnAdvertisement},
+	}
+	for _, tt := range tests {
+		r := newFakeRepository()
+		_, err := NewService(r).AddCartItem(context.Background(), tt.userID, tt.adID, tt.quantity)
+		if !errors.Is(err, tt.want) {
+			t.Errorf("%s: error = %v, want %v", tt.name, err, tt.want)
+		}
+		if len(r.carts) != 0 {
+			t.Errorf("%s: cart changed", tt.name)
+		}
+	}
+}
+
+func TestChangeCartItemQuantity(t *testing.T) {
+	r := newFakeRepository()
+	s := NewService(r)
+	if _, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 1); err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+
+	cart, err := s.ChangeCartItemQuantity(context.Background(), testBuyerID, insolesAdID, 5)
+	if err != nil {
+		t.Fatalf("ChangeCartItemQuantity: %v", err)
+	}
+	if cart.Items[0].Quantity != 5 {
+		t.Errorf("quantity = %d, want 5", cart.Items[0].Quantity)
+	}
+
+	if _, err := s.ChangeCartItemQuantity(context.Background(), testBuyerID, insolesAdID, 6); !errors.Is(err, app.ErrOutOfStock) {
+		t.Errorf("over stock: error = %v, want ErrOutOfStock", err)
+	}
+}
+
+func TestChangeCartItemQuantityCanLowerAnUnavailableItem(t *testing.T) {
+	r := newFakeRepository()
+	s := NewService(r)
+	if _, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 4); err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+	r.ads[insolesAdID].Stock = 2
+	r.ads[insolesAdID].Status = "paused"
+
+	if _, err := s.ChangeCartItemQuantity(context.Background(), testBuyerID, insolesAdID, 2); err != nil {
+		t.Fatalf("lowering: %v", err)
+	}
+	if _, err := s.ChangeCartItemQuantity(context.Background(), testBuyerID, insolesAdID, 3); !errors.Is(err, app.ErrAdvertisementNotFound) {
+		t.Errorf("raising a paused item: error = %v, want ErrAdvertisementNotFound", err)
+	}
+}
+
+func TestChangeCartItemQuantityZeroRemoves(t *testing.T) {
+	r := newFakeRepository()
+	s := NewService(r)
+	if _, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 1); err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+
+	cart, err := s.ChangeCartItemQuantity(context.Background(), testBuyerID, insolesAdID, 0)
+	if err != nil {
+		t.Fatalf("ChangeCartItemQuantity: %v", err)
+	}
+	if len(cart.Items) != 0 {
+		t.Errorf("items = %+v, want none", cart.Items)
+	}
+}
+
+func TestChangeCartItemQuantityRejects(t *testing.T) {
+	r := newFakeRepository()
+	s := NewService(r)
+	if _, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 1); err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		adID     string
+		quantity int
+		want     error
+	}{
+		{"negative", insolesAdID, -1, app.ErrInvalidInput},
+		{"over the limit", insolesAdID, MaxItemQuantity + 1, app.ErrInvalidInput},
+		{"bad ID", "not-a-uuid", 1, app.ErrCartItemNotFound},
+		{"not in cart", socksAdID, 1, app.ErrCartItemNotFound},
+	}
+	for _, tt := range tests {
+		if _, err := s.ChangeCartItemQuantity(context.Background(), testBuyerID, tt.adID, tt.quantity); !errors.Is(err, tt.want) {
+			t.Errorf("%s: error = %v, want %v", tt.name, err, tt.want)
+		}
+	}
+	if got := r.quantity(testBuyerID, insolesAdID); got != 1 {
+		t.Errorf("quantity = %d, want 1 (unchanged)", got)
+	}
+}
+
+func TestRemoveCartItem(t *testing.T) {
+	r := newFakeRepository()
+	s := NewService(r)
+	if _, err := s.AddCartItem(context.Background(), testBuyerID, insolesAdID, 1); err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+
+	cart, err := s.RemoveCartItem(context.Background(), testBuyerID, insolesAdID)
+	if err != nil {
+		t.Fatalf("RemoveCartItem: %v", err)
+	}
+	if len(cart.Items) != 0 {
+		t.Errorf("items = %+v, want none", cart.Items)
+	}
+
+	if _, err := s.RemoveCartItem(context.Background(), testBuyerID, insolesAdID); !errors.Is(err, app.ErrCartItemNotFound) {
+		t.Errorf("second remove: error = %v, want ErrCartItemNotFound", err)
+	}
+	if _, err := s.RemoveCartItem(context.Background(), testBuyerID, "not-a-uuid"); !errors.Is(err, app.ErrCartItemNotFound) {
+		t.Errorf("bad ID: error = %v, want ErrCartItemNotFound", err)
+	}
+}

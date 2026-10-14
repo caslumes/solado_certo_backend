@@ -77,6 +77,14 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		sellerGroup.DELETE("/ads/:advertisementID/images/:imageID", a.SellerHandler.RemoveImage)
 	}
 
+	cartGroup := r.Group("/cart", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleBuyer))
+	{
+		cartGroup.GET("", a.OrdersHandler.GetCart)
+		cartGroup.POST("/items", a.OrdersHandler.AddCartItem)
+		cartGroup.PATCH("/items/:advertisementID", a.OrdersHandler.ChangeCartItemQuantity)
+		cartGroup.DELETE("/items/:advertisementID", a.OrdersHandler.RemoveCartItem)
+	}
+
 	r.GET("/files/public/*path", a.FilesHandler.ServePublic)
 }
 
