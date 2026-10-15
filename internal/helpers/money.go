@@ -1,4 +1,4 @@
-package money
+package helpers
 
 import (
 	"errors"
@@ -14,8 +14,8 @@ var ErrInvalidAmount = errors.New("invalid amount")
 
 var amountPattern = regexp.MustCompile(`^\d{1,13}(\.\d{1,2})?$`)
 
-// Parse reads a decimal such as "89.90", "89.9" or "89", as numeric(10,2) is printed by PostgreSQL.
-func Parse(s string) (Cents, error) {
+// ParseCents reads a decimal such as "89.90", "89.9" or "89", as numeric(10,2) is printed by PostgreSQL.
+func ParseCents(s string) (Cents, error) {
 	if !amountPattern.MatchString(s) {
 		return 0, fmt.Errorf("%w: %q", ErrInvalidAmount, s)
 	}
@@ -28,8 +28,8 @@ func Parse(s string) (Cents, error) {
 	return Cents(n), nil
 }
 
-func MustParse(s string) Cents {
-	c, err := Parse(s)
+func MustParseCents(s string) Cents {
+	c, err := ParseCents(s)
 	if err != nil {
 		panic(err)
 	}

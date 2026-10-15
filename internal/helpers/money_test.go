@@ -1,11 +1,11 @@
-package money
+package helpers
 
 import (
 	"errors"
 	"testing"
 )
 
-func TestParse(t *testing.T) {
+func TestParseCents(t *testing.T) {
 	tests := []struct {
 		in   string
 		want Cents
@@ -18,25 +18,25 @@ func TestParse(t *testing.T) {
 		{"12345678.99", 1234567899},
 	}
 	for _, tt := range tests {
-		got, err := Parse(tt.in)
+		got, err := ParseCents(tt.in)
 		if err != nil {
-			t.Fatalf("Parse(%q): %v", tt.in, err)
+			t.Fatalf("ParseCents(%q): %v", tt.in, err)
 		}
 		if got != tt.want {
-			t.Errorf("Parse(%q) = %d, want %d", tt.in, got, tt.want)
+			t.Errorf("ParseCents(%q) = %d, want %d", tt.in, got, tt.want)
 		}
 	}
 }
 
-func TestParseRejectsInvalid(t *testing.T) {
+func TestParseCentsRejectsInvalid(t *testing.T) {
 	for _, in := range []string{"", "-1.00", "1.234", "1,50", ".50", "abc", "1."} {
-		if _, err := Parse(in); !errors.Is(err, ErrInvalidAmount) {
-			t.Errorf("Parse(%q) error = %v, want ErrInvalidAmount", in, err)
+		if _, err := ParseCents(in); !errors.Is(err, ErrInvalidAmount) {
+			t.Errorf("ParseCents(%q) error = %v, want ErrInvalidAmount", in, err)
 		}
 	}
 }
 
-func TestString(t *testing.T) {
+func TestCentsString(t *testing.T) {
 	tests := []struct {
 		in   Cents
 		want string
@@ -53,8 +53,8 @@ func TestString(t *testing.T) {
 	}
 }
 
-func TestTimes(t *testing.T) {
-	if got := MustParse("19.90").Times(3).String(); got != "59.70" {
+func TestCentsTimes(t *testing.T) {
+	if got := MustParseCents("19.90").Times(3).String(); got != "59.70" {
 		t.Errorf("19.90 × 3 = %s, want 59.70", got)
 	}
 }

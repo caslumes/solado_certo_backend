@@ -82,7 +82,7 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 	}
 
 	from := change.From
-	err = recordStatusChange(ctx, tx, change.OrderID, change.ChangedBy, &from, change.To, change.Reason, map[string]any{
+	err = RecordStatusChange(ctx, tx, change.OrderID, change.ChangedBy, &from, change.To, change.Reason, map[string]any{
 		"stock_released": change.ReleaseStock,
 	}, now)
 	if err != nil {

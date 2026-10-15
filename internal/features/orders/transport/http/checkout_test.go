@@ -11,7 +11,7 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
-	"github.com/caslumes/solado_certo_backend/pkg/money"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
 const (
@@ -29,8 +29,8 @@ func samplePlan() *orders.CheckoutPlan {
 			SellerID:      item.SellerID,
 			SellerName:    item.SellerName,
 			Items:         []orders.PlannedItem{{CartItemEntity: item, ShippingOption: orders.ShippingOptionEntity{ID: "pac", Name: "PAC", Price: "19.90"}}},
-			Subtotal:      money.MustParse("179.80"),
-			ShippingTotal: money.MustParse("19.90"),
+			Subtotal:      helpers.MustParseCents("179.80"),
+			ShippingTotal: helpers.MustParseCents("19.90"),
 		}},
 	}
 }

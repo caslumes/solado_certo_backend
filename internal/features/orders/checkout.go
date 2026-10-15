@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
-	"github.com/caslumes/solado_certo_backend/pkg/money"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
 type AddressSnapshot struct {
@@ -38,7 +38,7 @@ type PlannedItem struct {
 	ShippingOption ShippingOptionEntity
 }
 
-func (i *PlannedItem) Subtotal() money.Cents {
+func (i *PlannedItem) Subtotal() helpers.Cents {
 	return i.CartItemEntity.Subtotal()
 }
 
@@ -47,12 +47,12 @@ type PlannedOrder struct {
 	SellerID      string
 	SellerName    string
 	Items         []PlannedItem
-	Subtotal      money.Cents
-	ShippingTotal money.Cents
-	DiscountTotal money.Cents
+	Subtotal      helpers.Cents
+	ShippingTotal helpers.Cents
+	DiscountTotal helpers.Cents
 }
 
-func (o *PlannedOrder) Total() money.Cents {
+func (o *PlannedOrder) Total() helpers.Cents {
 	return o.Subtotal + o.ShippingTotal - o.DiscountTotal
 }
 
@@ -114,7 +114,7 @@ func PlanOrders(cart *CartEntity, shipping []ShippingSelection) ([]PlannedOrder,
 		order := &orders[index]
 		order.Items = append(order.Items, PlannedItem{CartItemEntity: item, ShippingOption: option})
 		order.Subtotal += item.Subtotal()
-		order.ShippingTotal = max(order.ShippingTotal, money.MustParse(option.Price))
+		order.ShippingTotal = max(order.ShippingTotal, helpers.MustParseCents(option.Price))
 	}
 	if len(missing) > 0 {
 		return nil, &app.ShippingRequiredError{AdvertisementIDs: missing}
@@ -141,7 +141,7 @@ func NewOrderNumber(now time.Time) string {
 
 func (p *CheckoutPlan) ToOutput() *CheckoutPreviewOutput {
 	output := &CheckoutPreviewOutput{Address: p.Address, Orders: make([]PlannedOrderOutput, len(p.Orders))}
-	var subtotal, shippingTotal, discountTotal money.Cents
+	var subtotal, shippingTotal, discountTotal helpers.Cents
 	for i, order := range p.Orders {
 		items := make([]OrderItemOutput, len(order.Items))
 		for j, item := range order.Items {

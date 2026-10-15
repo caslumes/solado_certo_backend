@@ -35,6 +35,13 @@ var ErrCartChanged = errors.New("cart changed")
 var ErrPricesChanged = errors.New("prices changed")
 var ErrShippingRequired = errors.New("shipping option required")
 var ErrOrderNotFound = errors.New("order not found")
+var ErrOrderExpired = errors.New("order payment window expired")
+var ErrPaymentNotFound = errors.New("payment not found")
+var ErrPaymentInProgress = errors.New("another payment of this order is in progress")
+var ErrTaxIDRequired = errors.New("tax id required")
+var ErrTaxIDInUse = errors.New("tax id already registered")
+var ErrIdempotencyKeyReused = errors.New("idempotency key already used")
+var ErrGatewayUnavailable = errors.New("payment gateway unavailable")
 
 // MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {

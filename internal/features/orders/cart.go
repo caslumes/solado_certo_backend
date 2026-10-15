@@ -1,7 +1,7 @@
 package orders
 
 import (
-	"github.com/caslumes/solado_certo_backend/pkg/money"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
 type ShippingOptionEntity struct {
@@ -57,11 +57,11 @@ func (i *CartItemEntity) Problem() ItemProblem {
 }
 
 func (i *CartItemEntity) PriceChanged() bool {
-	return money.MustParse(i.AddedPrice) != money.MustParse(i.Price)
+	return helpers.MustParseCents(i.AddedPrice) != helpers.MustParseCents(i.Price)
 }
 
-func (i *CartItemEntity) Subtotal() money.Cents {
-	return money.MustParse(i.Price).Times(i.Quantity)
+func (i *CartItemEntity) Subtotal() helpers.Cents {
+	return helpers.MustParseCents(i.Price).Times(i.Quantity)
 }
 
 type CartEntity struct {
@@ -86,9 +86,9 @@ func (c *CartEntity) ToOutput() *CartOutput {
 		output.ID = &c.ID
 	}
 
-	var subtotal money.Cents
+	var subtotal helpers.Cents
 	groupIndex := map[string]int{}
-	groupSubtotals := []money.Cents{}
+	groupSubtotals := []helpers.Cents{}
 	for _, item := range c.Items {
 		index, ok := groupIndex[item.SellerID]
 		if !ok {

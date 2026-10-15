@@ -3,7 +3,7 @@ package orders
 import (
 	"time"
 
-	"github.com/caslumes/solado_certo_backend/pkg/money"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
 // ProductSnapshot is stored in order_items.product_snapshot: what the buyer saw when the order was placed.
@@ -77,10 +77,10 @@ type CheckoutEntity struct {
 
 func (c *CheckoutEntity) ToOutput() *CheckoutOutput {
 	output := &CheckoutOutput{ID: c.ID, Orders: make([]OrderOutput, len(c.Orders))}
-	var total money.Cents
+	var total helpers.Cents
 	for i, order := range c.Orders {
 		output.Orders[i] = order.ToOutput()
-		total += money.MustParse(order.Total)
+		total += helpers.MustParseCents(order.Total)
 	}
 	output.Total = total.String()
 	return output
@@ -94,11 +94,11 @@ type StatusChangeEntity struct {
 }
 
 type StatusChange struct {
-	OrderID string
-	ChangedBy string
-	From      OrderStatus
-	To        OrderStatus
-	Reason    string
+	OrderID      string
+	ChangedBy    string
+	From         OrderStatus
+	To           OrderStatus
+	Reason       string
 	ReleaseStock bool
 }
 

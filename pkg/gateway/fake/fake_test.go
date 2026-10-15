@@ -1,0 +1,123 @@
+package fake
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/caslumes/solado_certo_backend/pkg/gateway"
+)
+
+func newCharge(t *testing.T, g *Gateway, method gateway.Method) *gateway.Charge {
+	t.Helper()
+	ctx := context.Background()
+	customer, err := g.CreateCustomer(ctx, gateway.Customer{Name: "Maria", TaxID: "52998224725"})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	charge, err := g.CreateCharge(ctx, gateway.ChargeRequest{CustomerID: customer, Method: method, Amount: "10.00"})
+	if err != nil {
+		t.Fatalf("CreateCharge: %v", err)
+	}
+	return charge
+}
+
+func TestConfirmAfter(t *testing.T) {
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	g := New(10 * time.Second)
+	g.Now = func() time.Time { return now }
+	charge := newCharge(t, g, gateway.MethodPix)
+
+	if got, _ := g.GetCharge(context.Background(), charge.ID); got.Status != gateway.StatusPending {
+		t.Errorf("right away = %s, want pending", got.Status)
+	}
+	now = now.Add(10 * time.Second)
+	if got, _ := g.GetCharge(context.Background(), charge.ID); got.Status != gateway.StatusCaptured || got.GatewayStatus != "RECEIVED" {
+		t.Errorf("after 10 s = %s, want captured", got.Status)
+	}
+}
+
+func TestPixQRCode(t *testing.T) {
+	g := New(0)
+	pix := newCharge(t, g, gateway.MethodPix)
+	boleto := newCharge(t, g, gateway.MethodBoleto)
+
+	if qr, err := g.GetPixQRCode(context.Background(), pix.ID); err != nil || qr.Payload == "" || qr.ExpiresAt == nil {
+		t.Errorf("Pix QR code = %+v, %v", qr, err)
+	}
+	if _, err := g.GetPixQRCode(context.Background(), boleto.ID); err == nil {
+		t.Error("a boleto has no Pix code")
+	}
+	if boleto.BoletoURL == "" {
+		t.Error("boleto without a link")
+	}
+}
+
+func TestCancelAndRefund(t *testing.T) {
+	ctx := context.Background()
+	g := New(0)
+	pending := newCharge(t, g, gateway.MethodBoleto)
+
+	if _, err := g.Refund(ctx, pending.ID); err == nil {
+		t.Error("a pending charge was refunded")
+	}
+	if err := g.CancelCharge(ctx, pending.ID); err != nil {
+		t.Fatalf("CancelCharge: %v", err)
+	}
+	if err := g.CancelCharge(ctx, pending.ID); err == nil {
+		t.Error("a cancelled charge was cancelled again")
+	}
+
+	paid := newCharge(t, g, gateway.MethodPix)
+	g.Confirm(paid.ID)
+	refunded, err := g.Refund(ctx, paid.ID)
+	if err != nil || refunded.Status != gateway.StatusRefunded {
+		t.Errorf("Refund = %+v, %v", refunded, err)
+	}
+	if _, err := g.GetCharge(ctx, "pay_unknown"); err == nil {
+		t.Error("an unknown charge was found")
+	}
+}
+
+func TestCardCharges(t *testing.T) {
+	ctx := context.Background()
+	g := New(0)
+	customer, _ := g.CreateCustomer(ctx, gateway.Customer{Name: "Maria"})
+	request := gateway.ChargeRequest{CustomerID: customer, Method: gateway.MethodCreditCard, Amount: "10.00", Card: &gateway.Card{Number: "4111111111111111"}}
+
+	approved, err := g.CreateCharge(ctx, request)
+	if err != nil || approved.Status != gateway.StatusCaptured || approved.CardLast4 != "1111" {
+		t.Errorf("approved card = %+v, %v", approved, err)
+	}
+	if g.Requests[0].Card != nil {
+		t.Error("the card was kept")
+	}
+
+	request.Card = &gateway.Card{Number: RefusedCardNumber}
+	if _, err := g.CreateCharge(ctx, request); !errors.Is(err, gateway.ErrCardRefused) {
+		t.Errorf("refused card: error = %v, want ErrCardRefused", err)
+	}
+
+	request.CustomerID = "cus_unknown"
+	if _, err := g.CreateCharge(ctx, request); err == nil {
+		t.Error("a charge was made for an unknown customer")
+	}
+}
+
+func TestUnavailable(t *testing.T) {
+	ctx := context.Background()
+	g := New(0)
+	charge := newCharge(t, g, gateway.MethodPix)
+	g.Unavailable = true
+
+	if _, err := g.CreateCustomer(ctx, gateway.Customer{}); !errors.Is(err, gateway.ErrUnavailable) {
+		t.Errorf("CreateCustomer: error = %v", err)
+	}
+	if _, err := g.CreateCharge(ctx, gateway.ChargeRequest{}); !errors.Is(err, gateway.ErrUnavailable) {
+		t.Errorf("CreateCharge: error = %v", err)
+	}
+	if _, err := g.GetCharge(ctx, charge.ID); !errors.Is(err, gateway.ErrUnavailable) {
+		t.Errorf("GetCharge: error = %v", err)
+	}
+}

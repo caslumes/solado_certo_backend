@@ -10,7 +10,7 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
-	"github.com/caslumes/solado_certo_backend/pkg/money"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -177,7 +177,7 @@ func lockAndCheckAdvertisements(ctx context.Context, tx pgx.Tx, plan *orders.Che
 		}
 		if stock < item.Quantity {
 			shortages = append(shortages, app.StockShortage{AdvertisementID: id, Requested: item.Quantity, Available: stock})
-		} else if money.MustParse(price) != money.MustParse(item.Price) {
+		} else if helpers.MustParseCents(price) != helpers.MustParseCents(item.Price) {
 			pricesChanged = true
 		}
 	}
@@ -224,7 +224,7 @@ func checkShippingOptions(ctx context.Context, tx pgx.Tx, plan *orders.CheckoutP
 			return err
 		}
 		found[id] = true
-		if money.MustParse(price) != money.MustParse(planned[id].ShippingOption.Price) {
+		if helpers.MustParseCents(price) != helpers.MustParseCents(planned[id].ShippingOption.Price) {
 			pricesChanged = true
 		}
 	}
@@ -291,15 +291,16 @@ func insertOrder(ctx context.Context, tx pgx.Tx, buyerID string, checkoutID stri
 		}
 	}
 
-	return recordStatusChange(ctx, tx, orderID, buyerID, nil, orders.OrderStatusAwaitingPayment, "checkout", map[string]any{
+	return RecordStatusChange(ctx, tx, orderID, buyerID, nil, orders.OrderStatusAwaitingPayment, "checkout", map[string]any{
 		"checkout_id": checkoutID,
 		"number":      number,
 	}, now)
 }
 
-// recordStatusChange writes the order's history and the audit log (RNF-010). Every status change goes through it.
+// RecordStatusChange writes the order's history and the audit log (RNF-010). Every status change goes through it,
+// including the ones made by the payments feature.
 // An empty userID records a change made by the system.
-func recordStatusChange(ctx context.Context, tx pgx.Tx, orderID string, userID string, from *orders.OrderStatus, to orders.OrderStatus, reason string, auditContext map[string]any, now time.Time) error {
+func RecordStatusChange(ctx context.Context, tx pgx.Tx, orderID string, userID string, from *orders.OrderStatus, to orders.OrderStatus, reason string, auditContext map[string]any, now time.Time) error {
 	var changedBy *string
 	if userID != "" {
 		changedBy = &userID
