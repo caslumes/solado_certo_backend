@@ -37,6 +37,21 @@ func TestGetProfileReturnsUser(t *testing.T) {
 	}
 }
 
+func TestGetProfileTellsWhetherTheUserHasATaxID(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	user := testutil.InsertUser(t, pool)
+	if _, err := pool.Exec(ctx, "UPDATE users SET tax_id = '52998224725' WHERE id = $1", user.ID); err != nil {
+		t.Fatalf("set tax_id: %v", err)
+	}
+
+	profile, err := r.GetProfileByUserID(ctx, user.ID)
+
+	if err != nil || !profile.HasTaxID {
+		t.Fatalf("GetProfileByUserID = %+v, %v, want HasTaxID", profile, err)
+	}
+}
+
 func TestGetProfileReturnsNotFoundForUnknownUser(t *testing.T) {
 	r, _ := newRepository(t)
 

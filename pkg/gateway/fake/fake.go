@@ -1,11 +1,17 @@
 // Package fake is a payment gateway that runs in memory, for tests and offline development
 // (PAYMENT_GATEWAY=fake). Cards are approved, except RefusedCardNumber; Pix and boleto stay pending
 // until Confirm is called or, when ConfirmAfter is set, until that much time has passed.
+//
+// Its customers and charges are lost when the server restarts, while the database keeps their ids:
+// any customer id is accepted, and a charge it doesn't know is reported deleted, so the payment is
+// closed and the buyer can pay again.
 package fake
 
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
+	"strconv"
 	"sync"
 	"time"
 
@@ -26,6 +32,8 @@ type Gateway struct {
 	charges   map[string]*charge
 	customers map[string]gateway.Customer
 	sequence  int
+	// run makes ids unique across restarts, as they are stored in the database.
+	run string
 	// ConfirmAfter confirms Pix and boleto charges this long after they are created (0 never does).
 	ConfirmAfter time.Duration
 	// Unavailable makes every call fail as if the gateway were down.
@@ -40,6 +48,7 @@ func New(confirmAfter time.Duration) *Gateway {
 		customers:    map[string]gateway.Customer{},
 		ConfirmAfter: confirmAfter,
 		Now:          time.Now,
+		run:          strconv.FormatUint(uint64(rand.Uint32()), 36),
 	}
 }
 
@@ -49,7 +58,7 @@ func (g *Gateway) Name() string {
 
 func (g *Gateway) nextID(prefix string) string {
 	g.sequence++
-	return fmt.Sprintf("%s_%06d", prefix, g.sequence)
+	return fmt.Sprintf("%s_%s_%06d", prefix, g.run, g.sequence)
 }
 
 func (g *Gateway) CreateCustomer(_ context.Context, customer gateway.Customer) (string, error) {
@@ -69,8 +78,8 @@ func (g *Gateway) CreateCharge(_ context.Context, request gateway.ChargeRequest)
 	if g.Unavailable {
 		return nil, gateway.ErrUnavailable
 	}
-	if _, ok := g.customers[request.CustomerID]; !ok {
-		return nil, fmt.Errorf("fake gateway: unknown customer %q", request.CustomerID)
+	if request.CustomerID == "" {
+		return nil, fmt.Errorf("fake gateway: missing customer")
 	}
 	// The card is not kept, as a real gateway client wouldn't.
 	recorded := request
@@ -102,9 +111,12 @@ func (g *Gateway) CreateCharge(_ context.Context, request gateway.ChargeRequest)
 func (g *Gateway) GetCharge(_ context.Context, id string) (*gateway.Charge, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	c, err := g.find(id)
-	if err != nil {
-		return nil, err
+	if g.Unavailable {
+		return nil, gateway.ErrUnavailable
+	}
+	c, ok := g.charges[id]
+	if !ok {
+		return &gateway.Charge{ID: id, Status: gateway.StatusCancelled, GatewayStatus: "DELETED"}, nil
 	}
 	if c.Status == gateway.StatusPending && g.ConfirmAfter > 0 && !g.Now().Before(c.createdAt.Add(g.ConfirmAfter)) {
 		c.Status = gateway.StatusCaptured
@@ -132,9 +144,12 @@ func (g *Gateway) GetPixQRCode(_ context.Context, chargeID string) (*gateway.Pix
 func (g *Gateway) CancelCharge(_ context.Context, id string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	c, err := g.find(id)
-	if err != nil {
-		return err
+	if g.Unavailable {
+		return gateway.ErrUnavailable
+	}
+	c, ok := g.charges[id]
+	if !ok {
+		return nil
 	}
 	if c.Status != gateway.StatusPending {
 		return fmt.Errorf("fake gateway: charge %q is %s and can't be cancelled", id, c.Status)

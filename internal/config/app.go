@@ -2,6 +2,8 @@ package config
 
 import (
 	"context"
+	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -18,13 +20,23 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 	ordersRepository "github.com/caslumes/solado_certo_backend/internal/features/orders/repository/postgres"
 	httporders "github.com/caslumes/solado_certo_backend/internal/features/orders/transport/http"
+	"github.com/caslumes/solado_certo_backend/internal/features/payments"
+	paymentsRepository "github.com/caslumes/solado_certo_backend/internal/features/payments/repository/postgres"
+	httppayments "github.com/caslumes/solado_certo_backend/internal/features/payments/transport/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/seller"
 	sellerRepository "github.com/caslumes/solado_certo_backend/internal/features/seller/repository/postgres"
 	httpseller "github.com/caslumes/solado_certo_backend/internal/features/seller/transport/http"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	rolemiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/role"
+	"github.com/caslumes/solado_certo_backend/pkg/gateway"
+	"github.com/caslumes/solado_certo_backend/pkg/gateway/asaas"
+	"github.com/caslumes/solado_certo_backend/pkg/gateway/fake"
 	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
+
+// fakeConfirmAfter makes the fake gateway confirm Pix and boleto by itself, so the whole flow runs
+// offline (PAYMENT_GATEWAY=fake). Its charges live in memory and are lost when the server restarts.
+const fakeConfirmAfter = 30 * time.Second
 
 type App struct {
 	Envs           *Envs
@@ -37,6 +49,9 @@ type App struct {
 	FilesHandler   *httpfiles.Handler
 	SellerHandler  *httpseller.Handler
 	OrdersHandler  *httporders.Handler
+
+	PaymentsHandler *httppayments.Handler
+	PaymentPoller   payments.CheckPaymentsUseCase
 }
 
 func InitApp(ctx context.Context) (*App, error) {
@@ -60,6 +75,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	sellerService := seller.NewService(sellerRepository.NewPostgresRepository(dbPool), fileStorage)
 	ordersService := orders.NewService(ordersRepository.NewPostgresRepository(dbPool))
 	catalogService := catalog.NewService(catalogRepository.NewPostgresRepository(dbPool), meService)
+	paymentsService := payments.NewService(paymentsRepository.NewPostgresRepository(dbPool), newPaymentGateway(envs))
 
 	return &App{
 		Envs:           envs,
@@ -72,5 +88,20 @@ func InitApp(ctx context.Context) (*App, error) {
 		FilesHandler:   httpfiles.NewHandler(fileStorage),
 		SellerHandler:  httpseller.NewHandler(sellerService),
 		OrdersHandler:  httporders.NewHandler(ordersService),
+
+		PaymentsHandler: httppayments.NewHandler(paymentsService, envs.AsaasWebhookToken),
+		PaymentPoller:   paymentsService,
 	}, nil
+}
+
+func newPaymentGateway(envs *Envs) gateway.PaymentGateway {
+	if envs.PaymentGateway == PaymentGatewayFake {
+		slog.Warn("using the fake payment gateway: no real charges are made")
+		return fake.New(fakeConfirmAfter)
+	}
+	if envs.AsaasWebhookToken == "" {
+		slog.Warn("ASAAS_WEBHOOK_TOKEN is not set: webhooks are refused and payment statuses come from polling only")
+	}
+	slog.Info("using the Asaas payment gateway", "base_url", envs.AsaasBaseURL)
+	return asaas.New(envs.AsaasBaseURL, envs.AsaasAPIKey)
 }

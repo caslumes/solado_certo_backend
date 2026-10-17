@@ -75,8 +75,31 @@ func TestCancelAndRefund(t *testing.T) {
 	if err != nil || refunded.Status != gateway.StatusRefunded {
 		t.Errorf("Refund = %+v, %v", refunded, err)
 	}
-	if _, err := g.GetCharge(ctx, "pay_unknown"); err == nil {
-		t.Error("an unknown charge was found")
+}
+
+// A charge made before the server restarted is gone from memory; it can no longer be paid.
+func TestUnknownChargesAreDeleted(t *testing.T) {
+	ctx := context.Background()
+	g := New(0)
+
+	lost, err := g.GetCharge(ctx, "pay_lost")
+	if err != nil || lost.ID != "pay_lost" || lost.Status != gateway.StatusCancelled {
+		t.Errorf("GetCharge = %+v, %v, want cancelled", lost, err)
+	}
+	if err := g.CancelCharge(ctx, "pay_lost"); err != nil {
+		t.Errorf("CancelCharge: %v", err)
+	}
+	if _, err := g.GetPixQRCode(ctx, "pay_lost"); err == nil {
+		t.Error("a QR code was made for an unknown charge")
+	}
+
+	// Customers too: one created before the restart still works, and ids aren't reused.
+	charge, err := g.CreateCharge(ctx, gateway.ChargeRequest{CustomerID: "cus_lost", Method: gateway.MethodBoleto, Amount: "10.00"})
+	if err != nil || charge.Status != gateway.StatusPending {
+		t.Errorf("CreateCharge = %+v, %v", charge, err)
+	}
+	if other := New(0); other.nextID("pay") == g.nextID("pay") {
+		t.Error("two runs made the same id")
 	}
 }
 
@@ -99,9 +122,9 @@ func TestCardCharges(t *testing.T) {
 		t.Errorf("refused card: error = %v, want ErrCardRefused", err)
 	}
 
-	request.CustomerID = "cus_unknown"
+	request.CustomerID = ""
 	if _, err := g.CreateCharge(ctx, request); err == nil {
-		t.Error("a charge was made for an unknown customer")
+		t.Error("a charge was made without a customer")
 	}
 }
 

@@ -467,13 +467,13 @@ func TestGetProfileReturnsProfile(t *testing.T) {
 			if userID != testUserID {
 				t.Fatalf("userID = %q", userID)
 			}
-			return &me.ProfileEntity{ID: testUserID, Name: "Maria", Email: "maria@example.com", Phone: "11912345678"}, nil
+			return &me.ProfileEntity{ID: testUserID, Name: "Maria", Email: "maria@example.com", Phone: "11912345678", HasTaxID: true}, nil
 		},
 	})
 
 	recorder := serve(handler, request(http.MethodGet, "/me/profile", ""))
 
-	want := `{"name":"Maria","email":"maria@example.com","phone":"11912345678","avatar_url":""}`
+	want := `{"name":"Maria","email":"maria@example.com","phone":"11912345678","avatar_url":"","has_tax_id":true}`
 	if recorder.Code != http.StatusOK || strings.TrimSpace(recorder.Body.String()) != want {
 		t.Fatalf("status = %d, body = %s, want %s", recorder.Code, recorder.Body.String(), want)
 	}

@@ -49,6 +49,10 @@ The server reloads automatically ([Air](https://github.com/air-verse/air)) when 
 | `DATABASE_URL` | Yes | PostgreSQL connection string. Inside Compose the host is `db` |
 | `SECRET_KEY` | Yes | JWT signing key, at least 32 bytes |
 | `UPLOADS_DIR` | No (default `data/uploads`) | Folder for uploaded files, with a `public` area (ad photos, avatars) and a `private` one (prescriptions, reports). Git ignores it; like `data/postgres`, it stays in the project folder |
+| `PAYMENT_GATEWAY` | No (default `asaas`) | `asaas`, or `fake` to run payments offline: cards are approved except `4000 0000 0000 0002`, and Pix and boleto confirm by themselves after 30 seconds. The fake keeps its charges in memory; after a restart, pending ones are closed and can be paid again |
+| `ASAAS_API_KEY` | With `asaas` | Asaas API key (sandbox account) |
+| `ASAAS_BASE_URL` | No (default sandbox) | Asaas API address, `https://api-sandbox.asaas.com/v3` by default |
+| `ASAAS_WEBHOOK_TOKEN` | No | Token set on the webhook in the Asaas dashboard, checked on `POST /webhooks/asaas`. Without it webhooks are refused and statuses come from polling (every 2 minutes, and whenever the app lists an order's payments) |
 
 The server exits with a clear error at startup if a required variable is missing or the database is unreachable.
 

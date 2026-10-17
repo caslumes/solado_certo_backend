@@ -40,6 +40,10 @@ type repository interface {
 	StartPayment(ctx context.Context, payment NewPayment) (p *PaymentEntity, created bool, err error)
 	AttachCharge(ctx context.Context, paymentID string, transactionID string, details PaymentDetails) error
 	ChangePaymentStatus(ctx context.Context, change StatusChange) (changed bool, err error)
+	GetPendingPayments(ctx context.Context) ([]*PaymentEntity, error)
+	GetExpiredOrderIDs(ctx context.Context, createdBefore time.Time) ([]string, error)
+	ExpireOrder(ctx context.Context, orderID string, createdBefore time.Time) (expired bool, err error)
+	GetClosedOrderPayments(ctx context.Context, startedBefore time.Time) ([]*PaymentEntity, error)
 }
 
 const maxIdempotencyKeyLength = 120
@@ -259,25 +263,32 @@ func (s *service) replacePending(ctx context.Context, orderID string) error {
 			continue
 		}
 
-		status, err := s.sync(ctx, payment, SourceReplaced)
+		status, err := s.cancelCharge(ctx, payment, SourceReplaced)
 		if err != nil {
 			return err
 		}
 		if status == StatusCaptured {
 			return fmt.Errorf("%w: the order was already paid", app.ErrInvalidStatusTransition)
 		}
-		if status != StatusPending {
-			continue
-		}
-		if err := s.provider.CancelCharge(ctx, *payment.TransactionID); err != nil {
-			slog.ErrorContext(ctx, "CancelCharge failed", "payment_id", payment.ID, "error", err)
-			return app.ErrGatewayUnavailable
-		}
-		if err := s.changeStatus(ctx, StatusChange{PaymentID: payment.ID, To: StatusCancelled, Source: SourceReplaced}); err != nil {
-			return err
-		}
 	}
 	return nil
+}
+
+// cancelCharge cancels a payment's pending charge, unless the gateway says it was paid or closed
+// meanwhile, and returns the payment's status afterwards.
+func (s *service) cancelCharge(ctx context.Context, payment *PaymentEntity, source string) (Status, error) {
+	status, err := s.sync(ctx, payment, source)
+	if err != nil || status != StatusPending {
+		return status, err
+	}
+	if err := s.provider.CancelCharge(ctx, *payment.TransactionID); err != nil {
+		slog.ErrorContext(ctx, "CancelCharge failed", "payment_id", payment.ID, "error", err)
+		return status, app.ErrGatewayUnavailable
+	}
+	if err := s.changeStatus(ctx, StatusChange{PaymentID: payment.ID, To: StatusCancelled, Source: source}); err != nil {
+		return status, err
+	}
+	return StatusCancelled, nil
 }
 
 func (s *service) customerID(ctx context.Context, buyer *BuyerEntity) (string, error) {
@@ -336,7 +347,7 @@ func (s *service) charge(ctx context.Context, payment *PaymentEntity, request ga
 			slog.WarnContext(ctx, "GetPixQRCode failed", "payment_id", payment.ID, "error", err)
 		} else {
 			details.PixPayload = qrCode.Payload
-			details.PixExpiresAt = qrCode.ExpiresAt
+			details.PixExpiresAt = pixExpiry(qrCode, request.DueDate)
 		}
 	}
 	if err := s.r.AttachCharge(ctx, payment.ID, charge.ID, details); err != nil {
@@ -347,6 +358,16 @@ func (s *service) charge(ctx context.Context, payment *PaymentEntity, request ga
 		return s.changeStatus(ctx, StatusChange{PaymentID: payment.ID, To: status, Source: SourceCharge, Details: details})
 	}
 	return nil
+}
+
+// pixExpiry is when the Pix code stops being payable: the gateway's expiry, but no later than the
+// end of the due date, when the order expires (Asaas keeps its codes valid for a year).
+func pixExpiry(qrCode *gateway.PixQRCode, dueDate time.Time) *time.Time {
+	end := EndOfDay(dueDate)
+	if qrCode.ExpiresAt != nil && qrCode.ExpiresAt.Before(end) {
+		return qrCode.ExpiresAt
+	}
+	return &end
 }
 
 func chargeDetails(charge *gateway.Charge) PaymentDetails {
@@ -434,7 +455,7 @@ func (s *service) sync(ctx context.Context, payment *PaymentEntity, source strin
 	if payment.Method == MethodPix && payment.Details.PixPayload == "" && status == StatusPending {
 		if qrCode, err := s.provider.GetPixQRCode(ctx, charge.ID); err == nil {
 			details.PixPayload = qrCode.Payload
-			details.PixExpiresAt = qrCode.ExpiresAt
+			details.PixExpiresAt = pixExpiry(qrCode, *payment.DueDate)
 			if err := s.r.AttachCharge(ctx, payment.ID, charge.ID, details); err != nil {
 				slog.ErrorContext(ctx, "AttachCharge failed", "payment_id", payment.ID, "error", err)
 				return payment.Status, err

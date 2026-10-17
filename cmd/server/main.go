@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/config"
+	"github.com/caslumes/solado_certo_backend/internal/features/payments"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -43,6 +44,12 @@ func run() error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	pollerDone := make(chan struct{})
+	go func() {
+		defer close(pollerDone)
+		payments.RunPoller(ctx, app.PaymentPoller, payments.PollInterval)
+	}()
+
 	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("server listening", "addr", server.Addr)
@@ -51,6 +58,8 @@ func run() error {
 
 	select {
 	case err := <-serverErr:
+		stop()
+		<-pollerDone
 		return err
 	case <-ctx.Done():
 	}
@@ -63,6 +72,8 @@ func run() error {
 	if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	<-pollerDone
+	app.PaymentsHandler.Wait()
 	return nil
 }
 
@@ -77,7 +88,7 @@ func newRouter(app *config.App) *gin.Engine {
 				strings.HasPrefix(origin, "http://127.0.0.1:")
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Idempotency-Key"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,

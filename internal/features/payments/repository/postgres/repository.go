@@ -105,13 +105,7 @@ func (r *postgresRepository) GetPayment(ctx context.Context, id string) (*paymen
 }
 
 func (r *postgresRepository) GetPayments(ctx context.Context, orderID string) ([]*payments.PaymentEntity, error) {
-	rows, err := r.pool.Query(ctx, "SELECT "+paymentColumns+" FROM payments WHERE order_id = $1 ORDER BY created_at DESC, id DESC", orderID)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*payments.PaymentEntity, error) {
-		return scanPayment(row)
-	})
+	return r.getPayments(ctx, "order_id = $1 ORDER BY created_at DESC, id DESC", orderID)
 }
 
 func (r *postgresRepository) getPayment(ctx context.Context, db querier, where string, args ...any) (*payments.PaymentEntity, error) {

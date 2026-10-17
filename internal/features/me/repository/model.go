@@ -14,6 +14,7 @@ type ProfileModel struct {
 	Phone     string
 	AvatarURL *string
 	Status    enum.ProfileStatus
+	HasTaxID  bool
 }
 
 func (p *ProfileModel) ToEntity() *me.ProfileEntity {
@@ -29,6 +30,7 @@ func (p *ProfileModel) ToEntity() *me.ProfileEntity {
 		Phone:     p.Phone,
 		AvatarURL: avatarURL,
 		Status:    p.Status,
+		HasTaxID:  p.HasTaxID,
 	}
 }
 

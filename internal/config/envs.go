@@ -3,12 +3,17 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/caslumes/solado_certo_backend/pkg/gateway/asaas"
 )
 
 const (
 	minSecretKeyLength = 32
 	defaultServerPort  = "3000"
 	defaultUploadsDir  = "data/uploads"
+
+	PaymentGatewayAsaas = "asaas"
+	PaymentGatewayFake  = "fake"
 )
 
 type Envs struct {
@@ -16,6 +21,11 @@ type Envs struct {
 	DatabaseURL string
 	SecretKey   string
 	UploadsDir  string
+
+	PaymentGateway    string
+	AsaasAPIKey       string
+	AsaasBaseURL      string
+	AsaasWebhookToken string
 }
 
 func LoadEnvs() (*Envs, error) {
@@ -32,11 +42,24 @@ func LoadEnvs() (*Envs, error) {
 		return nil, fmt.Errorf("SECRET_KEY must be at least %d bytes long", minSecretKeyLength)
 	}
 
+	paymentGateway := getString("PAYMENT_GATEWAY", PaymentGatewayAsaas)
+	if paymentGateway != PaymentGatewayAsaas && paymentGateway != PaymentGatewayFake {
+		return nil, fmt.Errorf("PAYMENT_GATEWAY must be %s or %s", PaymentGatewayAsaas, PaymentGatewayFake)
+	}
+	asaasAPIKey := os.Getenv("ASAAS_API_KEY")
+	if paymentGateway == PaymentGatewayAsaas && asaasAPIKey == "" {
+		return nil, fmt.Errorf("missing required environment variable ASAAS_API_KEY (or set PAYMENT_GATEWAY=%s to run without Asaas)", PaymentGatewayFake)
+	}
+
 	return &Envs{
-		ServerPort:  getString("SERVER_PORT", defaultServerPort),
-		DatabaseURL: databaseURL,
-		SecretKey:   secretKey,
-		UploadsDir:  getString("UPLOADS_DIR", defaultUploadsDir),
+		ServerPort:        getString("SERVER_PORT", defaultServerPort),
+		DatabaseURL:       databaseURL,
+		SecretKey:         secretKey,
+		UploadsDir:        getString("UPLOADS_DIR", defaultUploadsDir),
+		PaymentGateway:    paymentGateway,
+		AsaasAPIKey:       asaasAPIKey,
+		AsaasBaseURL:      getString("ASAAS_BASE_URL", asaas.SandboxURL),
+		AsaasWebhookToken: os.Getenv("ASAAS_WEBHOOK_TOKEN"),
 	}, nil
 }
 

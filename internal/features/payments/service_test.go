@@ -39,6 +39,7 @@ type fakeRepository struct {
 	// changes lists the status changes that were applied, as the audit log would.
 	changes []payments.StatusChange
 	paid    []string
+	expired []string
 	err     error
 }
 
@@ -203,6 +204,53 @@ func (f *fakeRepository) ChangePaymentStatus(_ context.Context, change payments.
 	return false, app.ErrPaymentNotFound
 }
 
+func (f *fakeRepository) GetPendingPayments(_ context.Context) ([]*payments.PaymentEntity, error) {
+	return f.filter(func(p *payments.PaymentEntity) bool {
+		return p.Status == payments.StatusPending && p.TransactionID != nil
+	})
+}
+
+func (f *fakeRepository) GetClosedOrderPayments(_ context.Context, startedBefore time.Time) ([]*payments.PaymentEntity, error) {
+	return f.filter(func(p *payments.PaymentEntity) bool {
+		return p.Status == payments.StatusPending && (p.TransactionID != nil || p.CreatedAt.Before(startedBefore)) &&
+			f.orders[p.OrderID].Status != orders.OrderStatusAwaitingPayment
+	})
+}
+
+func (f *fakeRepository) filter(match func(*payments.PaymentEntity) bool) ([]*payments.PaymentEntity, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var found []*payments.PaymentEntity
+	for _, p := range f.payments {
+		if match(p) {
+			copied := *p
+			found = append(found, &copied)
+		}
+	}
+	return found, nil
+}
+
+func (f *fakeRepository) GetExpiredOrderIDs(_ context.Context, createdBefore time.Time) ([]string, error) {
+	var ids []string
+	for id, order := range f.orders {
+		if order.Status == orders.OrderStatusAwaitingPayment && order.CreatedAt.Before(createdBefore) {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+func (f *fakeRepository) ExpireOrder(_ context.Context, orderID string, createdBefore time.Time) (bool, error) {
+	order := f.orders[orderID]
+	if order.Status != orders.OrderStatusAwaitingPayment || !order.CreatedAt.Before(createdBefore) {
+		return false, nil
+	}
+	order.Status = orders.OrderStatusCancelled
+	f.expired = append(f.expired, orderID)
+	return true, nil
+}
+
 type setup struct {
 	r       *fakeRepository
 	gateway *fake.Gateway
@@ -210,6 +258,7 @@ type setup struct {
 		payments.CreatePaymentUseCase
 		payments.ListPaymentsUseCase
 		payments.ApplyPaymentStatusUseCase
+		payments.CheckPaymentsUseCase
 		SetNow(func() time.Time)
 	}
 	ctx context.Context
@@ -448,7 +497,7 @@ func TestCreatePaymentOrderNotPayable(t *testing.T) {
 		t.Errorf("paid order: error = %v, want ErrInvalidStatusTransition", err)
 	}
 
-	s.s.SetNow(func() time.Time { return orderCreated.Add(payments.PaymentWindow) })
+	s.s.SetNow(func() time.Time { return afterWindow })
 	if _, _, err := s.s.CreatePayment(s.ctx, buyerID, orderID, "k", pix); !errors.Is(err, app.ErrOrderExpired) {
 		t.Errorf("expired order: error = %v, want ErrOrderExpired", err)
 	}

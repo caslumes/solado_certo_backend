@@ -30,9 +30,9 @@ func (r *postgresRepository) GetProfileByUserID(ctx context.Context, userID stri
 	var m repository.ProfileModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT name, email, phone, avatar_url, status FROM users WHERE id = $1",
+		"SELECT name, email, phone, avatar_url, status, tax_id IS NOT NULL FROM users WHERE id = $1",
 		userID,
-	).Scan(&m.Name, &m.Email, &m.Phone, &m.AvatarURL, &m.Status)
+	).Scan(&m.Name, &m.Email, &m.Phone, &m.AvatarURL, &m.Status, &m.HasTaxID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, app.ErrUserNotFound

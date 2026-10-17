@@ -13,6 +13,7 @@ type ProfileEntity struct {
 	Phone     string
 	AvatarURL string
 	Status    enum.ProfileStatus
+	HasTaxID  bool
 }
 
 func (p *ProfileEntity) ToOutput() *ProfileOutput {
@@ -21,6 +22,7 @@ func (p *ProfileEntity) ToOutput() *ProfileOutput {
 		Email:     p.Email,
 		Phone:     p.Phone,
 		AvatarURL: p.AvatarURL,
+		HasTaxID:  p.HasTaxID,
 	}
 }
 

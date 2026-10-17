@@ -54,13 +54,17 @@ const (
 	SourceWebhook  = "webhook"
 	SourcePoll     = "poll"
 	SourceReplaced = "replaced"
+	// SourceOrderClosed cancels the charge of an order that expired or was cancelled by the buyer.
+	SourceOrderClosed = "order_closed"
 )
 
 const (
 	ReasonPaymentCaptured = "payment_captured"
+	ReasonPaymentExpired  = "payment_expired"
 
-	// PaymentWindow is how long an order waits for payment; Pix and boleto are due at its end.
-	PaymentWindow = 3 * 24 * time.Hour
+	// PaymentDays is how many days after checkout an order waits for payment. Pix and boleto are
+	// due on the last one, and the order expires when that day ends, in Brazil's calendar.
+	PaymentDays = 3
 
 	// PixDiscountPercent applies to the subtotal; shipping is not discounted.
 	PixDiscountPercent = 5

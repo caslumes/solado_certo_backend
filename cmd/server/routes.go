@@ -96,7 +96,12 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		ordersGroup.GET("", a.OrdersHandler.ListOrders)
 		ordersGroup.GET("/:orderID", a.OrdersHandler.GetOrder)
 		ordersGroup.POST("/:orderID/cancel", a.OrdersHandler.CancelOrder)
+		ordersGroup.GET("/:orderID/payments", a.PaymentsHandler.ListPayments)
+		ordersGroup.POST("/:orderID/payments", a.PaymentsHandler.CreatePayment)
 	}
+
+	// Called by Asaas, authenticated by the asaas-access-token header.
+	r.POST("/webhooks/asaas", a.PaymentsHandler.AsaasWebhook)
 
 	r.GET("/files/public/*path", a.FilesHandler.ServePublic)
 }

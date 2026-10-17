@@ -3,6 +3,8 @@ package payments
 import (
 	"testing"
 	"time"
+
+	"github.com/caslumes/solado_certo_backend/pkg/gateway"
 )
 
 func TestStatusCanBecome(t *testing.T) {
@@ -65,10 +67,37 @@ func TestOrderPaymentWindow(t *testing.T) {
 	if due := order.DueDate(); !due.Equal(time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("DueDate = %v, want 2026-10-17", due)
 	}
-	if order.Expired(created.Add(PaymentWindow - time.Second)) {
-		t.Error("expired before the window ended")
+	// The order expires when Oct 17 ends in Brazil, 03:00 UTC on Oct 18.
+	end := time.Date(2026, 10, 18, 3, 0, 0, 0, time.UTC)
+	if order.Expired(end.Add(-time.Second)) {
+		t.Error("expired before the due date ended")
 	}
-	if !order.Expired(created.Add(PaymentWindow)) {
-		t.Error("not expired at the end of the window")
+	if !order.Expired(end) {
+		t.Error("not expired when the due date ended")
+	}
+	// The poller's cutoff agrees with Expired at both moments.
+	if !created.Before(expiredBefore(end)) || created.Before(expiredBefore(end.Add(-time.Second))) {
+		t.Errorf("expiredBefore = %v, %v", expiredBefore(end), expiredBefore(end.Add(-time.Second)))
+	}
+}
+
+func TestPixExpiry(t *testing.T) {
+	due := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 10, 19, 3, 0, 0, 0, time.UTC)
+	nextYear := time.Date(2027, 10, 19, 2, 59, 59, 0, time.UTC)
+	sooner := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+
+	tests := map[string]struct {
+		expires *time.Time
+		want    time.Time
+	}{
+		"a year later is capped": {&nextYear, end},
+		"sooner is kept":         {&sooner, sooner},
+		"missing is the end":     {nil, end},
+	}
+	for name, tt := range tests {
+		if got := pixExpiry(&gateway.PixQRCode{ExpiresAt: tt.expires}, due); !got.Equal(tt.want) {
+			t.Errorf("%s: pixExpiry = %v, want %v", name, got, tt.want)
+		}
 	}
 }

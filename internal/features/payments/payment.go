@@ -22,15 +22,26 @@ type OrderEntity struct {
 	CreatedAt     time.Time
 }
 
-// Expired tells whether the order's payment window (PaymentWindow) is over.
+// Expired tells whether the order's due date is over.
 func (o *OrderEntity) Expired(now time.Time) bool {
-	return !now.Before(o.CreatedAt.Add(PaymentWindow))
+	return !now.Before(EndOfDay(o.DueDate()))
 }
 
-// DueDate is the last day to pay a Pix or a boleto, in Brazil's calendar.
+// DueDate is the last day to pay, PaymentDays after checkout in Brazil's calendar.
 func (o *OrderEntity) DueDate() time.Time {
-	due := o.CreatedAt.Add(PaymentWindow).In(brazilTime)
-	return time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, time.UTC)
+	created := o.CreatedAt.In(brazilTime)
+	return time.Date(created.Year(), created.Month(), created.Day()+PaymentDays, 0, 0, 0, 0, time.UTC)
+}
+
+// EndOfDay is the moment a due date ends in Brazil.
+func EndOfDay(date time.Time) time.Time {
+	return time.Date(date.Year(), date.Month(), date.Day()+1, 0, 0, 0, 0, brazilTime)
+}
+
+// expiredBefore returns the checkout time before which an order is expired at now.
+func expiredBefore(now time.Time) time.Time {
+	today := now.In(brazilTime)
+	return time.Date(today.Year(), today.Month(), today.Day()-PaymentDays, 0, 0, 0, 0, brazilTime)
 }
 
 // Totals gives the discount and total the order has when paid with method: Pix takes
@@ -116,4 +127,48 @@ type CreatePaymentInput struct {
 	TaxID    string     `json:"tax_id"`
 	Card     *CardInput `json:"card"`
 	RemoteIP string     `json:"-"`
+}
+
+func (p *PaymentEntity) ToOutput() PaymentOutput {
+	output := PaymentOutput{
+		ID:             p.ID,
+		OrderID:        p.OrderID,
+		Method:         string(p.Method),
+		Status:         string(p.Status),
+		Amount:         p.Amount,
+		FailureReason:  p.FailureReason,
+		FailureMessage: optional(p.Details.GatewayError),
+		BoletoURL:      optional(p.Details.BoletoURL),
+		InvoiceURL:     optional(p.Details.InvoiceURL),
+		CapturedAt:     p.CapturedAt,
+		RefundedAt:     p.RefundedAt,
+		CreatedAt:      p.CreatedAt,
+		UpdatedAt:      p.UpdatedAt,
+	}
+	if p.DueDate != nil {
+		due := p.DueDate.Format(time.DateOnly)
+		output.DueDate = &due
+	}
+	if p.Details.PixPayload != "" {
+		output.Pix = &PixOutput{Payload: p.Details.PixPayload, ExpiresAt: p.Details.PixExpiresAt}
+	}
+	if p.Details.CardLast4 != "" {
+		output.Card = &CardOutput{Last4: p.Details.CardLast4, Brand: p.Details.CardBrand}
+	}
+	return output
+}
+
+func PaymentsToOutput(payments []*PaymentEntity) []PaymentOutput {
+	outputs := make([]PaymentOutput, len(payments))
+	for i, p := range payments {
+		outputs[i] = p.ToOutput()
+	}
+	return outputs
+}
+
+func optional(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

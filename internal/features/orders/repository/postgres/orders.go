@@ -71,12 +71,7 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 		return err
 	}
 	if change.ReleaseStock {
-		_, err := tx.Exec(
-			ctx,
-			"UPDATE advertisements a SET stock = a.stock + oi.quantity FROM order_items oi WHERE oi.order_id = $1 AND a.id = oi.advertisement_id",
-			change.OrderID,
-		)
-		if err != nil {
+		if err := ReleaseStock(ctx, tx, change.OrderID); err != nil {
 			return err
 		}
 	}
@@ -89,4 +84,14 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// ReleaseStock puts the order's units back on sale.
+func ReleaseStock(ctx context.Context, tx pgx.Tx, orderID string) error {
+	_, err := tx.Exec(
+		ctx,
+		"UPDATE advertisements a SET stock = a.stock + oi.quantity FROM order_items oi WHERE oi.order_id = $1 AND a.id = oi.advertisement_id",
+		orderID,
+	)
+	return err
 }
