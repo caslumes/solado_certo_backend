@@ -56,6 +56,8 @@ const (
 	SourceReplaced = "replaced"
 	// SourceOrderClosed cancels the charge of an order that expired or was cancelled by the buyer.
 	SourceOrderClosed = "order_closed"
+	// SourceRefund is a refund asked by the system: the order was cancelled, or another attempt paid it.
+	SourceRefund = "refund"
 )
 
 const (
@@ -68,6 +70,11 @@ const (
 
 	// PixDiscountPercent applies to the subtotal; shipping is not discounted.
 	PixDiscountPercent = 5
+
+	// MaxRefundAttempts is how many refusals of a refund the poller takes before leaving it to support.
+	// Asaas refuses to refund a card right after its capture ("try again in a few moments"), and a Pix
+	// while the account has no balance, so a refusal is asked again on the next rounds (RNF-013).
+	MaxRefundAttempts = 10
 )
 
 // brazilTime gives due dates in the buyer's calendar (Brazil has no daylight saving time since 2019).

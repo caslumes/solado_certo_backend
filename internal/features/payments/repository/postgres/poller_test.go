@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/payments"
 	"github.com/caslumes/solado_certo_backend/internal/testutil"
 )
@@ -122,5 +124,103 @@ func TestExpireOrder(t *testing.T) {
 	}
 	if n := f.count(t, "SELECT stock FROM advertisements WHERE id = $1", ad.ID); n != 3 {
 		t.Errorf("stock = %d, want it released once", n)
+	}
+}
+
+// capturedPayment adds an attempt captured age ago, with its charge.
+func (f fixture) capturedPayment(t *testing.T, key string, age time.Duration) string {
+	t.Helper()
+	id := f.insertPending(t, key, "pay_"+key, age)
+	f.exec(t, "UPDATE payments SET status = 'captured', captured_at = $2 WHERE id = $1", id, time.Now().UTC().Add(-age))
+	return id
+}
+
+func TestGetPaymentsToRefund(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	first := f.capturedPayment(t, "key-1", time.Hour)
+	second := f.capturedPayment(t, "key-2", time.Minute)
+	f.exec(t, "UPDATE orders SET status = 'paid' WHERE id = $1", f.orderID)
+
+	found, err := f.r.GetPaymentsToRefund(ctx)
+	if err != nil || len(found) != 1 || found[0].ID != second {
+		t.Fatalf("paid order: GetPaymentsToRefund = %v, %v, want the second capture only", ids(found), err)
+	}
+
+	f.exec(t, "UPDATE orders SET status = 'cancelled' WHERE id = $1", f.orderID)
+	found, err = f.r.GetPaymentsToRefund(ctx)
+	if err != nil || len(found) != 2 || found[0].ID != first || found[1].ID != second {
+		t.Fatalf("cancelled order: GetPaymentsToRefund = %v, %v, want both, oldest first", ids(found), err)
+	}
+
+	if err := f.r.RecordRefund(ctx, payments.RefundRecord{PaymentID: first, Error: "saldo insuficiente", Attempts: 1}); err != nil {
+		t.Fatalf("RecordRefund: %v", err)
+	}
+	f.exec(t, "UPDATE payments SET status = 'refunded' WHERE id = $1", second)
+	found, err = f.r.GetPaymentsToRefund(ctx)
+	if err != nil || len(found) != 1 || found[0].ID != first {
+		t.Errorf("refused once: GetPaymentsToRefund = %v, %v, want it asked again", ids(found), err)
+	}
+
+	if err := f.r.RecordRefund(ctx, payments.RefundRecord{PaymentID: first, Error: "saldo insuficiente", Attempts: payments.MaxRefundAttempts}); err != nil {
+		t.Fatalf("RecordRefund: %v", err)
+	}
+	found, err = f.r.GetPaymentsToRefund(ctx)
+	if err != nil || len(found) != 0 {
+		t.Errorf("refused until the limit: GetPaymentsToRefund = %v, %v, want none", ids(found), err)
+	}
+}
+
+// A refund on its way is checked again even when the order isn't cancelled (asked in the dashboard).
+func TestGetPaymentsToRefundRequested(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	payment := f.capturedPayment(t, "key-1", time.Hour)
+	f.exec(t, "UPDATE orders SET status = 'paid' WHERE id = $1", f.orderID)
+	requestedAt := time.Now().UTC()
+
+	if err := f.r.RecordRefund(ctx, payments.RefundRecord{PaymentID: payment, Details: payments.PaymentDetails{RefundRequestedAt: &requestedAt, RefundURL: "https://r"}}); err != nil {
+		t.Fatalf("RecordRefund: %v", err)
+	}
+
+	found, err := f.r.GetPaymentsToRefund(ctx)
+	if err != nil || len(found) != 1 || found[0].Details.RefundRequestedAt == nil || found[0].Details.RefundURL != "https://r" {
+		t.Errorf("GetPaymentsToRefund = %+v, %v, want the payment with its refund", found, err)
+	}
+}
+
+func TestRecordRefund(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	payment := f.capturedPayment(t, "key-1", time.Hour)
+	f.exec(t, "UPDATE payments SET gateway_payload = '{\"boleto_url\": \"https://b\"}' WHERE id = $1", payment)
+	requestedAt := time.Now().UTC()
+
+	err := f.r.RecordRefund(ctx, payments.RefundRecord{PaymentID: payment, Details: payments.PaymentDetails{RefundRequestedAt: &requestedAt, RefundURL: "https://r"}})
+	if err != nil {
+		t.Fatalf("RecordRefund: %v", err)
+	}
+	got, _ := f.r.GetPayment(ctx, payment)
+	if got.Status != payments.StatusCaptured || got.Details.RefundURL != "https://r" || got.Details.BoletoURL != "https://b" {
+		t.Errorf("payment = %s, %+v, want captured with the boleto and refund links", got.Status, got.Details)
+	}
+	if n := f.count(t, "SELECT count(*) FROM audit_logs WHERE entity_id = $1 AND action = 'payment.refund_requested' AND context->>'order_id' = $2", payment, f.orderID); n != 1 {
+		t.Errorf("request audit rows = %d, want 1", n)
+	}
+
+	if err := f.r.RecordRefund(ctx, payments.RefundRecord{PaymentID: payment, Error: "saldo insuficiente", Attempts: payments.MaxRefundAttempts}); err != nil {
+		t.Fatalf("RecordRefund refusal: %v", err)
+	}
+	got, _ = f.r.GetPayment(ctx, payment)
+	if got.Details.RefundError != "saldo insuficiente" || got.Details.RefundAttempts != payments.MaxRefundAttempts || got.Details.RefundURL != "https://r" {
+		t.Errorf("details = %+v, want the refusal kept with the earlier fields", got.Details)
+	}
+	if n := f.count(t, "SELECT count(*) FROM audit_logs WHERE entity_id = $1 AND action = 'payment.refund_refused' AND context->>'error' = 'saldo insuficiente' AND (context->>'given_up')::boolean", payment); n != 1 {
+		t.Errorf("refusal audit rows = %d, want 1", n)
+	}
+
+	f.exec(t, "UPDATE payments SET status = 'refunded' WHERE id = $1", payment)
+	if err := f.r.RecordRefund(ctx, payments.RefundRecord{PaymentID: payment}); !errors.Is(err, app.ErrPaymentNotFound) {
+		t.Errorf("refunded payment: err = %v, want not found", err)
 	}
 }

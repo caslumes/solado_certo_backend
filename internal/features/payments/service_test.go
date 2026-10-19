@@ -39,6 +39,7 @@ type fakeRepository struct {
 	// changes lists the status changes that were applied, as the audit log would.
 	changes []payments.StatusChange
 	paid    []string
+	refunds []payments.RefundRecord
 	expired []string
 	err     error
 }
@@ -193,6 +194,9 @@ func (f *fakeRepository) ChangePaymentStatus(_ context.Context, change payments.
 		}
 		if change.Details.GatewayError != "" {
 			p.Details.GatewayError = change.Details.GatewayError
+		}
+		if change.Details.RefundRequestedAt != nil {
+			p.Details.RefundRequestedAt = change.Details.RefundRequestedAt
 		}
 		f.changes = append(f.changes, change)
 		if order := f.orders[p.OrderID]; change.To == payments.StatusCaptured && order.Status == orders.OrderStatusAwaitingPayment {

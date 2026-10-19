@@ -76,6 +76,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	ordersService := orders.NewService(ordersRepository.NewPostgresRepository(dbPool))
 	catalogService := catalog.NewService(catalogRepository.NewPostgresRepository(dbPool), meService)
 	paymentsService := payments.NewService(paymentsRepository.NewPostgresRepository(dbPool), newPaymentGateway(envs))
+	ordersService.SetRefunder(paymentsService)
 
 	return &App{
 		Envs:           envs,

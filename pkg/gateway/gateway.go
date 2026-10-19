@@ -15,7 +15,9 @@ type PaymentGateway interface {
 	GetCharge(ctx context.Context, id string) (*Charge, error)
 	GetPixQRCode(ctx context.Context, chargeID string) (*PixQRCode, error)
 	CancelCharge(ctx context.Context, id string) error
-	Refund(ctx context.Context, id string) (*Charge, error)
+	// Refund returns the whole amount of a captured charge. A boleto can't be refunded by itself: the
+	// payer gives their bank account at the charge's RefundURL.
+	Refund(ctx context.Context, id string, method Method) (*Charge, error)
 }
 
 type Method string
@@ -102,6 +104,10 @@ type Charge struct {
 	BoletoURL     string
 	CardLast4     string
 	CardBrand     string
+	// RefundRequested tells that a refund was asked for and is not final yet; Status stays captured.
+	RefundRequested bool
+	// RefundURL is where the payer of a boleto gives the bank account to refund.
+	RefundURL string
 }
 
 type PixQRCode struct {

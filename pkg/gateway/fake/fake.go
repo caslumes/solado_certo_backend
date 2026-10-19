@@ -1,6 +1,7 @@
 // Package fake is a payment gateway that runs in memory, for tests and offline development
 // (PAYMENT_GATEWAY=fake). Cards are approved, except RefusedCardNumber; Pix and boleto stay pending
-// until Confirm is called or, when ConfirmAfter is set, until that much time has passed.
+// until Confirm is called or, when ConfirmAfter is set, until that much time has passed. Boleto
+// refunds wait for CompleteRefund, or ConfirmAfter, in the same way.
 //
 // Its customers and charges are lost when the server restarts, while the database keeps their ids:
 // any customer id is accepted, and a charge it doesn't know is reported deleted, so the payment is
@@ -25,6 +26,14 @@ type charge struct {
 	method    gateway.Method
 	dueDate   time.Time
 	createdAt time.Time
+	// refundRequestedAt is when a boleto's refund was asked for.
+	refundRequestedAt time.Time
+}
+
+func (c *charge) refund() {
+	c.Status = gateway.StatusRefunded
+	c.GatewayStatus = "REFUNDED"
+	c.RefundRequested = false
 }
 
 type Gateway struct {
@@ -38,8 +47,10 @@ type Gateway struct {
 	ConfirmAfter time.Duration
 	// Unavailable makes every call fail as if the gateway were down.
 	Unavailable bool
-	Now         func() time.Time
-	Requests    []gateway.ChargeRequest
+	// RefuseRefunds makes Refund answer as a gateway that won't refund (no balance, for example).
+	RefuseRefunds bool
+	Now           func() time.Time
+	Requests      []gateway.ChargeRequest
 }
 
 func New(confirmAfter time.Duration) *Gateway {
@@ -122,6 +133,9 @@ func (g *Gateway) GetCharge(_ context.Context, id string) (*gateway.Charge, erro
 		c.Status = gateway.StatusCaptured
 		c.GatewayStatus = "RECEIVED"
 	}
+	if c.RefundRequested && g.ConfirmAfter > 0 && !g.Now().Before(c.refundRequestedAt.Add(g.ConfirmAfter)) {
+		c.refund()
+	}
 	copied := c.Charge
 	return &copied, nil
 }
@@ -159,20 +173,44 @@ func (g *Gateway) CancelCharge(_ context.Context, id string) error {
 	return nil
 }
 
-func (g *Gateway) Refund(_ context.Context, id string) (*gateway.Charge, error) {
+// Refund returns a Pix or card charge at once. A boleto's refund waits for the payer's bank account,
+// given at its RefundURL: CompleteRefund stands for that, or ConfirmAfter when set. A charge lost in
+// a restart is reported refunded, so offline development can go on.
+func (g *Gateway) Refund(_ context.Context, id string, method gateway.Method) (*gateway.Charge, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	c, err := g.find(id)
-	if err != nil {
-		return nil, err
+	if g.Unavailable {
+		return nil, gateway.ErrUnavailable
 	}
-	if c.Status != gateway.StatusCaptured {
-		return nil, fmt.Errorf("fake gateway: charge %q is %s and can't be refunded", id, c.Status)
+	c, ok := g.charges[id]
+	if !ok {
+		return &gateway.Charge{ID: id, Status: gateway.StatusRefunded, GatewayStatus: "REFUNDED"}, nil
 	}
-	c.Status = gateway.StatusRefunded
-	c.GatewayStatus = "REFUNDED"
+	if g.RefuseRefunds {
+		return nil, fmt.Errorf("fake gateway: refund of %q refused", id)
+	}
+	if c.Status != gateway.StatusCaptured || c.RefundRequested {
+		return nil, fmt.Errorf("fake gateway: charge %q is %s and can't be refunded", id, c.GatewayStatus)
+	}
+	if method == gateway.MethodBoleto {
+		c.RefundRequested = true
+		c.GatewayStatus = "REFUND_REQUESTED"
+		c.RefundURL = "https://fake.gateway/r/" + c.ID
+		c.refundRequestedAt = g.Now()
+	} else {
+		c.refund()
+	}
 	copied := c.Charge
 	return &copied, nil
+}
+
+// CompleteRefund refunds a boleto whose refund was requested, as the payer giving a bank account.
+func (g *Gateway) CompleteRefund(id string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if c, ok := g.charges[id]; ok && c.RefundRequested {
+		c.refund()
+	}
 }
 
 // Confirm pays a pending charge, as the buyer paying the Pix or the boleto.

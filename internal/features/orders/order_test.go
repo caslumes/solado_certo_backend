@@ -64,6 +64,14 @@ func TestOrderDetailOutput(t *testing.T) {
 	if !detail.ToOutput().CanCancel {
 		t.Error("an order awaiting payment can be cancelled")
 	}
+	detail.Order.Status = OrderStatusPaid
+	if !detail.ToOutput().CanCancel {
+		t.Error("a paid order can be cancelled")
+	}
+	detail.Order.Status = OrderStatusShipped
+	if detail.ToOutput().CanCancel {
+		t.Error("a shipped order can't be cancelled")
+	}
 }
 
 func ordersFixture(count int) (*fakeRepository, *service) {
@@ -178,16 +186,61 @@ func TestCancelOrder(t *testing.T) {
 
 func TestCancelOrderRejects(t *testing.T) {
 	r, s := ordersFixture(1)
-	r.placed[0].Status = OrderStatusPaid
+	r.placed[0].Status = OrderStatusShipped
 
 	if _, err := s.CancelOrder(context.Background(), testBuyerID, testOrderID); !errors.Is(err, app.ErrInvalidStatusTransition) {
-		t.Errorf("paid order: error = %v, want ErrInvalidStatusTransition", err)
+		t.Errorf("shipped order: error = %v, want ErrInvalidStatusTransition", err)
 	}
 	if _, err := s.CancelOrder(context.Background(), "buyer-2", testOrderID); !errors.Is(err, app.ErrOrderNotFound) {
 		t.Errorf("another buyer: error = %v, want ErrOrderNotFound", err)
 	}
 	if len(r.changes) != 0 {
 		t.Errorf("changes = %+v, want none", r.changes)
+	}
+}
+
+type fakeRefunder struct {
+	orderIDs []string
+	err      error
+}
+
+func (f *fakeRefunder) RefundOrder(_ context.Context, orderID string) error {
+	f.orderIDs = append(f.orderIDs, orderID)
+	return f.err
+}
+
+// A paid order can be cancelled; it is refunded after the cancellation is saved, and a refund that
+// fails doesn't undo it (the payments poller tries again).
+func TestCancelPaidOrderRefundsIt(t *testing.T) {
+	for _, refundErr := range []error{nil, app.ErrGatewayUnavailable} {
+		r, s := ordersFixture(1)
+		r.placed[0].Status = OrderStatusPaid
+		refunder := &fakeRefunder{err: refundErr}
+		s.SetRefunder(refunder)
+
+		detail, err := s.CancelOrder(context.Background(), testBuyerID, testOrderID)
+		if err != nil {
+			t.Fatalf("CancelOrder (refund error %v): %v", refundErr, err)
+		}
+		if detail.Order.Status != OrderStatusCancelled || len(r.changes) != 1 || r.changes[0].From != OrderStatusPaid || !r.changes[0].ReleaseStock {
+			t.Errorf("detail = %+v, changes = %+v", detail.Order, r.changes)
+		}
+		if len(refunder.orderIDs) != 1 || refunder.orderIDs[0] != testOrderID {
+			t.Errorf("refunded = %v, want the order", refunder.orderIDs)
+		}
+	}
+}
+
+func TestCancelUnpaidOrderDoesNotRefund(t *testing.T) {
+	_, s := ordersFixture(1)
+	refunder := &fakeRefunder{}
+	s.SetRefunder(refunder)
+
+	if _, err := s.CancelOrder(context.Background(), testBuyerID, testOrderID); err != nil {
+		t.Fatalf("CancelOrder: %v", err)
+	}
+	if len(refunder.orderIDs) != 0 {
+		t.Errorf("refunded = %v, want none", refunder.orderIDs)
 	}
 }
 

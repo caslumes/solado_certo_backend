@@ -27,6 +27,10 @@ type ApplyPaymentStatusUseCase interface {
 	ApplyPaymentStatus(ctx context.Context, transactionID string, source string) error
 }
 
+type RefundOrderUseCase interface {
+	RefundOrder(ctx context.Context, orderID string) error
+}
+
 type repository interface {
 	GetOrder(ctx context.Context, id string) (*OrderEntity, error)
 	GetBuyer(ctx context.Context, id string) (*BuyerEntity, error)
@@ -44,6 +48,8 @@ type repository interface {
 	GetExpiredOrderIDs(ctx context.Context, createdBefore time.Time) ([]string, error)
 	ExpireOrder(ctx context.Context, orderID string, createdBefore time.Time) (expired bool, err error)
 	GetClosedOrderPayments(ctx context.Context, startedBefore time.Time) ([]*PaymentEntity, error)
+	GetPaymentsToRefund(ctx context.Context) ([]*PaymentEntity, error)
+	RecordRefund(ctx context.Context, record RefundRecord) error
 }
 
 const maxIdempotencyKeyLength = 120

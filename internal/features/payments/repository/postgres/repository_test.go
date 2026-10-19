@@ -317,7 +317,7 @@ func TestChangePaymentStatusCapture(t *testing.T) {
 		t.Errorf("payment audit rows after the repeat = %d, want 1", n)
 	}
 
-	// A refund keeps the order as it is (refunds are Slice 6's stretch task).
+	// A refund keeps the order as it is: the order was cancelled before it.
 	if changed, err := f.r.ChangePaymentStatus(ctx, payments.StatusChange{PaymentID: payment.ID, To: payments.StatusRefunded, Source: payments.SourceWebhook}); err != nil || !changed {
 		t.Errorf("refund = %v, %v", changed, err)
 	}

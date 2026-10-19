@@ -326,3 +326,47 @@ func auditBy(ctx context.Context, tx pgx.Tx, userID string, entity string, entit
 	)
 	return err
 }
+
+// RecordRefund stores a refund that is not final, with its audit row: requested (payment.refund_requested)
+// or refused by the gateway (payment.refund_refused, with the attempt and whether it was the last one).
+// The payment stays captured.
+func (r *postgresRepository) RecordRefund(ctx context.Context, record payments.RefundRecord) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	details := record.Details
+	action := "payment.refund_requested"
+	if record.Error != "" {
+		details.RefundError = record.Error
+		details.RefundAttempts = record.Attempts
+		action = "payment.refund_refused"
+	}
+	detailsJSON, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	var orderID string
+	err = tx.QueryRow(
+		ctx,
+		"UPDATE payments SET gateway_payload = COALESCE(gateway_payload, '{}') || $2, updated_at = $3 "+
+			"WHERE id = $1 AND status = 'captured' RETURNING order_id",
+		record.PaymentID, detailsJSON, now,
+	).Scan(&orderID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return app.ErrPaymentNotFound
+		}
+		return err
+	}
+	if err := audit(ctx, tx, "payment", record.PaymentID, action, map[string]any{
+		"order_id": orderID, "refund_url": details.RefundURL, "error": record.Error,
+		"attempt": record.Attempts, "given_up": record.Error != "" && record.Attempts >= payments.MaxRefundAttempts,
+	}, now); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

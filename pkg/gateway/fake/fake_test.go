@@ -59,7 +59,7 @@ func TestCancelAndRefund(t *testing.T) {
 	g := New(0)
 	pending := newCharge(t, g, gateway.MethodBoleto)
 
-	if _, err := g.Refund(ctx, pending.ID); err == nil {
+	if _, err := g.Refund(ctx, pending.ID, gateway.MethodBoleto); err == nil {
 		t.Error("a pending charge was refunded")
 	}
 	if err := g.CancelCharge(ctx, pending.ID); err != nil {
@@ -71,9 +71,53 @@ func TestCancelAndRefund(t *testing.T) {
 
 	paid := newCharge(t, g, gateway.MethodPix)
 	g.Confirm(paid.ID)
-	refunded, err := g.Refund(ctx, paid.ID)
+	refunded, err := g.Refund(ctx, paid.ID, gateway.MethodPix)
 	if err != nil || refunded.Status != gateway.StatusRefunded {
 		t.Errorf("Refund = %+v, %v", refunded, err)
+	}
+}
+
+func TestRefundBoleto(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	g := New(0)
+	g.Now = func() time.Time { return now }
+	boleto := newCharge(t, g, gateway.MethodBoleto)
+	g.Confirm(boleto.ID)
+
+	requested, err := g.Refund(ctx, boleto.ID, gateway.MethodBoleto)
+	if err != nil || requested.Status != gateway.StatusCaptured || !requested.RefundRequested || requested.RefundURL == "" {
+		t.Fatalf("Refund = %+v, %v, want captured with a refund URL", requested, err)
+	}
+	if _, err := g.Refund(ctx, boleto.ID, gateway.MethodBoleto); err == nil {
+		t.Error("a refund was requested twice")
+	}
+	g.CompleteRefund(boleto.ID)
+	if got, _ := g.GetCharge(ctx, boleto.ID); got.Status != gateway.StatusRefunded || got.RefundRequested {
+		t.Errorf("after CompleteRefund = %+v, want refunded", got)
+	}
+
+	g.ConfirmAfter = time.Minute
+	other := newCharge(t, g, gateway.MethodBoleto)
+	g.Confirm(other.ID)
+	if _, err := g.Refund(ctx, other.ID, gateway.MethodBoleto); err != nil {
+		t.Fatalf("Refund: %v", err)
+	}
+	now = now.Add(time.Minute)
+	if got, _ := g.GetCharge(ctx, other.ID); got.Status != gateway.StatusRefunded {
+		t.Errorf("after ConfirmAfter = %s, want refunded", got.Status)
+	}
+}
+
+// A charge lost in a restart is reported refunded, so the order's refund doesn't stay stuck.
+func TestRefundUnknownCharge(t *testing.T) {
+	g := New(0)
+	if got, err := g.Refund(context.Background(), "pay_lost", gateway.MethodPix); err != nil || got.Status != gateway.StatusRefunded {
+		t.Errorf("Refund = %+v, %v", got, err)
+	}
+	g.Unavailable = true
+	if _, err := g.Refund(context.Background(), "pay_lost", gateway.MethodPix); !errors.Is(err, gateway.ErrUnavailable) {
+		t.Errorf("err = %v, want unavailable", err)
 	}
 }
 

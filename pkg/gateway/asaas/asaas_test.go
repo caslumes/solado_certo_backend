@@ -415,11 +415,59 @@ func TestCancelCharge(t *testing.T) {
 func TestRefund(t *testing.T) {
 	api, client := newFakeAPI(t)
 	api.on("POST /payments/pay_1/refund", response{200, `{"id": "pay_1", "status": "REFUNDED"}`})
+	api.on("POST /payments/pay_2/refund", response{200, `{"id": "pay_2", "status": "REFUND_IN_PROGRESS"}`})
 
-	charge, err := client.Refund(context.Background(), "pay_1")
+	charge, err := client.Refund(context.Background(), "pay_1", gateway.MethodPix)
+	if err != nil || charge.Status != gateway.StatusRefunded || charge.RefundRequested {
+		t.Errorf("Refund = %+v, %v", charge, err)
+	}
+	charge, err = client.Refund(context.Background(), "pay_2", gateway.MethodCreditCard)
+	if err != nil || charge.Status != gateway.StatusCaptured || !charge.RefundRequested {
+		t.Errorf("refund in progress = %+v, %v, want captured with the refund requested", charge, err)
+	}
+}
+
+// A boleto's refund only opens a request: the payer gives a bank account at the URL Asaas returns.
+func TestRefundBoleto(t *testing.T) {
+	api, client := newFakeAPI(t)
+	api.on("POST /payments/pay_1/bankSlip/refund", response{200, `{"requestUrl": "https://sandbox.asaas.com/r/abc"}`})
+	api.on("GET /payments/pay_1", response{200, `{"id": "pay_1", "status": "RECEIVED"}`})
+
+	charge, err := client.Refund(context.Background(), "pay_1", gateway.MethodBoleto)
+
+	if err != nil || charge.Status != gateway.StatusCaptured || !charge.RefundRequested || charge.RefundURL != "https://sandbox.asaas.com/r/abc" {
+		t.Errorf("Refund = %+v, %v", charge, err)
+	}
+	if api.count("POST /payments/pay_1/refund") != 0 {
+		t.Error("a boleto was refunded through the card and Pix route")
+	}
+}
+
+// A refund whose answer was lost is found by reading the charge, and is not asked again.
+func TestRefundRetryFindsTheRefund(t *testing.T) {
+	api, client := newFakeAPI(t)
+	noWait(client)
+	api.on("POST /payments/pay_1/refund", response{502, ``})
+	api.on("GET /payments/pay_1", response{200, `{"id": "pay_1", "status": "REFUNDED"}`})
+
+	charge, err := client.Refund(context.Background(), "pay_1", gateway.MethodPix)
 
 	if err != nil || charge.Status != gateway.StatusRefunded {
 		t.Errorf("Refund = %+v, %v", charge, err)
+	}
+	if n := api.count("POST /payments/pay_1/refund"); n != 1 {
+		t.Errorf("refund asked %d times, want 1", n)
+	}
+}
+
+func TestRefundRefused(t *testing.T) {
+	api, client := newFakeAPI(t)
+	api.on("POST /payments/pay_1/refund", response{400, `{"errors": [{"code": "invalid_action", "description": "Saldo insuficiente"}]}`})
+
+	_, err := client.Refund(context.Background(), "pay_1", gateway.MethodPix)
+
+	if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.StatusCode != 400 || errors.Is(err, gateway.ErrUnavailable) {
+		t.Errorf("err = %v, want the 400 without retries", err)
 	}
 }
 

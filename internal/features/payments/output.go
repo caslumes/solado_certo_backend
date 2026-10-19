@@ -29,6 +29,10 @@ type PaymentOutput struct {
 	Card           *CardOutput `json:"card"`
 	CapturedAt     *time.Time  `json:"captured_at"`
 	RefundedAt     *time.Time  `json:"refunded_at"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
+	// RefundRequestedAt is set while a refund is on its way; the status is still captured.
+	RefundRequestedAt *time.Time `json:"refund_requested_at"`
+	// RefundURL is where the buyer gives a bank account to get a boleto refunded.
+	RefundURL *string   `json:"refund_url"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

@@ -91,3 +91,19 @@ func (r *postgresRepository) ExpireOrder(ctx context.Context, orderID string, cr
 	}
 	return true, tx.Commit(ctx)
 }
+
+// GetPaymentsToRefund returns the captured payments whose money goes back to the buyer: those of
+// cancelled orders, those captured after another attempt had paid the order, and those whose refund
+// is on its way. A refund the gateway refused MaxRefundAttempts times is left out: support handles it.
+func (r *postgresRepository) GetPaymentsToRefund(ctx context.Context) ([]*payments.PaymentEntity, error) {
+	return r.getPayments(
+		ctx,
+		"status = 'captured' AND gateway_transaction_id IS NOT NULL AND COALESCE((gateway_payload->>'refund_attempts')::int, 0) < $2 AND ("+
+			"COALESCE(gateway_payload, '{}') ? 'refund_requested_at' "+
+			"OR order_id IN (SELECT id FROM orders WHERE status = 'cancelled') "+
+			"OR EXISTS (SELECT 1 FROM payments earlier WHERE earlier.order_id = payments.order_id "+
+			"AND earlier.status IN ('captured', 'refunded') AND (earlier.captured_at, earlier.id) < (payments.captured_at, payments.id))"+
+			") ORDER BY captured_at, id LIMIT $1",
+		pollBatch, payments.MaxRefundAttempts,
+	)
+}

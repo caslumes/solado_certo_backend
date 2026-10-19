@@ -113,6 +113,25 @@ func TestSandboxCardApproved(t *testing.T) {
 	if charge.Status != gateway.StatusCaptured || charge.CardLast4 != "4444" || charge.CardBrand == "" {
 		t.Errorf("charge = %+v, want captured with the card's last digits", charge)
 	}
+
+	// Asaas refuses a refund right after the capture ("tente novamente em alguns instantes"); it took
+	// about 20 s in the sandbox on 2026-10-17.
+	var refunded *gateway.Charge
+	for start := time.Now(); ; {
+		refunded, err = client.Refund(context.Background(), charge.ID, gateway.MethodCreditCard)
+		if err == nil || time.Since(start) > 90*time.Second {
+			break
+		}
+		t.Logf("refund refused, asking again: %v", err)
+		time.Sleep(15 * time.Second)
+	}
+	if err != nil {
+		t.Fatalf("Refund: %v", err)
+	}
+	if refunded.Status != gateway.StatusRefunded && !refunded.RefundRequested {
+		t.Errorf("refund = %+v, want refunded or on its way", refunded)
+	}
+	t.Logf("refund status: %s", refunded.GatewayStatus)
 }
 
 func TestSandboxCardRefused(t *testing.T) {

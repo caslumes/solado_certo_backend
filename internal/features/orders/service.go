@@ -46,6 +46,12 @@ type CancelOrderUseCase interface {
 	CancelOrder(ctx context.Context, userID string, id string) (*OrderDetail, error)
 }
 
+// Refunder returns the money of a cancelled order's payments. The payments service implements it; it
+// is set after both services are built, as payments depend on orders.
+type Refunder interface {
+	RefundOrder(ctx context.Context, orderID string) error
+}
+
 type repository interface {
 	GetActiveCart(ctx context.Context, userID string) (*CartEntity, error)
 	GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error)
@@ -72,11 +78,18 @@ const (
 )
 
 type service struct {
-	r repository
+	r        repository
+	refunder Refunder
 }
 
 func NewService(r repository) *service {
 	return &service{r: r}
+}
+
+// SetRefunder makes cancelling a paid order refund it right away; without one, the payments poller
+// refunds it on its next round.
+func (s *service) SetRefunder(refunder Refunder) {
+	s.refunder = refunder
 }
 
 func isExpected(err error, expected ...error) bool {
@@ -324,14 +337,16 @@ func (s *service) GetOrder(ctx context.Context, userID string, id string) (*Orde
 	return s.detail(ctx, order)
 }
 
-// CancelOrder lets the buyer give up an order before paying; its units go back on sale.
+// CancelOrder lets the buyer give up an order that is awaiting payment, or paid but not yet being
+// prepared by the seller; its units go back on sale. A paid order is refunded after the cancellation
+// is saved: if the gateway can't be reached, the payments poller refunds it later (RNF-013).
 func (s *service) CancelOrder(ctx context.Context, userID string, id string) (*OrderDetail, error) {
 	order, err := s.ownedOrder(ctx, userID, id)
 	if err != nil {
 		return nil, err
 	}
-	if order.Status != OrderStatusAwaitingPayment {
-		return nil, fmt.Errorf("%w: only an order awaiting payment can be cancelled, this one is %s", app.ErrInvalidStatusTransition, order.Status)
+	if !order.Status.BuyerCanCancel() {
+		return nil, fmt.Errorf("%w: only an order awaiting payment or paid can be cancelled, this one is %s", app.ErrInvalidStatusTransition, order.Status)
 	}
 
 	err = s.changeStatus(ctx, StatusChange{
@@ -344,6 +359,11 @@ func (s *service) CancelOrder(ctx context.Context, userID string, id string) (*O
 	})
 	if err != nil {
 		return nil, err
+	}
+	if order.Status == OrderStatusPaid && s.refunder != nil {
+		if err := s.refunder.RefundOrder(ctx, order.ID); err != nil {
+			slog.WarnContext(ctx, "refund left to the poller", "order_id", order.ID, "error", err)
+		}
 	}
 	return s.GetOrder(ctx, userID, id)
 }

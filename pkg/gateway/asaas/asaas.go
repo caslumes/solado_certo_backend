@@ -209,11 +209,12 @@ type payment struct {
 
 func (p *payment) charge() *gateway.Charge {
 	charge := &gateway.Charge{
-		ID:            p.ID,
-		Status:        MapStatus(p.Status, p.Deleted),
-		GatewayStatus: p.Status,
-		InvoiceURL:    p.InvoiceURL,
-		BoletoURL:     p.BankSlipURL,
+		ID:              p.ID,
+		Status:          MapStatus(p.Status, p.Deleted),
+		GatewayStatus:   p.Status,
+		InvoiceURL:      p.InvoiceURL,
+		BoletoURL:       p.BankSlipURL,
+		RefundRequested: p.Status == "REFUND_REQUESTED" || p.Status == "REFUND_IN_PROGRESS",
 	}
 	if p.CreditCard != nil {
 		charge.CardLast4 = p.CreditCard.Number
@@ -341,13 +342,45 @@ func (c *Client) CancelCharge(ctx context.Context, id string) error {
 	return nil
 }
 
-// Refund refunds the whole charge.
-func (c *Client) Refund(ctx context.Context, id string) (*gateway.Charge, error) {
-	var refunded payment
-	if err := c.do(ctx, http.MethodPost, "/payments/"+url.PathEscape(id)+"/refund", struct{}{}, &refunded, id, nil); err != nil {
+// Refund refunds the whole charge. Before a failed attempt is repeated, the charge is read back: a
+// refund already requested is the result, so the money is never returned twice. A boleto is refunded
+// through POST /payments/{id}/bankSlip/refund, which only opens the request: Asaas answers with the
+// page where the payer gives a bank account, and the charge is refunded once they do.
+func (c *Client) Refund(ctx context.Context, id string, method gateway.Method) (*gateway.Charge, error) {
+	path := "/payments/" + url.PathEscape(id) + "/refund"
+	if method == gateway.MethodBoleto {
+		path = "/payments/" + url.PathEscape(id) + "/bankSlip/refund"
+	}
+	var answer struct {
+		payment
+		RequestURL string `json:"requestUrl"`
+	}
+	err := c.do(ctx, http.MethodPost, path, struct{}{}, &answer, id, func(ctx context.Context) (bool, error) {
+		charge, err := c.GetCharge(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		return charge.RefundRequested || charge.Status == gateway.StatusRefunded, nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return refunded.charge(), nil
+
+	if answer.ID != "" {
+		charge := answer.charge()
+		charge.RefundURL = answer.RequestURL
+		return charge, nil
+	}
+	// The boleto's answer, or a repeated attempt, has no charge in it.
+	charge, err := c.GetCharge(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	charge.RefundURL = answer.RequestURL
+	if method == gateway.MethodBoleto && charge.Status == gateway.StatusCaptured {
+		charge.RefundRequested = true
+	}
+	return charge, nil
 }
 
 // do sends a request, retrying network errors and 5xx answers up to maxAttempts with exponential

@@ -74,6 +74,15 @@ type PaymentDetails struct {
 	PixExpiresAt  *time.Time `json:"pix_expires_at,omitempty"`
 	CardLast4     string     `json:"card_last4,omitempty"`
 	CardBrand     string     `json:"card_brand,omitempty"`
+	// RefundRequestedAt is set once the money is asked back from the gateway; the payment stays captured
+	// until the gateway reports it refunded.
+	RefundRequestedAt *time.Time `json:"refund_requested_at,omitempty"`
+	// RefundURL is where the payer of a boleto gives the bank account to refund.
+	RefundURL string `json:"refund_url,omitempty"`
+	// RefundError is the gateway's last refusal of the refund, and RefundAttempts how many it refused.
+	// The poller asks again until MaxRefundAttempts; then support takes over.
+	RefundError    string `json:"refund_error,omitempty"`
+	RefundAttempts int    `json:"refund_attempts,omitempty"`
 }
 
 type PaymentEntity struct {
@@ -131,19 +140,21 @@ type CreatePaymentInput struct {
 
 func (p *PaymentEntity) ToOutput() PaymentOutput {
 	output := PaymentOutput{
-		ID:             p.ID,
-		OrderID:        p.OrderID,
-		Method:         string(p.Method),
-		Status:         string(p.Status),
-		Amount:         p.Amount,
-		FailureReason:  p.FailureReason,
-		FailureMessage: optional(p.Details.GatewayError),
-		BoletoURL:      optional(p.Details.BoletoURL),
-		InvoiceURL:     optional(p.Details.InvoiceURL),
-		CapturedAt:     p.CapturedAt,
-		RefundedAt:     p.RefundedAt,
-		CreatedAt:      p.CreatedAt,
-		UpdatedAt:      p.UpdatedAt,
+		ID:                p.ID,
+		OrderID:           p.OrderID,
+		Method:            string(p.Method),
+		Status:            string(p.Status),
+		Amount:            p.Amount,
+		FailureReason:     p.FailureReason,
+		FailureMessage:    optional(p.Details.GatewayError),
+		BoletoURL:         optional(p.Details.BoletoURL),
+		InvoiceURL:        optional(p.Details.InvoiceURL),
+		CapturedAt:        p.CapturedAt,
+		RefundedAt:        p.RefundedAt,
+		RefundRequestedAt: p.Details.RefundRequestedAt,
+		RefundURL:         optional(p.Details.RefundURL),
+		CreatedAt:         p.CreatedAt,
+		UpdatedAt:         p.UpdatedAt,
 	}
 	if p.DueDate != nil {
 		due := p.DueDate.Format(time.DateOnly)

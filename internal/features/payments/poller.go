@@ -22,8 +22,8 @@ const (
 
 // CheckPayments is one round of the poller. It applies the gateway's status to pending charges,
 // cancels the orders whose payment window is over (their units go back on sale), and cancels the
-// charges left on closed orders, so an expired or cancelled order can't be paid. Failures of a
-// single payment or order are logged and retried in the next round.
+// charges left on closed orders, so an expired or cancelled order can't be paid, and refunds what must
+// not be kept. Failures of a single payment or order are logged and retried in the next round.
 func (s *service) CheckPayments(ctx context.Context) error {
 	pending, err := s.r.GetPendingPayments(ctx)
 	if err != nil {
@@ -50,7 +50,7 @@ func (s *service) CheckPayments(ctx context.Context) error {
 		}
 		_, _ = s.cancelCharge(ctx, payment, SourceOrderClosed)
 	}
-	return expireErr
+	return errors.Join(expireErr, s.refunds(ctx))
 }
 
 func (s *service) expireOrders(ctx context.Context) error {

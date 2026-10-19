@@ -119,7 +119,7 @@ func (d *OrderDetail) ToOutput() *OrderDetailOutput {
 	return &OrderDetailOutput{
 		OrderOutput: d.Order.ToOutput(),
 		History:     history,
-		CanCancel:   d.Order.Status == OrderStatusAwaitingPayment,
+		CanCancel:   d.Order.Status.BuyerCanCancel(),
 	}
 }
 

@@ -25,7 +25,7 @@ const (
 )
 
 // orderTransitions is the order status machine. Payment (Slice 6) and shipping (Slice 7) use the
-// other transitions; a buyer can only cancel an order that is still awaiting payment.
+// other transitions; BuyerCanCancel says which of them the buyer may cancel.
 var orderTransitions = map[OrderStatus][]OrderStatus{
 	OrderStatusAwaitingPayment: {OrderStatusPaid, OrderStatusCancelled},
 	OrderStatusPaid:            {OrderStatusProcessing, OrderStatusCancelled},
@@ -36,6 +36,12 @@ var orderTransitions = map[OrderStatus][]OrderStatus{
 
 func (s OrderStatus) CanBecome(next OrderStatus) bool {
 	return slices.Contains(orderTransitions[s], next)
+}
+
+// BuyerCanCancel tells whether the buyer may still cancel: before paying, or paid while the seller
+// hasn't started preparing the order (a paid order is refunded).
+func (s OrderStatus) BuyerCanCancel() bool {
+	return s == OrderStatusAwaitingPayment || s == OrderStatusPaid
 }
 
 const ReasonBuyerCancelled = "buyer_cancelled"
