@@ -372,8 +372,10 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 
 	rows, err = r.pool.Query(
 		ctx,
-		"SELECT order_id, id, advertisement_id, quantity, unit_price::text, subtotal::text, product_snapshot "+
-			"FROM order_items WHERE order_id = ANY($1::uuid[]) ORDER BY created_at, product_snapshot->>'title', id",
+		"SELECT oi.order_id, oi.id, oi.advertisement_id, oi.quantity, oi.unit_price::text, oi.subtotal::text, oi.product_snapshot, "+
+			"rv.product_rating, rv.seller_rating, rv.comfort_rating, rv.comment, rv.adaptation_feedback, rv.created_at "+
+			"FROM order_items oi LEFT JOIN reviews rv ON rv.order_item_id = oi.id "+
+			"WHERE oi.order_id = ANY($1::uuid[]) ORDER BY oi.created_at, oi.product_snapshot->>'title', oi.id",
 		ids,
 	)
 	if err != nil {
@@ -383,8 +385,17 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 	for rows.Next() {
 		var orderID string
 		var item orders.OrderItemEntity
-		if err := rows.Scan(&orderID, &item.ID, &item.AdvertisementID, &item.Quantity, &item.UnitPrice, &item.Subtotal, &item.Snapshot); err != nil {
+		var productRating, sellerRating *int
+		var review orders.ItemReviewEntity
+		var reviewedAt *time.Time
+		err := rows.Scan(&orderID, &item.ID, &item.AdvertisementID, &item.Quantity, &item.UnitPrice, &item.Subtotal, &item.Snapshot,
+			&productRating, &sellerRating, &review.ComfortRating, &review.Comment, &review.AdaptationFeedback, &reviewedAt)
+		if err != nil {
 			return nil, err
+		}
+		if productRating != nil {
+			review.ProductRating, review.SellerRating, review.CreatedAt = *productRating, *sellerRating, *reviewedAt
+			item.Review = &review
 		}
 		byID[orderID].Items = append(byID[orderID].Items, item)
 	}

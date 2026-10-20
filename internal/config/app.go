@@ -26,6 +26,9 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/payments"
 	paymentsRepository "github.com/caslumes/solado_certo_backend/internal/features/payments/repository/postgres"
 	httppayments "github.com/caslumes/solado_certo_backend/internal/features/payments/transport/http"
+	"github.com/caslumes/solado_certo_backend/internal/features/reviews"
+	reviewsRepository "github.com/caslumes/solado_certo_backend/internal/features/reviews/repository/postgres"
+	httpreviews "github.com/caslumes/solado_certo_backend/internal/features/reviews/transport/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/seller"
 	sellerRepository "github.com/caslumes/solado_certo_backend/internal/features/seller/repository/postgres"
 	httpseller "github.com/caslumes/solado_certo_backend/internal/features/seller/transport/http"
@@ -56,6 +59,7 @@ type App struct {
 	PaymentsHandler      *httppayments.Handler
 	PaymentPoller        payments.CheckPaymentsUseCase
 	NotificationsHandler *httpnotifications.Handler
+	ReviewsHandler       *httpreviews.Handler
 }
 
 func InitApp(ctx context.Context) (*App, error) {
@@ -82,6 +86,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	paymentsService := payments.NewService(paymentsRepository.NewPostgresRepository(dbPool), newPaymentGateway(envs))
 	ordersService.SetRefunder(paymentsService)
 	notificationsService := notifications.NewService(notificationsRepository.NewPostgresRepository(dbPool))
+	reviewsService := reviews.NewService(reviewsRepository.NewPostgresRepository(dbPool))
 
 	return &App{
 		Envs:           envs,
@@ -98,6 +103,7 @@ func InitApp(ctx context.Context) (*App, error) {
 		PaymentsHandler:      httppayments.NewHandler(paymentsService, envs.AsaasWebhookToken),
 		PaymentPoller:        paymentsService,
 		NotificationsHandler: httpnotifications.NewHandler(notificationsService),
+		ReviewsHandler:       httpreviews.NewHandler(reviewsService),
 	}, nil
 }
 

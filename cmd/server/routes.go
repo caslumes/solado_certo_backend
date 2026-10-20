@@ -57,6 +57,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 	{
 		catalogGroup.GET("", a.AuthMiddleware.OptionalMiddleware(), a.CatalogHandler.GetAdvertisements)
 		catalogGroup.GET("/items/:advertisementID", a.CatalogHandler.GetAdvertisement)
+		catalogGroup.GET("/items/:advertisementID/reviews", a.ReviewsHandler.ListReviews)
 		catalogGroup.GET("/categories", a.CatalogHandler.GetCategories)
 		catalogGroup.GET("/purposes", a.CatalogHandler.GetPurposes)
 		catalogGroup.GET("/conditions", a.CatalogHandler.GetConditions)
@@ -102,6 +103,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		ordersGroup.GET("/:orderID", a.OrdersHandler.GetOrder)
 		ordersGroup.POST("/:orderID/cancel", a.OrdersHandler.CancelOrder)
 		ordersGroup.POST("/:orderID/delivered", a.OrdersHandler.ConfirmDelivery)
+		ordersGroup.POST("/:orderID/items/:itemID/review", a.ReviewsHandler.CreateReview)
 		ordersGroup.GET("/:orderID/payments", a.PaymentsHandler.ListPayments)
 		ordersGroup.POST("/:orderID/payments", a.PaymentsHandler.CreatePayment)
 	}

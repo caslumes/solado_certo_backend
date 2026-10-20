@@ -253,9 +253,10 @@ func (r *postgresRepository) getSeller(ctx context.Context, sellerID string) (*c
 		ctx,
 		"SELECT u.id, u.name, "+
 			"(SELECT AVG(rv.seller_rating)::float8 FROM reviews rv JOIN order_items oi ON oi.id = rv.order_item_id WHERE oi.seller_id = u.id), "+
+			"(SELECT COUNT(*) FROM reviews rv JOIN order_items oi ON oi.id = rv.order_item_id WHERE oi.seller_id = u.id), "+
 			"u.created_at FROM users u WHERE u.id = $1",
 		sellerID,
-	).Scan(&s.ID, &s.Name, &s.AverageRating, &s.MemberSince)
+	).Scan(&s.ID, &s.Name, &s.AverageRating, &s.ReviewCount, &s.MemberSince)
 	if err != nil {
 		return nil, err
 	}

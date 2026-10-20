@@ -45,7 +45,17 @@ type CartOutput struct {
 	HasPriceChanges bool              `json:"has_price_changes"`
 }
 
+type ItemReviewOutput struct {
+	ProductRating      int       `json:"product_rating"`
+	SellerRating       int       `json:"seller_rating"`
+	ComfortRating      *int      `json:"comfort_rating"`
+	Comment            *string   `json:"comment"`
+	AdaptationFeedback *string   `json:"adaptation_feedback"`
+	CreatedAt          time.Time `json:"created_at"`
+}
+
 type OrderItemOutput struct {
+	ID              string               `json:"id,omitempty"`
 	AdvertisementID string               `json:"advertisement_id"`
 	Title           string               `json:"title"`
 	CoverImageURL   *string              `json:"cover_image_url"`
@@ -53,6 +63,7 @@ type OrderItemOutput struct {
 	UnitPrice       string               `json:"unit_price"`
 	Subtotal        string               `json:"subtotal"`
 	ShippingOption  ShippingOptionOutput `json:"shipping_option"`
+	Review *ItemReviewOutput `json:"review"`
 }
 
 type PlannedOrderOutput struct {

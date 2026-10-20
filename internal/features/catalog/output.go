@@ -40,6 +40,7 @@ type SellerOutput struct {
 	Name          string    `json:"name"`
 	State         *string   `json:"state"`
 	AverageRating *float64  `json:"average_rating"`
+	ReviewCount   uint64    `json:"review_count"`
 	MemberSince   time.Time `json:"member_since"`
 }
 

@@ -88,6 +88,7 @@ type SellerEntity struct {
 	Name          string
 	State         *string
 	AverageRating *float64
+	ReviewCount   uint64
 	MemberSince   time.Time
 }
 
@@ -97,6 +98,7 @@ func (s *SellerEntity) ToOutput() *SellerOutput {
 		Name:          s.Name,
 		State:         s.State,
 		AverageRating: s.AverageRating,
+		ReviewCount:   s.ReviewCount,
 		MemberSince:   s.MemberSince,
 	}
 }

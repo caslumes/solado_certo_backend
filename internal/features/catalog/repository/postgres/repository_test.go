@@ -730,8 +730,8 @@ func TestGetAdvertisementByIDIncludesPurposesConditionsSellerAndShipping(t *test
 	if seller.State == nil || *seller.State != "SP" {
 		t.Fatalf("seller state = %v, want SP", seller.State)
 	}
-	if seller.AverageRating == nil || *seller.AverageRating != 5 {
-		t.Fatalf("seller rating = %v, want 5", seller.AverageRating)
+	if seller.AverageRating == nil || *seller.AverageRating != 5 || seller.ReviewCount != 1 {
+		t.Fatalf("seller rating = %v from %d reviews, want 5 from 1", seller.AverageRating, seller.ReviewCount)
 	}
 
 	if len(got.ShippingOptions) != 2 {

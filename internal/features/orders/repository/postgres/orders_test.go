@@ -85,6 +85,28 @@ func TestGetOrder(t *testing.T) {
 	}
 }
 
+func TestGetOrderItemsCarryTheirReview(t *testing.T) {
+	s := newCheckoutSetup(t)
+	insolesOrder, _ := s.placeOrders(t)
+	item := insolesOrder.Items[0]
+	if item.ID == "" || item.Review != nil {
+		t.Fatalf("item = %+v, want an id and no review", item)
+	}
+
+	s.exec(t, "INSERT INTO reviews (order_item_id, reviewer_id, product_rating, seller_rating, comfort_rating, adaptation_feedback, created_at, updated_at) "+
+		"VALUES ($1, $2, 4, 5, 3, 'Adaptei bem', now(), now())", item.ID, s.buyer.ID)
+
+	got, err := s.r.GetOrder(context.Background(), insolesOrder.ID)
+	if err != nil {
+		t.Fatalf("GetOrder: %v", err)
+	}
+	review := got.Items[0].Review
+	if review == nil || review.ProductRating != 4 || review.SellerRating != 5 || *review.ComfortRating != 3 ||
+		*review.AdaptationFeedback != "Adaptei bem" || review.Comment != nil || review.CreatedAt.IsZero() {
+		t.Errorf("review = %+v", review)
+	}
+}
+
 func TestCancelReleasesStockAndRecordsTheChange(t *testing.T) {
 	s := newCheckoutSetup(t)
 	insolesOrder, socksOrder := s.placeOrders(t)

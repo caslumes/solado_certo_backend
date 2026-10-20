@@ -22,6 +22,31 @@ type OrderItemEntity struct {
 	UnitPrice       string
 	Subtotal        string
 	Snapshot        ProductSnapshot
+	Review          *ItemReviewEntity
+}
+
+// ItemReviewEntity is the buyer's review of an item, shown to the buyer and to the seller.
+type ItemReviewEntity struct {
+	ProductRating      int
+	SellerRating       int
+	ComfortRating      *int
+	Comment            *string
+	AdaptationFeedback *string
+	CreatedAt          time.Time
+}
+
+func (r *ItemReviewEntity) ToOutput() *ItemReviewOutput {
+	if r == nil {
+		return nil
+	}
+	return &ItemReviewOutput{
+		ProductRating:      r.ProductRating,
+		SellerRating:       r.SellerRating,
+		ComfortRating:      r.ComfortRating,
+		Comment:            r.Comment,
+		AdaptationFeedback: r.AdaptationFeedback,
+		CreatedAt:          r.CreatedAt,
+	}
 }
 
 type OrderEntity struct {
@@ -49,6 +74,7 @@ func (o *OrderEntity) ToOutput() OrderOutput {
 	items := make([]OrderItemOutput, len(o.Items))
 	for i, item := range o.Items {
 		items[i] = OrderItemOutput{
+			ID:              item.ID,
 			AdvertisementID: item.AdvertisementID,
 			Title:           item.Snapshot.Title,
 			CoverImageURL:   item.Snapshot.CoverImageURL,
@@ -56,6 +82,7 @@ func (o *OrderEntity) ToOutput() OrderOutput {
 			UnitPrice:       item.UnitPrice,
 			Subtotal:        item.Subtotal,
 			ShippingOption:  item.Snapshot.ShippingOption,
+			Review:          item.Review.ToOutput(),
 		}
 	}
 	return OrderOutput{

@@ -45,6 +45,9 @@ var ErrGatewayUnavailable = errors.New("payment gateway unavailable")
 var ErrNotificationNotFound = errors.New("notification not found")
 var ErrInvalidTrackingCode = errors.New("invalid tracking code")
 var ErrTrackingCodeInUse = errors.New("tracking code already registered")
+var ErrOrderItemNotFound = errors.New("order item not found")
+var ErrReviewNotAllowed = errors.New("only a delivered order can be reviewed")
+var ErrAlreadyReviewed = errors.New("item already reviewed")
 
 // MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {
