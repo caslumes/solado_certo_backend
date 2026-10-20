@@ -84,6 +84,8 @@ type OrderOutput struct {
 	ShippingTotal string            `json:"shipping_total"`
 	DiscountTotal string            `json:"discount_total"`
 	Total         string            `json:"total"`
+	PaidAt        *time.Time        `json:"paid_at"`
+	DeliveredAt   *time.Time        `json:"delivered_at"`
 	CreatedAt     time.Time         `json:"created_at"`
 	UpdatedAt     time.Time         `json:"updated_at"`
 }
@@ -101,10 +103,39 @@ type StatusChangeOutput struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type ShipmentOutput struct {
+	Carrier      string     `json:"carrier"`
+	TrackingCode string     `json:"tracking_code"`
+	Status       string     `json:"status"`
+	PostedAt     *time.Time `json:"posted_at"`
+	DeliveredAt  *time.Time `json:"delivered_at"`
+}
+
 type OrderDetailOutput struct {
 	OrderOutput
-	History   []StatusChangeOutput `json:"history"`
-	CanCancel bool                 `json:"can_cancel"`
+	History            []StatusChangeOutput `json:"history"`
+	Shipment           *ShipmentOutput      `json:"shipment"`
+	CanCancel          bool                 `json:"can_cancel"`
+	CanConfirmDelivery bool                 `json:"can_confirm_delivery"`
+}
+
+type BuyerOutput struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// SellerOrderOutput is an order as its seller sees it, with the buyer.
+type SellerOrderOutput struct {
+	OrderOutput
+	Buyer BuyerOutput `json:"buyer"`
+}
+
+type SellerOrderDetailOutput struct {
+	SellerOrderOutput
+	History            []StatusChangeOutput `json:"history"`
+	Shipment           *ShipmentOutput      `json:"shipment"`
+	CanStartProcessing bool                 `json:"can_start_processing"`
+	CanShip            bool                 `json:"can_ship"`
 }
 
 type OrderPageOutput struct {
@@ -114,4 +145,13 @@ type OrderPageOutput struct {
 	TotalItems  uint          `json:"total_items"`
 	HasNext     bool          `json:"has_next"`
 	HasPrevious bool          `json:"has_previous"`
+}
+
+type SellerOrderPageOutput struct {
+	Items       []SellerOrderOutput `json:"items"`
+	CurrentPage uint                `json:"current_page"`
+	TotalPages  uint                `json:"total_pages"`
+	TotalItems  uint                `json:"total_items"`
+	HasNext     bool                `json:"has_next"`
+	HasPrevious bool                `json:"has_previous"`
 }

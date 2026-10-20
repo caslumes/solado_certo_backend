@@ -6,9 +6,13 @@ import (
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	notificationsdb "github.com/caslumes/solado_certo_backend/internal/features/notifications/repository/postgres"
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+const uniqueViolation = "23505"
 
 func (r *postgresRepository) CountOrdersByBuyer(ctx context.Context, buyerID string) (uint, error) {
 	var total uint
@@ -47,7 +51,9 @@ func (r *postgresRepository) GetStatusHistory(ctx context.Context, orderID strin
 	})
 }
 
-// ChangeOrderStatus locks the order, so two changes can't both start from the same status.
+// ChangeOrderStatus locks the order, so two changes can't both start from the same status. The
+// shipment (when shipped), the delivery time (when delivered) and the notification are written in
+// the same transaction.
 func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change orders.StatusChange) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -75,15 +81,76 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 			return err
 		}
 	}
+	auditContext := map[string]any{"stock_released": change.ReleaseStock}
+	if change.Shipment != nil {
+		_, err := tx.Exec(
+			ctx,
+			"INSERT INTO shipments (order_id, carrier, tracking_code, status, posted_at, created_at, updated_at) VALUES ($1, $2, $3, 'posted', $4, $4, $4)",
+			change.OrderID, change.Shipment.Carrier, change.Shipment.TrackingCode, now,
+		)
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == uniqueViolation {
+			return app.ErrTrackingCodeInUse
+		}
+		if err != nil {
+			return err
+		}
+		auditContext["carrier"] = change.Shipment.Carrier
+		auditContext["tracking_code"] = change.Shipment.TrackingCode
+	}
+	if change.To == orders.OrderStatusDelivered {
+		if _, err := tx.Exec(ctx, "UPDATE orders SET delivered_at = $2 WHERE id = $1", change.OrderID, now); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, "UPDATE shipments SET status = 'delivered', delivered_at = $2, updated_at = $2 WHERE order_id = $1", change.OrderID, now); err != nil {
+			return err
+		}
+	}
 
 	from := change.From
-	err = RecordStatusChange(ctx, tx, change.OrderID, change.ChangedBy, &from, change.To, change.Reason, map[string]any{
-		"stock_released": change.ReleaseStock,
-	}, now)
-	if err != nil {
+	if err := RecordStatusChange(ctx, tx, change.OrderID, change.ChangedBy, &from, change.To, change.Reason, auditContext, now); err != nil {
 		return err
 	}
+	if change.Notification != nil {
+		if err := notificationsdb.Create(ctx, tx, *change.Notification, now); err != nil {
+			return err
+		}
+	}
 	return tx.Commit(ctx)
+}
+
+// sellerOrders are the seller's orders once paid, optionally with one status.
+const sellerOrders = "s.id = $1 AND o.paid_at IS NOT NULL AND ($2 = '' OR o.status = $2)"
+
+func (r *postgresRepository) CountOrdersBySeller(ctx context.Context, sellerID string, status orders.OrderStatus) (uint, error) {
+	var total uint
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT count(*) FROM orders o WHERE o.paid_at IS NOT NULL AND ($2 = '' OR o.status = $2) "+
+			"AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.seller_id = $1)",
+		sellerID, string(status),
+	).Scan(&total)
+	return total, err
+}
+
+func (r *postgresRepository) GetOrdersBySeller(ctx context.Context, sellerID string, status orders.OrderStatus, limit uint, offset uint) ([]*orders.OrderEntity, error) {
+	return r.getOrders(ctx, sellerOrders+" ORDER BY o.paid_at DESC, o.id DESC LIMIT $3 OFFSET $4", sellerID, string(status), limit, offset)
+}
+
+// GetShipment returns the order's shipment, or nil when it wasn't shipped.
+func (r *postgresRepository) GetShipment(ctx context.Context, orderID string) (*orders.ShipmentEntity, error) {
+	var s orders.ShipmentEntity
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT id, carrier, tracking_code, status, posted_at, delivered_at FROM shipments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1",
+		orderID,
+	).Scan(&s.ID, &s.Carrier, &s.TrackingCode, &s.Status, &s.PostedAt, &s.DeliveredAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
 }
 
 // ReleaseStock puts the order's units back on sale.

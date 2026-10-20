@@ -5,8 +5,12 @@ import "time"
 type Type string
 
 const (
-	TypeOrderPaid     Type = "order_paid"
-	TypeOrderRefunded Type = "order_refunded"
+	TypeOrderPaid       Type = "order_paid"
+	TypeOrderRefunded   Type = "order_refunded"
+	TypeOrderCancelled  Type = "order_cancelled"
+	TypeOrderProcessing Type = "order_processing"
+	TypeOrderShipped    Type = "order_shipped"
+	TypeOrderDelivered  Type = "order_delivered"
 )
 
 type NotificationEntity struct {
@@ -61,6 +65,50 @@ func OrderRefunded(buyerID string, orderID string, number string) NewNotificatio
 		Type:   TypeOrderRefunded,
 		Title:  "Reembolso concluído",
 		Body:   "O pagamento do pedido " + number + " foi estornado.",
+		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// OrderCancelled tells the seller that the buyer cancelled a paid order, which won't be shipped.
+func OrderCancelled(sellerID string, orderID string, number string) NewNotification {
+	return NewNotification{
+		UserID: sellerID,
+		Type:   TypeOrderCancelled,
+		Title:  "Pedido cancelado",
+		Body:   "O comprador cancelou o pedido " + number + ". Não é preciso enviá-lo; o pagamento será estornado.",
+		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// OrderProcessing tells the buyer that the seller started preparing the order.
+func OrderProcessing(buyerID string, orderID string, number string) NewNotification {
+	return NewNotification{
+		UserID: buyerID,
+		Type:   TypeOrderProcessing,
+		Title:  "Pedido em preparação",
+		Body:   "O vendedor começou a preparar o pedido " + number + ".",
+		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// OrderShipped tells the buyer how to track the order (RF-022).
+func OrderShipped(buyerID string, orderID string, number string, carrier string, trackingCode string) NewNotification {
+	return NewNotification{
+		UserID: buyerID,
+		Type:   TypeOrderShipped,
+		Title:  "Pedido enviado",
+		Body:   "O pedido " + number + " foi enviado por " + carrier + ". Código de rastreio: " + trackingCode + ".",
+		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// OrderDelivered tells the seller that the buyer received the order.
+func OrderDelivered(sellerID string, orderID string, number string) NewNotification {
+	return NewNotification{
+		UserID: sellerID,
+		Type:   TypeOrderDelivered,
+		Title:  "Pedido entregue",
+		Body:   "O comprador confirmou o recebimento do pedido " + number + ".",
 		Data:   map[string]string{"order_id": orderID},
 	}
 }

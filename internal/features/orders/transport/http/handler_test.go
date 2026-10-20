@@ -35,6 +35,32 @@ type fakeService struct {
 	list     func(context.Context, string, uint, uint) (*orders.OrderPage, error)
 	getOrder func(context.Context, string, string) (*orders.OrderDetail, error)
 	cancel   func(context.Context, string, string) (*orders.OrderDetail, error)
+
+	sellerList func(context.Context, string, orders.OrderStatus, uint, uint) (*orders.OrderPage, error)
+	sellerGet  func(context.Context, string, string) (*orders.OrderDetail, error)
+	processing func(context.Context, string, string) (*orders.OrderDetail, error)
+	ship       func(context.Context, string, string, orders.ShipmentInput) (*orders.OrderDetail, error)
+	deliver    func(context.Context, string, string) (*orders.OrderDetail, error)
+}
+
+func (f fakeService) ListSellerOrders(ctx context.Context, userID string, status orders.OrderStatus, page uint, limit uint) (*orders.OrderPage, error) {
+	return f.sellerList(ctx, userID, status, page, limit)
+}
+
+func (f fakeService) GetSellerOrder(ctx context.Context, userID string, id string) (*orders.OrderDetail, error) {
+	return f.sellerGet(ctx, userID, id)
+}
+
+func (f fakeService) StartProcessing(ctx context.Context, userID string, id string) (*orders.OrderDetail, error) {
+	return f.processing(ctx, userID, id)
+}
+
+func (f fakeService) ShipOrder(ctx context.Context, userID string, id string, input orders.ShipmentInput) (*orders.OrderDetail, error) {
+	return f.ship(ctx, userID, id, input)
+}
+
+func (f fakeService) ConfirmDelivery(ctx context.Context, userID string, id string) (*orders.OrderDetail, error) {
+	return f.deliver(ctx, userID, id)
 }
 
 func (f fakeService) ListOrders(ctx context.Context, userID string, page uint, limit uint) (*orders.OrderPage, error) {
@@ -89,6 +115,11 @@ func newRouter(handler *Handler, authenticated bool) *gin.Engine {
 	router.GET("/orders", handler.ListOrders)
 	router.GET("/orders/:orderID", handler.GetOrder)
 	router.POST("/orders/:orderID/cancel", handler.CancelOrder)
+	router.POST("/orders/:orderID/delivered", handler.ConfirmDelivery)
+	router.GET("/seller/orders", handler.ListSellerOrders)
+	router.GET("/seller/orders/:orderID", handler.GetSellerOrder)
+	router.POST("/seller/orders/:orderID/processing", handler.StartProcessing)
+	router.POST("/seller/orders/:orderID/shipment", handler.ShipOrder)
 	return router
 }
 

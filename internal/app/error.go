@@ -43,6 +43,8 @@ var ErrTaxIDInUse = errors.New("tax id already registered")
 var ErrIdempotencyKeyReused = errors.New("idempotency key already used")
 var ErrGatewayUnavailable = errors.New("payment gateway unavailable")
 var ErrNotificationNotFound = errors.New("notification not found")
+var ErrInvalidTrackingCode = errors.New("invalid tracking code")
+var ErrTrackingCodeInUse = errors.New("tracking code already registered")
 
 // MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {

@@ -3,6 +3,7 @@ package orders
 import (
 	"time"
 
+	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
@@ -27,6 +28,7 @@ type OrderEntity struct {
 	ID            string
 	CheckoutID    string
 	BuyerID       string
+	BuyerName     string
 	SellerID      string
 	SellerName    string
 	Number        string
@@ -37,6 +39,8 @@ type OrderEntity struct {
 	DiscountTotal string
 	Total         string
 	Items         []OrderItemEntity
+	PaidAt        *time.Time
+	DeliveredAt   *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -65,9 +69,15 @@ func (o *OrderEntity) ToOutput() OrderOutput {
 		ShippingTotal: o.ShippingTotal,
 		DiscountTotal: o.DiscountTotal,
 		Total:         o.Total,
+		PaidAt:        o.PaidAt,
+		DeliveredAt:   o.DeliveredAt,
 		CreatedAt:     o.CreatedAt,
 		UpdatedAt:     o.UpdatedAt,
 	}
+}
+
+func (o *OrderEntity) ToSellerOutput() SellerOrderOutput {
+	return SellerOrderOutput{OrderOutput: o.ToOutput(), Buyer: BuyerOutput{ID: o.BuyerID, Name: o.BuyerName}}
 }
 
 type CheckoutEntity struct {
@@ -100,14 +110,39 @@ type StatusChange struct {
 	To           OrderStatus
 	Reason       string
 	ReleaseStock bool
+	// Shipment is recorded when the order becomes shipped.
+	Shipment *NewShipment
+	// Notification is written in the same transaction, so it exists exactly when the change does.
+	Notification *notifications.NewNotification
 }
 
 type OrderDetail struct {
-	Order   *OrderEntity
-	History []StatusChangeEntity
+	Order    *OrderEntity
+	History  []StatusChangeEntity
+	Shipment *ShipmentEntity
 }
 
 func (d *OrderDetail) ToOutput() *OrderDetailOutput {
+	return &OrderDetailOutput{
+		OrderOutput:        d.Order.ToOutput(),
+		History:            d.historyOutput(),
+		Shipment:           d.Shipment.ToOutput(),
+		CanCancel:          d.Order.Status.BuyerCanCancel(),
+		CanConfirmDelivery: d.Order.Status == OrderStatusShipped,
+	}
+}
+
+func (d *OrderDetail) ToSellerOutput() *SellerOrderDetailOutput {
+	return &SellerOrderDetailOutput{
+		SellerOrderOutput:  d.Order.ToSellerOutput(),
+		History:            d.historyOutput(),
+		Shipment:           d.Shipment.ToOutput(),
+		CanStartProcessing: d.Order.Status == OrderStatusPaid,
+		CanShip:            d.Order.Status == OrderStatusProcessing,
+	}
+}
+
+func (d *OrderDetail) historyOutput() []StatusChangeOutput {
 	history := make([]StatusChangeOutput, len(d.History))
 	for i, change := range d.History {
 		history[i] = StatusChangeOutput{To: string(change.To), Reason: change.Reason, CreatedAt: change.CreatedAt}
@@ -116,11 +151,7 @@ func (d *OrderDetail) ToOutput() *OrderDetailOutput {
 			history[i].From = &from
 		}
 	}
-	return &OrderDetailOutput{
-		OrderOutput: d.Order.ToOutput(),
-		History:     history,
-		CanCancel:   d.Order.Status.BuyerCanCancel(),
-	}
+	return history
 }
 
 type OrderPage struct {
@@ -136,6 +167,21 @@ func (p *OrderPage) ToOutput() *OrderPageOutput {
 		items[i] = order.ToOutput()
 	}
 	return &OrderPageOutput{
+		Items:       items,
+		CurrentPage: p.CurrentPage,
+		TotalPages:  p.TotalPages,
+		TotalItems:  p.TotalItems,
+		HasNext:     p.CurrentPage < p.TotalPages,
+		HasPrevious: p.CurrentPage > 1,
+	}
+}
+
+func (p *OrderPage) ToSellerOutput() *SellerOrderPageOutput {
+	items := make([]SellerOrderOutput, len(p.Items))
+	for i, order := range p.Items {
+		items[i] = order.ToSellerOutput()
+	}
+	return &SellerOrderPageOutput{
 		Items:       items,
 		CurrentPage: p.CurrentPage,
 		TotalPages:  p.TotalPages,

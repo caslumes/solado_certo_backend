@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
@@ -68,6 +69,9 @@ type repository interface {
 	GetOrder(ctx context.Context, id string) (*OrderEntity, error)
 	GetStatusHistory(ctx context.Context, orderID string) ([]StatusChangeEntity, error)
 	ChangeOrderStatus(ctx context.Context, change StatusChange) error
+	CountOrdersBySeller(ctx context.Context, sellerID string, status OrderStatus) (uint, error)
+	GetOrdersBySeller(ctx context.Context, sellerID string, status OrderStatus, limit uint, offset uint) ([]*OrderEntity, error)
+	GetShipment(ctx context.Context, orderID string) (*ShipmentEntity, error)
 }
 
 const (
@@ -349,15 +353,19 @@ func (s *service) CancelOrder(ctx context.Context, userID string, id string) (*O
 		return nil, fmt.Errorf("%w: only an order awaiting payment or paid can be cancelled, this one is %s", app.ErrInvalidStatusTransition, order.Status)
 	}
 
-	err = s.changeStatus(ctx, StatusChange{
+	change := StatusChange{
 		OrderID:      order.ID,
 		ChangedBy:    userID,
 		From:         order.Status,
 		To:           OrderStatusCancelled,
 		Reason:       ReasonBuyerCancelled,
 		ReleaseStock: true,
-	})
-	if err != nil {
+	}
+	if order.Status == OrderStatusPaid {
+		notification := notifications.OrderCancelled(order.SellerID, order.ID, order.Number)
+		change.Notification = &notification
+	}
+	if err := s.changeStatus(ctx, change); err != nil {
 		return nil, err
 	}
 	if order.Status == OrderStatusPaid && s.refunder != nil {
@@ -407,5 +415,10 @@ func (s *service) detail(ctx context.Context, order *OrderEntity) (*OrderDetail,
 		slog.ErrorContext(ctx, "GetStatusHistory failed", "order_id", order.ID, "error", err)
 		return nil, err
 	}
-	return &OrderDetail{Order: order, History: history}, nil
+	shipment, err := s.r.GetShipment(ctx, order.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "GetShipment failed", "order_id", order.ID, "error", err)
+		return nil, err
+	}
+	return &OrderDetail{Order: order, History: history, Shipment: shipment}, nil
 }

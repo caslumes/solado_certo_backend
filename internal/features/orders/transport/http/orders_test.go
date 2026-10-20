@@ -42,13 +42,38 @@ func ordersService(err error) fakeService {
 		}
 		return sampleDetail(orders.OrderStatusCancelled), nil
 	}
+	detail := func(status orders.OrderStatus) func(context.Context, string, string) (*orders.OrderDetail, error) {
+		return func(context.Context, string, string) (*orders.OrderDetail, error) {
+			if err != nil {
+				return nil, err
+			}
+			return sampleDetail(status), nil
+		}
+	}
+	service.sellerList = func(context.Context, string, orders.OrderStatus, uint, uint) (*orders.OrderPage, error) {
+		if err != nil {
+			return nil, err
+		}
+		return &orders.OrderPage{Items: sampleCheckout().Orders, CurrentPage: 1, TotalPages: 1, TotalItems: 1}, nil
+	}
+	service.sellerGet = detail(orders.OrderStatusPaid)
+	service.processing = detail(orders.OrderStatusProcessing)
+	service.ship = func(ctx context.Context, userID string, id string, _ orders.ShipmentInput) (*orders.OrderDetail, error) {
+		return detail(orders.OrderStatusShipped)(ctx, userID, id)
+	}
+	service.deliver = detail(orders.OrderStatusDelivered)
 	return service
 }
 
 var orderEndpoints = map[string]endpoint{
-	"list":   {http.MethodGet, "/orders", ""},
-	"get":    {http.MethodGet, "/orders/" + testOrderID, ""},
-	"cancel": {http.MethodPost, "/orders/" + testOrderID + "/cancel", ""},
+	"list":        {http.MethodGet, "/orders", ""},
+	"get":         {http.MethodGet, "/orders/" + testOrderID, ""},
+	"cancel":      {http.MethodPost, "/orders/" + testOrderID + "/cancel", ""},
+	"deliver":     {http.MethodPost, "/orders/" + testOrderID + "/delivered", ""},
+	"seller list": {http.MethodGet, "/seller/orders", ""},
+	"seller get":  {http.MethodGet, "/seller/orders/" + testOrderID, ""},
+	"processing":  {http.MethodPost, "/seller/orders/" + testOrderID + "/processing", ""},
+	"ship":        {http.MethodPost, "/seller/orders/" + testOrderID + "/shipment", `{"carrier":"Correios","tracking_code":"AA123456789BR"}`},
 }
 
 func TestListOrders(t *testing.T) {

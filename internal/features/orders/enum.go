@@ -44,4 +44,14 @@ func (s OrderStatus) BuyerCanCancel() bool {
 	return s == OrderStatusAwaitingPayment || s == OrderStatusPaid
 }
 
-const ReasonBuyerCancelled = "buyer_cancelled"
+// sellerStatuses are the statuses a seller can filter their orders by: those after payment.
+var sellerStatuses = []OrderStatus{
+	OrderStatusPaid, OrderStatusProcessing, OrderStatusShipped, OrderStatusDelivered, OrderStatusCancelled, OrderStatusReturned,
+}
+
+const (
+	ReasonBuyerCancelled         = "buyer_cancelled"
+	ReasonSellerProcessing       = "seller_started_processing"
+	ReasonSellerShipped          = "seller_shipped"
+	ReasonBuyerConfirmedDelivery = "buyer_confirmed_delivery"
+)

@@ -336,9 +336,10 @@ func (r *postgresRepository) GetOrdersByCheckout(ctx context.Context, checkoutID
 func (r *postgresRepository) getOrders(ctx context.Context, where string, args ...any) ([]*orders.OrderEntity, error) {
 	rows, err := r.pool.Query(
 		ctx,
-		"SELECT o.id, o.checkout_id, o.buyer_id, s.id, s.name AS seller_name, o.number, o.status, o.shipping_address, "+
-			"o.subtotal::text, o.shipping_total::text, o.discount_total::text, o.total::text, o.created_at, o.updated_at "+
-			"FROM orders o JOIN users s ON s.id = (SELECT oi.seller_id FROM order_items oi WHERE oi.order_id = o.id LIMIT 1) "+
+		"SELECT o.id, o.checkout_id, o.buyer_id, b.name, s.id, s.name AS seller_name, o.number, o.status, o.shipping_address, "+
+			"o.subtotal::text, o.shipping_total::text, o.discount_total::text, o.total::text, o.paid_at, o.delivered_at, o.created_at, o.updated_at "+
+			"FROM orders o JOIN users b ON b.id = o.buyer_id "+
+			"JOIN users s ON s.id = (SELECT oi.seller_id FROM order_items oi WHERE oi.order_id = o.id LIMIT 1) "+
 			"WHERE "+where,
 		args...,
 	)
@@ -350,8 +351,8 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 	ids := []string{}
 	for rows.Next() {
 		var o orders.OrderEntity
-		err := rows.Scan(&o.ID, &o.CheckoutID, &o.BuyerID, &o.SellerID, &o.SellerName, &o.Number, &o.Status, &o.Address,
-			&o.Subtotal, &o.ShippingTotal, &o.DiscountTotal, &o.Total, &o.CreatedAt, &o.UpdatedAt)
+		err := rows.Scan(&o.ID, &o.CheckoutID, &o.BuyerID, &o.BuyerName, &o.SellerID, &o.SellerName, &o.Number, &o.Status, &o.Address,
+			&o.Subtotal, &o.ShippingTotal, &o.DiscountTotal, &o.Total, &o.PaidAt, &o.DeliveredAt, &o.CreatedAt, &o.UpdatedAt)
 		if err != nil {
 			rows.Close()
 			return nil, err

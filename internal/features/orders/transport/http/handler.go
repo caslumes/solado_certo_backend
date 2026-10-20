@@ -20,6 +20,11 @@ type Service interface {
 	orders.ListOrdersUseCase
 	orders.GetOrderUseCase
 	orders.CancelOrderUseCase
+	orders.ListSellerOrdersUseCase
+	orders.GetSellerOrderUseCase
+	orders.StartProcessingUseCase
+	orders.ShipOrderUseCase
+	orders.ConfirmDeliveryUseCase
 }
 
 type Handler struct {
@@ -70,8 +75,10 @@ func writeErrorWith(c *gin.Context, err error, fallback string, extra gin.H) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "advertisement not found"})
 	case errors.Is(err, app.ErrCartItemNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "item not in cart"})
-	case errors.Is(err, app.ErrOwnAdvertisement):
+	case errors.Is(err, app.ErrOwnAdvertisement), errors.Is(err, app.ErrTrackingCodeInUse):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrInvalidTrackingCode):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fallback})
 	}
@@ -281,4 +288,92 @@ func (h *Handler) CancelOrder(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, detail.ToOutput())
+}
+
+func (h *Handler) ConfirmDelivery(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	detail, err := h.service.ConfirmDelivery(c.Request.Context(), userID, c.Param("orderID"))
+	if err != nil {
+		writeError(c, err, "could not confirm delivery")
+		return
+	}
+	c.JSON(http.StatusOK, detail.ToOutput())
+}
+
+type listSellerOrdersQuery struct {
+	Status string `form:"status"`
+	Page   uint   `form:"page,default=1" binding:"min=1"`
+	Limit  uint   `form:"limit,default=10" binding:"min=1,max=100"`
+}
+
+func (h *Handler) ListSellerOrders(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var query listSellerOrdersQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters: page and limit must be positive integers (limit at most 100)"})
+		return
+	}
+
+	page, err := h.service.ListSellerOrders(c.Request.Context(), userID, orders.OrderStatus(query.Status), query.Page, query.Limit)
+	if err != nil {
+		writeError(c, err, "could not get orders")
+		return
+	}
+	c.JSON(http.StatusOK, page.ToSellerOutput())
+}
+
+func (h *Handler) GetSellerOrder(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	detail, err := h.service.GetSellerOrder(c.Request.Context(), userID, c.Param("orderID"))
+	if err != nil {
+		writeError(c, err, "could not get order")
+		return
+	}
+	c.JSON(http.StatusOK, detail.ToSellerOutput())
+}
+
+func (h *Handler) StartProcessing(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	detail, err := h.service.StartProcessing(c.Request.Context(), userID, c.Param("orderID"))
+	if err != nil {
+		writeError(c, err, "could not start processing the order")
+		return
+	}
+	c.JSON(http.StatusOK, detail.ToSellerOutput())
+}
+
+func (h *Handler) ShipOrder(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var input orders.ShipmentInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
+		return
+	}
+
+	detail, err := h.service.ShipOrder(c.Request.Context(), userID, c.Param("orderID"), input)
+	if err != nil {
+		writeError(c, err, "could not ship the order")
+		return
+	}
+	c.JSON(http.StatusOK, detail.ToSellerOutput())
 }

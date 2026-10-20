@@ -39,6 +39,7 @@ type fakeRepository struct {
 	changes              []StatusChange
 	// changeErr is returned by ChangeOrderStatus, as if another request changed the order first.
 	changeErr error
+	shipments map[string]*ShipmentEntity
 }
 
 func newFakeRepository() *fakeRepository {
@@ -439,6 +440,12 @@ func (f *fakeRepository) ChangeOrderStatus(_ context.Context, change StatusChang
 			order.Status = change.To
 		}
 	}
+	if change.Shipment != nil {
+		if f.shipments == nil {
+			f.shipments = map[string]*ShipmentEntity{}
+		}
+		f.shipments[change.OrderID] = &ShipmentEntity{Carrier: change.Shipment.Carrier, TrackingCode: change.Shipment.TrackingCode, Status: "posted"}
+	}
 	from := change.From
 	reason := change.Reason
 	if f.history == nil {
@@ -446,4 +453,32 @@ func (f *fakeRepository) ChangeOrderStatus(_ context.Context, change StatusChang
 	}
 	f.history[change.OrderID] = append(f.history[change.OrderID], StatusChangeEntity{From: &from, To: change.To, Reason: &reason})
 	return nil
+}
+
+func (f *fakeRepository) sellerOrders(sellerID string, status OrderStatus) []*OrderEntity {
+	mine := []*OrderEntity{}
+	for _, order := range f.placed {
+		if order.SellerID == sellerID && order.PaidAt != nil && (status == "" || order.Status == status) {
+			mine = append(mine, order)
+		}
+	}
+	return mine
+}
+
+func (f *fakeRepository) CountOrdersBySeller(_ context.Context, sellerID string, status OrderStatus) (uint, error) {
+	return uint(len(f.sellerOrders(sellerID, status))), f.err
+}
+
+func (f *fakeRepository) GetOrdersBySeller(_ context.Context, sellerID string, status OrderStatus, limit uint, offset uint) ([]*OrderEntity, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	mine := f.sellerOrders(sellerID, status)
+	start := min(int(offset), len(mine))
+	end := min(start+int(limit), len(mine))
+	return mine[start:end], nil
+}
+
+func (f *fakeRepository) GetShipment(_ context.Context, orderID string) (*ShipmentEntity, error) {
+	return f.shipments[orderID], nil
 }

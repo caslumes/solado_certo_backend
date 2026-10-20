@@ -75,6 +75,11 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		sellerGroup.POST("/ads/:advertisementID/images", a.SellerHandler.AddImage)
 		sellerGroup.PATCH("/ads/:advertisementID/images/order", a.SellerHandler.ReorderImages)
 		sellerGroup.DELETE("/ads/:advertisementID/images/:imageID", a.SellerHandler.RemoveImage)
+
+		sellerGroup.GET("/orders", a.OrdersHandler.ListSellerOrders)
+		sellerGroup.GET("/orders/:orderID", a.OrdersHandler.GetSellerOrder)
+		sellerGroup.POST("/orders/:orderID/processing", a.OrdersHandler.StartProcessing)
+		sellerGroup.POST("/orders/:orderID/shipment", a.OrdersHandler.ShipOrder)
 	}
 
 	cartGroup := r.Group("/cart", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleBuyer))
@@ -96,6 +101,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		ordersGroup.GET("", a.OrdersHandler.ListOrders)
 		ordersGroup.GET("/:orderID", a.OrdersHandler.GetOrder)
 		ordersGroup.POST("/:orderID/cancel", a.OrdersHandler.CancelOrder)
+		ordersGroup.POST("/:orderID/delivered", a.OrdersHandler.ConfirmDelivery)
 		ordersGroup.GET("/:orderID/payments", a.PaymentsHandler.ListPayments)
 		ordersGroup.POST("/:orderID/payments", a.PaymentsHandler.CreatePayment)
 	}
