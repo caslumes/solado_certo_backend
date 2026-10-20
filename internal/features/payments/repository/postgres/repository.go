@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
+	notificationsdb "github.com/caslumes/solado_certo_backend/internal/features/notifications/repository/postgres"
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 	ordersdb "github.com/caslumes/solado_certo_backend/internal/features/orders/repository/postgres"
 	"github.com/caslumes/solado_certo_backend/internal/features/payments"
@@ -224,8 +226,8 @@ func (r *postgresRepository) AttachCharge(ctx context.Context, paymentID string,
 	return err
 }
 
-// ChangePaymentStatus applies a status in one transaction (RNF-011): the payment, its audit row and,
-// for a capture, the order (paid, with history). The order is locked before the payment, as
+// ChangePaymentStatus applies a status in one transaction (RNF-011): the payment, its audit row,
+// for a capture the order (paid, with history) and for a refund the buyer's notification. The order is locked before the payment, as
 // StartPayment does, so the two can't deadlock. A change the status machine doesn't allow, or to the
 // status the payment already has, changes nothing and returns false (RNF-012).
 func (r *postgresRepository) ChangePaymentStatus(ctx context.Context, change payments.StatusChange) (bool, error) {
@@ -285,10 +287,19 @@ func (r *postgresRepository) ChangePaymentStatus(ctx context.Context, change pay
 			return false, err
 		}
 	}
+	if change.To == payments.StatusRefunded {
+		var buyerID, number string
+		if err := tx.QueryRow(ctx, "SELECT buyer_id, number FROM orders WHERE id = $1", orderID).Scan(&buyerID, &number); err != nil {
+			return false, err
+		}
+		if err := notificationsdb.Create(ctx, tx, notifications.OrderRefunded(buyerID, orderID, number), now); err != nil {
+			return false, err
+		}
+	}
 	return true, tx.Commit(ctx)
 }
 
-// markPaid moves the order to paid. An order no longer awaiting payment (cancelled because it
+// markPaid moves the order to paid and notifies each of its sellers (RF-020). An order no longer awaiting payment (cancelled because it
 // expired, or already paid by another attempt) keeps its status, and the capture is audited so the
 // money can be refunded.
 func markPaid(ctx context.Context, tx pgx.Tx, orderID string, status orders.OrderStatus, paymentID string, now time.Time) error {
@@ -300,9 +311,29 @@ func markPaid(ctx context.Context, tx pgx.Tx, orderID string, status orders.Orde
 	if _, err := tx.Exec(ctx, "UPDATE orders SET status = 'paid', paid_at = $2, updated_at = $2 WHERE id = $1", orderID, now); err != nil {
 		return err
 	}
-	return ordersdb.RecordStatusChange(ctx, tx, orderID, "", &status, orders.OrderStatusPaid, payments.ReasonPaymentCaptured, map[string]any{
+	err := ordersdb.RecordStatusChange(ctx, tx, orderID, "", &status, orders.OrderStatusPaid, payments.ReasonPaymentCaptured, map[string]any{
 		"payment_id": paymentID,
 	}, now)
+	if err != nil {
+		return err
+	}
+
+	var number string
+	var sellerIDs []string
+	err = tx.QueryRow(
+		ctx,
+		"SELECT o.number, array_agg(DISTINCT oi.seller_id::text) FROM orders o JOIN order_items oi ON oi.order_id = o.id WHERE o.id = $1 GROUP BY o.number",
+		orderID,
+	).Scan(&number, &sellerIDs)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	for _, sellerID := range sellerIDs {
+		if err := notificationsdb.Create(ctx, tx, notifications.OrderPaid(sellerID, orderID, number), now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // audit records a change made by the system (a webhook, the poller or the gateway's answer).

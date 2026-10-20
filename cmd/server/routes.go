@@ -100,6 +100,13 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		ordersGroup.POST("/:orderID/payments", a.PaymentsHandler.CreatePayment)
 	}
 
+	notificationsGroup := r.Group("/notifications", a.AuthMiddleware.Middleware())
+	{
+		notificationsGroup.GET("", a.NotificationsHandler.ListNotifications)
+		notificationsGroup.POST("/read-all", a.NotificationsHandler.MarkAllRead)
+		notificationsGroup.POST("/:notificationID/read", a.NotificationsHandler.MarkRead)
+	}
+
 	// Called by Asaas, authenticated by the asaas-access-token header.
 	r.POST("/webhooks/asaas", a.PaymentsHandler.AsaasWebhook)
 

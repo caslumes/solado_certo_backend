@@ -17,6 +17,9 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	meRepository "github.com/caslumes/solado_certo_backend/internal/features/me/repository/postgres"
 	httpme "github.com/caslumes/solado_certo_backend/internal/features/me/transport/http"
+	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
+	notificationsRepository "github.com/caslumes/solado_certo_backend/internal/features/notifications/repository/postgres"
+	httpnotifications "github.com/caslumes/solado_certo_backend/internal/features/notifications/transport/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 	ordersRepository "github.com/caslumes/solado_certo_backend/internal/features/orders/repository/postgres"
 	httporders "github.com/caslumes/solado_certo_backend/internal/features/orders/transport/http"
@@ -50,8 +53,9 @@ type App struct {
 	SellerHandler  *httpseller.Handler
 	OrdersHandler  *httporders.Handler
 
-	PaymentsHandler *httppayments.Handler
-	PaymentPoller   payments.CheckPaymentsUseCase
+	PaymentsHandler      *httppayments.Handler
+	PaymentPoller        payments.CheckPaymentsUseCase
+	NotificationsHandler *httpnotifications.Handler
 }
 
 func InitApp(ctx context.Context) (*App, error) {
@@ -77,6 +81,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	catalogService := catalog.NewService(catalogRepository.NewPostgresRepository(dbPool), meService)
 	paymentsService := payments.NewService(paymentsRepository.NewPostgresRepository(dbPool), newPaymentGateway(envs))
 	ordersService.SetRefunder(paymentsService)
+	notificationsService := notifications.NewService(notificationsRepository.NewPostgresRepository(dbPool))
 
 	return &App{
 		Envs:           envs,
@@ -90,8 +95,9 @@ func InitApp(ctx context.Context) (*App, error) {
 		SellerHandler:  httpseller.NewHandler(sellerService),
 		OrdersHandler:  httporders.NewHandler(ordersService),
 
-		PaymentsHandler: httppayments.NewHandler(paymentsService, envs.AsaasWebhookToken),
-		PaymentPoller:   paymentsService,
+		PaymentsHandler:      httppayments.NewHandler(paymentsService, envs.AsaasWebhookToken),
+		PaymentPoller:        paymentsService,
+		NotificationsHandler: httpnotifications.NewHandler(notificationsService),
 	}, nil
 }
 

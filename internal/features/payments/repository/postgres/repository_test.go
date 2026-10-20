@@ -325,6 +325,50 @@ func TestChangePaymentStatusCapture(t *testing.T) {
 	if got.RefundedAt == nil || got.CapturedAt == nil {
 		t.Errorf("payment = %+v, want both timestamps", got)
 	}
+	if n := f.count(t, "SELECT count(*) FROM notifications WHERE user_id = $1 AND type = 'order_refunded' AND data->>'order_id' = $2", f.buyer.ID, f.orderID); n != 1 {
+		t.Errorf("refund notifications = %d, want 1", n)
+	}
+}
+
+// addItem adds an item of the seller to the fixture's order.
+func (f fixture) addItem(t *testing.T, sellerID string) {
+	t.Helper()
+	category := testutil.InsertCategory(t, f.pool, nil)
+	ad := testutil.InsertAd(t, f.pool, testutil.Ad{SellerID: sellerID, CategoryID: category.ID, Stock: 1})
+	f.exec(
+		t,
+		"INSERT INTO order_items (order_id, advertisement_id, seller_id, quantity, unit_price, subtotal, product_snapshot, created_at) "+
+			"VALUES ($1, $2, $3, 1, 50.00, 50.00, '{}', now())",
+		f.orderID, ad.ID, sellerID,
+	)
+}
+
+func TestChangePaymentStatusCaptureNotifiesSellers(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	first := testutil.InsertUser(t, f.pool)
+	second := testutil.InsertUser(t, f.pool)
+	f.addItem(t, first.ID)
+	f.addItem(t, first.ID)
+	f.addItem(t, second.ID)
+	payment := f.start(t, "key-1", payments.MethodPix, "120.00", "0.00")
+	capture := payments.StatusChange{PaymentID: payment.ID, To: payments.StatusCaptured, Source: payments.SourceWebhook}
+
+	if changed, err := f.r.ChangePaymentStatus(ctx, capture); err != nil || !changed {
+		t.Fatalf("ChangePaymentStatus = %v, %v", changed, err)
+	}
+	if _, err := f.r.ChangePaymentStatus(ctx, capture); err != nil {
+		t.Fatalf("repeat: %v", err)
+	}
+
+	for _, seller := range []testutil.User{first, second} {
+		if n := f.count(t, "SELECT count(*) FROM notifications WHERE user_id = $1 AND type = 'order_paid' AND data->>'order_id' = $2 AND read_at IS NULL", seller.ID, f.orderID); n != 1 {
+			t.Errorf("seller %s: notifications = %d, want 1", seller.Name, n)
+		}
+	}
+	if n := f.count(t, "SELECT count(*) FROM notifications WHERE user_id = $1", f.buyer.ID); n != 0 {
+		t.Errorf("buyer notifications = %d, want 0", n)
+	}
 }
 
 func TestChangePaymentStatusConcurrentCaptures(t *testing.T) {
@@ -367,6 +411,9 @@ func TestChangePaymentStatusCaptureOfClosedOrder(t *testing.T) {
 	}
 	if n := f.count(t, "SELECT count(*) FROM audit_logs WHERE entity_id = $1 AND action = 'order.payment_captured_after_close' AND context->>'payment_id' = $2", f.orderID, payment.ID); n != 1 {
 		t.Errorf("audit rows = %d, want 1 so the money can be refunded", n)
+	}
+	if n := f.count(t, "SELECT count(*) FROM notifications"); n != 0 {
+		t.Errorf("notifications = %d, want none for an order that wasn't paid", n)
 	}
 }
 

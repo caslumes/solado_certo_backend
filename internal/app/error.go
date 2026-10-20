@@ -42,6 +42,7 @@ var ErrTaxIDRequired = errors.New("tax id required")
 var ErrTaxIDInUse = errors.New("tax id already registered")
 var ErrIdempotencyKeyReused = errors.New("idempotency key already used")
 var ErrGatewayUnavailable = errors.New("payment gateway unavailable")
+var ErrNotificationNotFound = errors.New("notification not found")
 
 // MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {
