@@ -12,7 +12,7 @@ const (
 	minRating     = 1
 	maxRating     = 5
 	maxTextLength = 2000
-	lowComfort = 2
+	lowComfort    = 2
 )
 
 type ReviewInput struct {

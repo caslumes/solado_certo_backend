@@ -14,14 +14,26 @@ import (
 
 const uniqueViolation = "23505"
 
-func (r *postgresRepository) CountOrdersByBuyer(ctx context.Context, buyerID string) (uint, error) {
+// historyFilter is the query's status ($2) and range ($3, $4) on the given column.
+func historyFilter(column string) string {
+	return " AND ($2 = '' OR o.status = $2) AND ($3::timestamptz IS NULL OR " + column + " >= $3) AND ($4::timestamptz IS NULL OR " + column + " < $4)"
+}
+
+func historyArgs(id string, query orders.OrderQuery) []any {
+	return []any{id, string(query.Status), query.Since, query.Until}
+}
+
+// buyerOrders are the buyer's orders, filtered by order date.
+var buyerOrders = "o.buyer_id = $1" + historyFilter("o.created_at")
+
+func (r *postgresRepository) CountOrdersByBuyer(ctx context.Context, buyerID string, query orders.OrderQuery) (uint, error) {
 	var total uint
-	err := r.pool.QueryRow(ctx, "SELECT count(*) FROM orders WHERE buyer_id = $1", buyerID).Scan(&total)
+	err := r.pool.QueryRow(ctx, "SELECT count(*) FROM orders o WHERE "+buyerOrders, historyArgs(buyerID, query)...).Scan(&total)
 	return total, err
 }
 
-func (r *postgresRepository) GetOrdersByBuyer(ctx context.Context, buyerID string, limit uint, offset uint) ([]*orders.OrderEntity, error) {
-	return r.getOrders(ctx, "o.buyer_id = $1 ORDER BY o.created_at DESC, o.id DESC LIMIT $2 OFFSET $3", buyerID, limit, offset)
+func (r *postgresRepository) GetOrdersByBuyer(ctx context.Context, buyerID string, query orders.OrderQuery, limit uint, offset uint) ([]*orders.OrderEntity, error) {
+	return r.getOrders(ctx, buyerOrders+" ORDER BY o.created_at DESC, o.id DESC LIMIT $5 OFFSET $6", append(historyArgs(buyerID, query), limit, offset)...)
 }
 
 func (r *postgresRepository) GetOrder(ctx context.Context, id string) (*orders.OrderEntity, error) {
@@ -118,22 +130,22 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 	return tx.Commit(ctx)
 }
 
-// sellerOrders are the seller's orders once paid, optionally with one status.
-const sellerOrders = "s.id = $1 AND o.paid_at IS NOT NULL AND ($2 = '' OR o.status = $2)"
+// paidOrders are the orders once paid, filtered by payment date.
+var paidOrders = "o.paid_at IS NOT NULL" + historyFilter("o.paid_at")
 
-func (r *postgresRepository) CountOrdersBySeller(ctx context.Context, sellerID string, status orders.OrderStatus) (uint, error) {
+func (r *postgresRepository) CountOrdersBySeller(ctx context.Context, sellerID string, query orders.OrderQuery) (uint, error) {
 	var total uint
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT count(*) FROM orders o WHERE o.paid_at IS NOT NULL AND ($2 = '' OR o.status = $2) "+
-			"AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.seller_id = $1)",
-		sellerID, string(status),
+		"SELECT count(*) FROM orders o WHERE "+paidOrders+
+			" AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.seller_id = $1)",
+		historyArgs(sellerID, query)...,
 	).Scan(&total)
 	return total, err
 }
 
-func (r *postgresRepository) GetOrdersBySeller(ctx context.Context, sellerID string, status orders.OrderStatus, limit uint, offset uint) ([]*orders.OrderEntity, error) {
-	return r.getOrders(ctx, sellerOrders+" ORDER BY o.paid_at DESC, o.id DESC LIMIT $3 OFFSET $4", sellerID, string(status), limit, offset)
+func (r *postgresRepository) GetOrdersBySeller(ctx context.Context, sellerID string, query orders.OrderQuery, limit uint, offset uint) ([]*orders.OrderEntity, error) {
+	return r.getOrders(ctx, "s.id = $1 AND "+paidOrders+" ORDER BY o.paid_at DESC, o.id DESC LIMIT $5 OFFSET $6", append(historyArgs(sellerID, query), limit, offset)...)
 }
 
 // GetShipment returns the order's shipment, or nil when it wasn't shipped.

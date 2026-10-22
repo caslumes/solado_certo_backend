@@ -13,18 +13,18 @@ import (
 
 func TestListSellerOrders(t *testing.T) {
 	var gotUser string
-	var gotStatus orders.OrderStatus
+	var gotFilter orders.HistoryFilter
 	var gotPage, gotLimit uint
 	service := ordersService(nil)
 	inner := service.sellerList
-	service.sellerList = func(ctx context.Context, userID string, status orders.OrderStatus, page uint, limit uint) (*orders.OrderPage, error) {
-		gotUser, gotStatus, gotPage, gotLimit = userID, status, page, limit
-		return inner(ctx, userID, status, page, limit)
+	service.sellerList = func(ctx context.Context, userID string, filter orders.HistoryFilter, page uint, limit uint) (*orders.OrderPage, error) {
+		gotUser, gotFilter, gotPage, gotLimit = userID, filter, page, limit
+		return inner(ctx, userID, filter, page, limit)
 	}
 
 	recorder := serve(NewHandler(service), http.MethodGet, "/seller/orders", "")
-	if recorder.Code != http.StatusOK || gotUser != testBuyerID || gotStatus != "" || gotPage != 1 || gotLimit != 10 {
-		t.Fatalf("status = %d, user = %q, filter = %q, page = %d, limit = %d", recorder.Code, gotUser, gotStatus, gotPage, gotLimit)
+	if recorder.Code != http.StatusOK || gotUser != testBuyerID || gotFilter != (orders.HistoryFilter{}) || gotPage != 1 || gotLimit != 10 {
+		t.Fatalf("status = %d, user = %q, filter = %+v, page = %d, limit = %d", recorder.Code, gotUser, gotFilter, gotPage, gotLimit)
 	}
 	var body orders.SellerOrderPageOutput
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -34,9 +34,10 @@ func TestListSellerOrders(t *testing.T) {
 		t.Errorf("body = %s", recorder.Body.String())
 	}
 
-	serve(NewHandler(service), http.MethodGet, "/seller/orders?status=shipped&page=2&limit=5", "")
-	if gotStatus != orders.OrderStatusShipped || gotPage != 2 || gotLimit != 5 {
-		t.Errorf("filter = %q, page = %d, limit = %d", gotStatus, gotPage, gotLimit)
+	serve(NewHandler(service), http.MethodGet, "/seller/orders?status=shipped&from=2026-10-01&page=2&limit=5", "")
+	want := orders.HistoryFilter{Status: orders.OrderStatusShipped, From: "2026-10-01"}
+	if gotFilter != want || gotPage != 2 || gotLimit != 5 {
+		t.Errorf("filter = %+v, page = %d, limit = %d", gotFilter, gotPage, gotLimit)
 	}
 
 	for _, query := range []string{"page=0", "limit=101"} {

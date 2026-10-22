@@ -36,7 +36,7 @@ type CheckoutUseCase interface {
 }
 
 type ListOrdersUseCase interface {
-	ListOrders(ctx context.Context, userID string, page uint, limit uint) (*OrderPage, error)
+	ListOrders(ctx context.Context, userID string, filter HistoryFilter, page uint, limit uint) (*OrderPage, error)
 }
 
 type GetOrderUseCase interface {
@@ -64,13 +64,13 @@ type repository interface {
 	GetCheckoutID(ctx context.Context, buyerID string, idempotencyKey string) (id string, found bool, err error)
 	CreateCheckout(ctx context.Context, buyerID string, idempotencyKey string, plan *CheckoutPlan) (id string, created bool, err error)
 	GetOrdersByCheckout(ctx context.Context, checkoutID string) ([]*OrderEntity, error)
-	CountOrdersByBuyer(ctx context.Context, buyerID string) (uint, error)
-	GetOrdersByBuyer(ctx context.Context, buyerID string, limit uint, offset uint) ([]*OrderEntity, error)
+	CountOrdersByBuyer(ctx context.Context, buyerID string, query OrderQuery) (uint, error)
+	GetOrdersByBuyer(ctx context.Context, buyerID string, query OrderQuery, limit uint, offset uint) ([]*OrderEntity, error)
 	GetOrder(ctx context.Context, id string) (*OrderEntity, error)
 	GetStatusHistory(ctx context.Context, orderID string) ([]StatusChangeEntity, error)
 	ChangeOrderStatus(ctx context.Context, change StatusChange) error
-	CountOrdersBySeller(ctx context.Context, sellerID string, status OrderStatus) (uint, error)
-	GetOrdersBySeller(ctx context.Context, sellerID string, status OrderStatus, limit uint, offset uint) ([]*OrderEntity, error)
+	CountOrdersBySeller(ctx context.Context, sellerID string, query OrderQuery) (uint, error)
+	GetOrdersBySeller(ctx context.Context, sellerID string, query OrderQuery, limit uint, offset uint) ([]*OrderEntity, error)
 	GetShipment(ctx context.Context, orderID string) (*ShipmentEntity, error)
 }
 
@@ -308,8 +308,12 @@ func (s *service) checkout(ctx context.Context, id string) (*CheckoutEntity, err
 	return &CheckoutEntity{ID: id, Orders: orders}, nil
 }
 
-// ListOrders returns the buyer's orders, newest first.
-func (s *service) ListOrders(ctx context.Context, userID string, page uint, limit uint) (*OrderPage, error) {
+// ListOrders returns the buyer's orders, newest first (RF-025).
+func (s *service) ListOrders(ctx context.Context, userID string, filter HistoryFilter, page uint, limit uint) (*OrderPage, error) {
+	query, err := filter.query(buyerStatuses)
+	if err != nil {
+		return nil, err
+	}
 	if page == 0 {
 		page = 1
 	}
@@ -320,12 +324,12 @@ func (s *service) ListOrders(ctx context.Context, userID string, page uint, limi
 		return nil, fmt.Errorf("%w: limit must be at most %d", app.ErrInvalidInput, maxOrdersPerPage)
 	}
 
-	total, err := s.r.CountOrdersByBuyer(ctx, userID)
+	total, err := s.r.CountOrdersByBuyer(ctx, userID, query)
 	if err != nil {
 		slog.ErrorContext(ctx, "CountOrdersByBuyer failed", "user_id", userID, "error", err)
 		return nil, err
 	}
-	orders, err := s.r.GetOrdersByBuyer(ctx, userID, limit, (page-1)*limit)
+	orders, err := s.r.GetOrdersByBuyer(ctx, userID, query, limit, (page-1)*limit)
 	if err != nil {
 		slog.ErrorContext(ctx, "GetOrdersByBuyer failed", "user_id", userID, "error", err)
 		return nil, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
@@ -25,14 +26,14 @@ func TestOrdersBySeller(t *testing.T) {
 	insolesOrder, socksOrder := s.placeOrders(t)
 
 	// Not paid yet: the seller doesn't see it.
-	if total, err := s.r.CountOrdersBySeller(ctx, s.seller.ID, ""); err != nil || total != 0 {
+	if total, err := s.r.CountOrdersBySeller(ctx, s.seller.ID, orders.OrderQuery{}); err != nil || total != 0 {
 		t.Errorf("before payment: total = %d, %v", total, err)
 	}
 
 	s.exec(t, "UPDATE orders SET status = 'paid', paid_at = now() WHERE id = ANY($1::uuid[])", []string{insolesOrder.ID, socksOrder.ID})
 
-	total, err := s.r.CountOrdersBySeller(ctx, s.seller.ID, "")
-	list, listErr := s.r.GetOrdersBySeller(ctx, s.seller.ID, "", 10, 0)
+	total, err := s.r.CountOrdersBySeller(ctx, s.seller.ID, orders.OrderQuery{})
+	list, listErr := s.r.GetOrdersBySeller(ctx, s.seller.ID, orders.OrderQuery{}, 10, 0)
 	if err != nil || listErr != nil || total != 1 || len(list) != 1 || list[0].ID != insolesOrder.ID {
 		t.Fatalf("seller orders = %d, %+v, %v, %v", total, list, err, listErr)
 	}
@@ -40,15 +41,27 @@ func TestOrdersBySeller(t *testing.T) {
 		t.Errorf("order = %+v", list[0])
 	}
 
-	if total, _ := s.r.CountOrdersBySeller(ctx, s.seller.ID, orders.OrderStatusPaid); total != 1 {
+	paid := orders.OrderQuery{Status: orders.OrderStatusPaid}
+	if total, _ := s.r.CountOrdersBySeller(ctx, s.seller.ID, paid); total != 1 {
 		t.Errorf("paid = %d, want 1", total)
 	}
-	shipped, _ := s.r.GetOrdersBySeller(ctx, s.seller.ID, orders.OrderStatusShipped, 10, 0)
-	if total, _ := s.r.CountOrdersBySeller(ctx, s.seller.ID, orders.OrderStatusShipped); total != 0 || len(shipped) != 0 {
+	shippedQuery := orders.OrderQuery{Status: orders.OrderStatusShipped}
+	shipped, _ := s.r.GetOrdersBySeller(ctx, s.seller.ID, shippedQuery, 10, 0)
+	if total, _ := s.r.CountOrdersBySeller(ctx, s.seller.ID, shippedQuery); total != 0 || len(shipped) != 0 {
 		t.Errorf("shipped = %d, %v, want none", total, shipped)
 	}
-	if other, _ := s.r.GetOrdersBySeller(ctx, s.otherSeller.ID, "", 10, 0); len(other) != 1 || other[0].ID != socksOrder.ID {
+	if other, _ := s.r.GetOrdersBySeller(ctx, s.otherSeller.ID, orders.OrderQuery{}, 10, 0); len(other) != 1 || other[0].ID != socksOrder.ID {
 		t.Errorf("other seller = %+v", other)
+	}
+
+	// The seller's history goes by payment date.
+	tomorrow := time.Now().Add(24 * time.Hour)
+	later := orders.OrderQuery{Since: &tomorrow}
+	if total, _ := s.r.CountOrdersBySeller(ctx, s.seller.ID, later); total != 0 {
+		t.Errorf("paid after tomorrow = %d, want 0", total)
+	}
+	if list, _ := s.r.GetOrdersBySeller(ctx, s.seller.ID, orders.OrderQuery{Until: &tomorrow}, 10, 0); len(list) != 1 {
+		t.Errorf("paid before tomorrow = %d, want 1", len(list))
 	}
 }
 

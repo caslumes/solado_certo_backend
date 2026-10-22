@@ -32,19 +32,19 @@ type fakeService struct {
 	remove   func(context.Context, string, string) (*orders.CartEntity, error)
 	preview  func(context.Context, string, orders.CheckoutInput) (*orders.CheckoutPlan, error)
 	checkout func(context.Context, string, string, orders.CheckoutInput) (*orders.CheckoutEntity, bool, error)
-	list     func(context.Context, string, uint, uint) (*orders.OrderPage, error)
+	list     func(context.Context, string, orders.HistoryFilter, uint, uint) (*orders.OrderPage, error)
 	getOrder func(context.Context, string, string) (*orders.OrderDetail, error)
 	cancel   func(context.Context, string, string) (*orders.OrderDetail, error)
 
-	sellerList func(context.Context, string, orders.OrderStatus, uint, uint) (*orders.OrderPage, error)
+	sellerList func(context.Context, string, orders.HistoryFilter, uint, uint) (*orders.OrderPage, error)
 	sellerGet  func(context.Context, string, string) (*orders.OrderDetail, error)
 	processing func(context.Context, string, string) (*orders.OrderDetail, error)
 	ship       func(context.Context, string, string, orders.ShipmentInput) (*orders.OrderDetail, error)
 	deliver    func(context.Context, string, string) (*orders.OrderDetail, error)
 }
 
-func (f fakeService) ListSellerOrders(ctx context.Context, userID string, status orders.OrderStatus, page uint, limit uint) (*orders.OrderPage, error) {
-	return f.sellerList(ctx, userID, status, page, limit)
+func (f fakeService) ListSellerOrders(ctx context.Context, userID string, filter orders.HistoryFilter, page uint, limit uint) (*orders.OrderPage, error) {
+	return f.sellerList(ctx, userID, filter, page, limit)
 }
 
 func (f fakeService) GetSellerOrder(ctx context.Context, userID string, id string) (*orders.OrderDetail, error) {
@@ -63,8 +63,8 @@ func (f fakeService) ConfirmDelivery(ctx context.Context, userID string, id stri
 	return f.deliver(ctx, userID, id)
 }
 
-func (f fakeService) ListOrders(ctx context.Context, userID string, page uint, limit uint) (*orders.OrderPage, error) {
-	return f.list(ctx, userID, page, limit)
+func (f fakeService) ListOrders(ctx context.Context, userID string, filter orders.HistoryFilter, page uint, limit uint) (*orders.OrderPage, error) {
+	return f.list(ctx, userID, filter, page, limit)
 }
 
 func (f fakeService) GetOrder(ctx context.Context, userID string, id string) (*orders.OrderDetail, error) {

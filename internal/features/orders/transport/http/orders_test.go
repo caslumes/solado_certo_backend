@@ -24,7 +24,7 @@ func sampleDetail(status orders.OrderStatus) *orders.OrderDetail {
 
 func ordersService(err error) fakeService {
 	service := fakeService{}
-	service.list = func(context.Context, string, uint, uint) (*orders.OrderPage, error) {
+	service.list = func(context.Context, string, orders.HistoryFilter, uint, uint) (*orders.OrderPage, error) {
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +50,7 @@ func ordersService(err error) fakeService {
 			return sampleDetail(status), nil
 		}
 	}
-	service.sellerList = func(context.Context, string, orders.OrderStatus, uint, uint) (*orders.OrderPage, error) {
+	service.sellerList = func(context.Context, string, orders.HistoryFilter, uint, uint) (*orders.OrderPage, error) {
 		if err != nil {
 			return nil, err
 		}
@@ -77,20 +77,21 @@ var orderEndpoints = map[string]endpoint{
 }
 
 func TestListOrders(t *testing.T) {
+	var gotFilter orders.HistoryFilter
 	var gotPage, gotLimit uint
 	service := ordersService(nil)
 	inner := service.list
-	service.list = func(ctx context.Context, userID string, page uint, limit uint) (*orders.OrderPage, error) {
+	service.list = func(ctx context.Context, userID string, filter orders.HistoryFilter, page uint, limit uint) (*orders.OrderPage, error) {
 		if userID != testBuyerID {
 			t.Errorf("user = %q", userID)
 		}
-		gotPage, gotLimit = page, limit
-		return inner(ctx, userID, page, limit)
+		gotFilter, gotPage, gotLimit = filter, page, limit
+		return inner(ctx, userID, filter, page, limit)
 	}
 
 	recorder := serve(NewHandler(service), http.MethodGet, "/orders", "")
-	if recorder.Code != http.StatusOK || gotPage != 1 || gotLimit != 10 {
-		t.Fatalf("status = %d, page = %d, limit = %d", recorder.Code, gotPage, gotLimit)
+	if recorder.Code != http.StatusOK || gotFilter != (orders.HistoryFilter{}) || gotPage != 1 || gotLimit != 10 {
+		t.Fatalf("status = %d, filter = %+v, page = %d, limit = %d", recorder.Code, gotFilter, gotPage, gotLimit)
 	}
 	var body orders.OrderPageOutput
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -100,9 +101,10 @@ func TestListOrders(t *testing.T) {
 		t.Errorf("body = %s", recorder.Body.String())
 	}
 
-	serve(NewHandler(service), http.MethodGet, "/orders?page=3&limit=5", "")
-	if gotPage != 3 || gotLimit != 5 {
-		t.Errorf("page = %d, limit = %d, want 3 and 5", gotPage, gotLimit)
+	serve(NewHandler(service), http.MethodGet, "/orders?page=3&limit=5&status=delivered&from=2026-10-01&to=2026-10-31", "")
+	want := orders.HistoryFilter{Status: orders.OrderStatusDelivered, From: "2026-10-01", To: "2026-10-31"}
+	if gotPage != 3 || gotLimit != 5 || gotFilter != want {
+		t.Errorf("page = %d, limit = %d, filter = %+v", gotPage, gotLimit, gotFilter)
 	}
 }
 

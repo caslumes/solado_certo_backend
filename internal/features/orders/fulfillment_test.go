@@ -64,7 +64,7 @@ func TestValidateShipment(t *testing.T) {
 func TestListSellerOrders(t *testing.T) {
 	_, s := fulfillmentFixture()
 
-	page, err := s.ListSellerOrders(context.Background(), testSellerID, "", 0, 0)
+	page, err := s.ListSellerOrders(context.Background(), testSellerID, HistoryFilter{}, 0, 0)
 	if err != nil {
 		t.Fatalf("ListSellerOrders: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestListSellerOrders(t *testing.T) {
 		t.Errorf("page = %+v, want only the seller's paid order", page)
 	}
 
-	page, err = s.ListSellerOrders(context.Background(), testSellerID, OrderStatusShipped, 1, 10)
+	page, err = s.ListSellerOrders(context.Background(), testSellerID, HistoryFilter{Status: OrderStatusShipped}, 1, 10)
 	if err != nil || page.TotalItems != 0 {
 		t.Errorf("shipped = %+v, %v, want none", page, err)
 	}
@@ -81,15 +81,15 @@ func TestListSellerOrders(t *testing.T) {
 func TestListSellerOrdersRejects(t *testing.T) {
 	r, s := fulfillmentFixture()
 	for _, status := range []OrderStatus{OrderStatusAwaitingPayment, "lost"} {
-		if _, err := s.ListSellerOrders(context.Background(), testSellerID, status, 1, 10); !errors.Is(err, app.ErrInvalidInput) {
+		if _, err := s.ListSellerOrders(context.Background(), testSellerID, HistoryFilter{Status: status}, 1, 10); !errors.Is(err, app.ErrInvalidInput) {
 			t.Errorf("status %q: error = %v", status, err)
 		}
 	}
-	if _, err := s.ListSellerOrders(context.Background(), testSellerID, "", 1, maxOrdersPerPage+1); !errors.Is(err, app.ErrInvalidInput) {
+	if _, err := s.ListSellerOrders(context.Background(), testSellerID, HistoryFilter{}, 1, maxOrdersPerPage+1); !errors.Is(err, app.ErrInvalidInput) {
 		t.Errorf("limit too big: error = %v", err)
 	}
 	r.err = errors.New("db down")
-	if _, err := s.ListSellerOrders(context.Background(), testSellerID, "", 1, 10); !errors.Is(err, r.err) {
+	if _, err := s.ListSellerOrders(context.Background(), testSellerID, HistoryFilter{}, 1, 10); !errors.Is(err, r.err) {
 		t.Errorf("repository failure: error = %v", err)
 	}
 }

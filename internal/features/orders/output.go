@@ -63,7 +63,7 @@ type OrderItemOutput struct {
 	UnitPrice       string               `json:"unit_price"`
 	Subtotal        string               `json:"subtotal"`
 	ShippingOption  ShippingOptionOutput `json:"shipping_option"`
-	Review *ItemReviewOutput `json:"review"`
+	Review          *ItemReviewOutput    `json:"review"`
 }
 
 type PlannedOrderOutput struct {

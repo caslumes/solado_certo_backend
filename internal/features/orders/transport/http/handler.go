@@ -238,8 +238,15 @@ func (h *Handler) writeCheckoutError(c *gin.Context, userID string, err error, f
 }
 
 type listOrdersQuery struct {
-	Page  uint `form:"page,default=1" binding:"min=1"`
-	Limit uint `form:"limit,default=10" binding:"min=1,max=100"`
+	Status string `form:"status"`
+	From   string `form:"from"`
+	To     string `form:"to"`
+	Page   uint   `form:"page,default=1" binding:"min=1"`
+	Limit  uint   `form:"limit,default=10" binding:"min=1,max=100"`
+}
+
+func (q listOrdersQuery) filter() orders.HistoryFilter {
+	return orders.HistoryFilter{Status: orders.OrderStatus(q.Status), From: q.From, To: q.To}
 }
 
 func (h *Handler) ListOrders(c *gin.Context) {
@@ -254,7 +261,7 @@ func (h *Handler) ListOrders(c *gin.Context) {
 		return
 	}
 
-	page, err := h.service.ListOrders(c.Request.Context(), userID, query.Page, query.Limit)
+	page, err := h.service.ListOrders(c.Request.Context(), userID, query.filter(), query.Page, query.Limit)
 	if err != nil {
 		writeError(c, err, "could not get orders")
 		return
@@ -304,25 +311,19 @@ func (h *Handler) ConfirmDelivery(c *gin.Context) {
 	c.JSON(http.StatusOK, detail.ToOutput())
 }
 
-type listSellerOrdersQuery struct {
-	Status string `form:"status"`
-	Page   uint   `form:"page,default=1" binding:"min=1"`
-	Limit  uint   `form:"limit,default=10" binding:"min=1,max=100"`
-}
-
 func (h *Handler) ListSellerOrders(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {
 		return
 	}
 
-	var query listSellerOrdersQuery
+	var query listOrdersQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters: page and limit must be positive integers (limit at most 100)"})
 		return
 	}
 
-	page, err := h.service.ListSellerOrders(c.Request.Context(), userID, orders.OrderStatus(query.Status), query.Page, query.Limit)
+	page, err := h.service.ListSellerOrders(c.Request.Context(), userID, query.filter(), query.Page, query.Limit)
 	if err != nil {
 		writeError(c, err, "could not get orders")
 		return

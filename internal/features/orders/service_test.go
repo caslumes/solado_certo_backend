@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 )
@@ -388,26 +389,32 @@ func (f *fakeRepository) GetOrdersByCheckout(_ context.Context, checkoutID strin
 	return f.orders[checkoutID], nil
 }
 
-func (f *fakeRepository) CountOrdersByBuyer(_ context.Context, buyerID string) (uint, error) {
-	count := uint(0)
-	for _, order := range f.placed {
-		if order.BuyerID == buyerID {
-			count++
-		}
-	}
-	return count, f.err
+// includes tells whether the query keeps an order with the status and the date.
+func includes(query OrderQuery, status OrderStatus, at time.Time) bool {
+	return (query.Status == "" || status == query.Status) &&
+		(query.Since == nil || !at.Before(*query.Since)) &&
+		(query.Until == nil || at.Before(*query.Until))
 }
 
-func (f *fakeRepository) GetOrdersByBuyer(_ context.Context, buyerID string, limit uint, offset uint) ([]*OrderEntity, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
+func (f *fakeRepository) buyerOrders(buyerID string, query OrderQuery) []*OrderEntity {
 	mine := []*OrderEntity{}
 	for _, order := range f.placed {
-		if order.BuyerID == buyerID {
+		if order.BuyerID == buyerID && includes(query, order.Status, order.CreatedAt) {
 			mine = append(mine, order)
 		}
 	}
+	return mine
+}
+
+func (f *fakeRepository) CountOrdersByBuyer(_ context.Context, buyerID string, query OrderQuery) (uint, error) {
+	return uint(len(f.buyerOrders(buyerID, query))), f.err
+}
+
+func (f *fakeRepository) GetOrdersByBuyer(_ context.Context, buyerID string, query OrderQuery, limit uint, offset uint) ([]*OrderEntity, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	mine := f.buyerOrders(buyerID, query)
 	start := min(int(offset), len(mine))
 	end := min(start+int(limit), len(mine))
 	return mine[start:end], nil
@@ -455,25 +462,25 @@ func (f *fakeRepository) ChangeOrderStatus(_ context.Context, change StatusChang
 	return nil
 }
 
-func (f *fakeRepository) sellerOrders(sellerID string, status OrderStatus) []*OrderEntity {
+func (f *fakeRepository) sellerOrders(sellerID string, query OrderQuery) []*OrderEntity {
 	mine := []*OrderEntity{}
 	for _, order := range f.placed {
-		if order.SellerID == sellerID && order.PaidAt != nil && (status == "" || order.Status == status) {
+		if order.SellerID == sellerID && order.PaidAt != nil && includes(query, order.Status, *order.PaidAt) {
 			mine = append(mine, order)
 		}
 	}
 	return mine
 }
 
-func (f *fakeRepository) CountOrdersBySeller(_ context.Context, sellerID string, status OrderStatus) (uint, error) {
-	return uint(len(f.sellerOrders(sellerID, status))), f.err
+func (f *fakeRepository) CountOrdersBySeller(_ context.Context, sellerID string, query OrderQuery) (uint, error) {
+	return uint(len(f.sellerOrders(sellerID, query))), f.err
 }
 
-func (f *fakeRepository) GetOrdersBySeller(_ context.Context, sellerID string, status OrderStatus, limit uint, offset uint) ([]*OrderEntity, error) {
+func (f *fakeRepository) GetOrdersBySeller(_ context.Context, sellerID string, query OrderQuery, limit uint, offset uint) ([]*OrderEntity, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	mine := f.sellerOrders(sellerID, status)
+	mine := f.sellerOrders(sellerID, query)
 	start := min(int(offset), len(mine))
 	end := min(start+int(limit), len(mine))
 	return mine[start:end], nil

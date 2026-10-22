@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
@@ -13,7 +12,7 @@ import (
 )
 
 type ListSellerOrdersUseCase interface {
-	ListSellerOrders(ctx context.Context, sellerID string, status OrderStatus, page uint, limit uint) (*OrderPage, error)
+	ListSellerOrders(ctx context.Context, sellerID string, filter HistoryFilter, page uint, limit uint) (*OrderPage, error)
 }
 
 type GetSellerOrderUseCase interface {
@@ -32,11 +31,12 @@ type ConfirmDeliveryUseCase interface {
 	ConfirmDelivery(ctx context.Context, buyerID string, id string) (*OrderDetail, error)
 }
 
-// ListSellerOrders returns the seller's paid orders, most recently paid first, optionally with one
-// status (RF-020, RF-025). Orders not paid yet are left out: there is nothing to do with them.
-func (s *service) ListSellerOrders(ctx context.Context, sellerID string, status OrderStatus, page uint, limit uint) (*OrderPage, error) {
-	if status != "" && !slices.Contains(sellerStatuses, status) {
-		return nil, fmt.Errorf("%w: status must be one of paid, processing, shipped, delivered, cancelled, returned", app.ErrInvalidInput)
+// ListSellerOrders returns the seller's paid orders, most recently paid first (RF-020, RF-025).
+// Orders not paid yet are left out: there is nothing to do with them.
+func (s *service) ListSellerOrders(ctx context.Context, sellerID string, filter HistoryFilter, page uint, limit uint) (*OrderPage, error) {
+	query, err := filter.query(sellerStatuses)
+	if err != nil {
+		return nil, err
 	}
 	if page == 0 {
 		page = 1
@@ -48,12 +48,12 @@ func (s *service) ListSellerOrders(ctx context.Context, sellerID string, status 
 		return nil, fmt.Errorf("%w: limit must be at most %d", app.ErrInvalidInput, maxOrdersPerPage)
 	}
 
-	total, err := s.r.CountOrdersBySeller(ctx, sellerID, status)
+	total, err := s.r.CountOrdersBySeller(ctx, sellerID, query)
 	if err != nil {
 		slog.ErrorContext(ctx, "CountOrdersBySeller failed", "user_id", sellerID, "error", err)
 		return nil, err
 	}
-	orders, err := s.r.GetOrdersBySeller(ctx, sellerID, status, limit, (page-1)*limit)
+	orders, err := s.r.GetOrdersBySeller(ctx, sellerID, query, limit, (page-1)*limit)
 	if err != nil {
 		slog.ErrorContext(ctx, "GetOrdersBySeller failed", "user_id", sellerID, "error", err)
 		return nil, err

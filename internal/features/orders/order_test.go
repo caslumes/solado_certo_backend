@@ -97,7 +97,7 @@ func TestListOrdersPaginates(t *testing.T) {
 		{4, 10, 0, 4, 3},
 	}
 	for _, tt := range tests {
-		page, err := s.ListOrders(context.Background(), testBuyerID, tt.page, tt.limit)
+		page, err := s.ListOrders(context.Background(), testBuyerID, HistoryFilter{}, tt.page, tt.limit)
 		if err != nil {
 			t.Fatalf("ListOrders: %v", err)
 		}
@@ -114,7 +114,7 @@ func TestListOrdersPaginates(t *testing.T) {
 
 func TestListOrdersWithoutOrders(t *testing.T) {
 	_, s := ordersFixture(0)
-	page, err := s.ListOrders(context.Background(), testBuyerID, 1, 10)
+	page, err := s.ListOrders(context.Background(), testBuyerID, HistoryFilter{}, 1, 10)
 	if err != nil || len(page.Items) != 0 || page.TotalPages != 0 {
 		t.Errorf("page = %+v, error = %v", page, err)
 	}
@@ -122,11 +122,21 @@ func TestListOrdersWithoutOrders(t *testing.T) {
 
 func TestListOrdersRejectsAndPropagates(t *testing.T) {
 	r, s := ordersFixture(1)
-	if _, err := s.ListOrders(context.Background(), testBuyerID, 1, maxOrdersPerPage+1); !errors.Is(err, app.ErrInvalidInput) {
+	if _, err := s.ListOrders(context.Background(), testBuyerID, HistoryFilter{}, 1, maxOrdersPerPage+1); !errors.Is(err, app.ErrInvalidInput) {
 		t.Errorf("limit too big: error = %v, want ErrInvalidInput", err)
 	}
+	for _, filter := range []HistoryFilter{
+		{Status: "lost"},
+		{From: "2026-13-01"},
+		{To: "21/10/2026"},
+		{From: "2026-10-21", To: "2026-10-20"},
+	} {
+		if _, err := s.ListOrders(context.Background(), testBuyerID, filter, 1, 10); !errors.Is(err, app.ErrInvalidInput) {
+			t.Errorf("filter %+v: error = %v, want ErrInvalidInput", filter, err)
+		}
+	}
 	r.err = errors.New("db down")
-	if _, err := s.ListOrders(context.Background(), testBuyerID, 1, 10); err == nil {
+	if _, err := s.ListOrders(context.Background(), testBuyerID, HistoryFilter{}, 1, 10); err == nil {
 		t.Error("want error")
 	}
 }

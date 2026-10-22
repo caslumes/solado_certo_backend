@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
@@ -43,15 +44,15 @@ func TestOrdersByBuyer(t *testing.T) {
 	insolesOrder, socksOrder := s.placeOrders(t)
 	s.exec(t, "UPDATE orders SET created_at = created_at - interval '1 day' WHERE id = $1", socksOrder.ID)
 
-	total, err := s.r.CountOrdersByBuyer(context.Background(), s.buyer.ID)
+	total, err := s.r.CountOrdersByBuyer(context.Background(), s.buyer.ID, orders.OrderQuery{})
 	if err != nil || total != 2 {
 		t.Fatalf("count = %d, error = %v", total, err)
 	}
-	first, err := s.r.GetOrdersByBuyer(context.Background(), s.buyer.ID, 1, 0)
+	first, err := s.r.GetOrdersByBuyer(context.Background(), s.buyer.ID, orders.OrderQuery{}, 1, 0)
 	if err != nil {
 		t.Fatalf("GetOrdersByBuyer: %v", err)
 	}
-	second, err := s.r.GetOrdersByBuyer(context.Background(), s.buyer.ID, 1, 1)
+	second, err := s.r.GetOrdersByBuyer(context.Background(), s.buyer.ID, orders.OrderQuery{}, 1, 1)
 	if err != nil {
 		t.Fatalf("GetOrdersByBuyer: %v", err)
 	}
@@ -62,10 +63,47 @@ func TestOrdersByBuyer(t *testing.T) {
 		t.Errorf("items = %+v", first[0].Items)
 	}
 
-	total, err = s.r.CountOrdersByBuyer(context.Background(), s.seller.ID)
-	none, _ := s.r.GetOrdersByBuyer(context.Background(), s.seller.ID, 10, 0)
+	total, err = s.r.CountOrdersByBuyer(context.Background(), s.seller.ID, orders.OrderQuery{})
+	none, _ := s.r.GetOrdersByBuyer(context.Background(), s.seller.ID, orders.OrderQuery{}, 10, 0)
 	if err != nil || total != 0 || none == nil || len(none) != 0 {
 		t.Errorf("another user: count = %d, orders = %v, error = %v", total, none, err)
+	}
+}
+
+func TestOrdersByBuyerFiltered(t *testing.T) {
+	s := newCheckoutSetup(t)
+	ctx := context.Background()
+	insolesOrder, socksOrder := s.placeOrders(t)
+	s.exec(t, "UPDATE orders SET created_at = '2026-10-10T12:00:00Z' WHERE id = $1", insolesOrder.ID)
+	s.exec(t, "UPDATE orders SET created_at = '2026-10-20T12:00:00Z', status = 'cancelled' WHERE id = $1", socksOrder.ID)
+	day := func(value string) *time.Time {
+		at, _ := time.Parse(time.RFC3339, value)
+		return &at
+	}
+
+	tests := []struct {
+		name  string
+		query orders.OrderQuery
+		want  []string
+	}{
+		{"status", orders.OrderQuery{Status: orders.OrderStatusCancelled}, []string{socksOrder.ID}},
+		{"since", orders.OrderQuery{Since: day("2026-10-15T00:00:00Z")}, []string{socksOrder.ID}},
+		{"until", orders.OrderQuery{Until: day("2026-10-15T00:00:00Z")}, []string{insolesOrder.ID}},
+		{"until excluded", orders.OrderQuery{Until: day("2026-10-10T12:00:00Z")}, nil},
+		{"both", orders.OrderQuery{Since: day("2026-10-01T00:00:00Z"), Until: day("2026-10-31T00:00:00Z")}, []string{socksOrder.ID, insolesOrder.ID}},
+	}
+	for _, tt := range tests {
+		total, err := s.r.CountOrdersByBuyer(ctx, s.buyer.ID, tt.query)
+		list, listErr := s.r.GetOrdersByBuyer(ctx, s.buyer.ID, tt.query, 10, 0)
+		if err != nil || listErr != nil || total != uint(len(tt.want)) || len(list) != len(tt.want) {
+			t.Errorf("%s: total = %d, orders = %d, errors = %v, %v", tt.name, total, len(list), err, listErr)
+			continue
+		}
+		for i, order := range list {
+			if order.ID != tt.want[i] {
+				t.Errorf("%s: order %d = %s", tt.name, i, order.ID)
+			}
+		}
 	}
 }
 
