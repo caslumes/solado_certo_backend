@@ -78,12 +78,12 @@ func (s *service) StartProcessing(ctx context.Context, sellerID string, id strin
 	}
 	notification := notifications.OrderProcessing(order.BuyerID, order.ID, order.Number)
 	err = s.changeStatus(ctx, StatusChange{
-		OrderID:      order.ID,
-		ChangedBy:    sellerID,
-		From:         order.Status,
-		To:           OrderStatusProcessing,
-		Reason:       ReasonSellerProcessing,
-		Notification: &notification,
+		OrderID:       order.ID,
+		ChangedBy:     sellerID,
+		From:          order.Status,
+		To:            OrderStatusProcessing,
+		Reason:        ReasonSellerProcessing,
+		Notifications: []notifications.NewNotification{notification},
 	})
 	if err != nil {
 		return nil, err
@@ -103,13 +103,13 @@ func (s *service) ShipOrder(ctx context.Context, sellerID string, id string, inp
 	}
 	notification := notifications.OrderShipped(order.BuyerID, order.ID, order.Number, shipment.Carrier, shipment.TrackingCode)
 	err = s.changeStatus(ctx, StatusChange{
-		OrderID:      order.ID,
-		ChangedBy:    sellerID,
-		From:         order.Status,
-		To:           OrderStatusShipped,
-		Reason:       ReasonSellerShipped,
-		Shipment:     &shipment,
-		Notification: &notification,
+		OrderID:       order.ID,
+		ChangedBy:     sellerID,
+		From:          order.Status,
+		To:            OrderStatusShipped,
+		Reason:        ReasonSellerShipped,
+		Shipment:      &shipment,
+		Notifications: []notifications.NewNotification{notification},
 	})
 	if err != nil {
 		return nil, err
@@ -125,12 +125,12 @@ func (s *service) ConfirmDelivery(ctx context.Context, buyerID string, id string
 	}
 	notification := notifications.OrderDelivered(order.SellerID, order.ID, order.Number)
 	err = s.changeStatus(ctx, StatusChange{
-		OrderID:      order.ID,
-		ChangedBy:    buyerID,
-		From:         order.Status,
-		To:           OrderStatusDelivered,
-		Reason:       ReasonBuyerConfirmedDelivery,
-		Notification: &notification,
+		OrderID:       order.ID,
+		ChangedBy:     buyerID,
+		From:          order.Status,
+		To:            OrderStatusDelivered,
+		Reason:        ReasonBuyerConfirmedDelivery,
+		Notifications: []notifications.NewNotification{notification},
 	})
 	if err != nil {
 		return nil, err

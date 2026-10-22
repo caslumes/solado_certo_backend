@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
@@ -189,7 +190,7 @@ func TestCancelOrder(t *testing.T) {
 		t.Errorf("detail = %+v", detail)
 	}
 	want := StatusChange{OrderID: testOrderID, ChangedBy: testBuyerID, From: OrderStatusAwaitingPayment, To: OrderStatusCancelled, Reason: ReasonBuyerCancelled, ReleaseStock: true}
-	if len(r.changes) != 1 || r.changes[0] != want {
+	if len(r.changes) != 1 || !reflect.DeepEqual(r.changes[0], want) {
 		t.Errorf("changes = %+v, want %+v", r.changes, want)
 	}
 }

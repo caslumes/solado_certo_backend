@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
@@ -72,6 +73,7 @@ type repository interface {
 	CountOrdersBySeller(ctx context.Context, sellerID string, query OrderQuery) (uint, error)
 	GetOrdersBySeller(ctx context.Context, sellerID string, query OrderQuery, limit uint, offset uint) ([]*OrderEntity, error)
 	GetShipment(ctx context.Context, orderID string) (*ShipmentEntity, error)
+	GetOverdueShippedOrders(ctx context.Context, postedBefore time.Time) ([]*OrderEntity, error)
 }
 
 const (
@@ -84,10 +86,11 @@ const (
 type service struct {
 	r        repository
 	refunder Refunder
+	now      func() time.Time
 }
 
 func NewService(r repository) *service {
-	return &service{r: r}
+	return &service{r: r, now: time.Now}
 }
 
 // SetRefunder makes cancelling a paid order refund it right away; without one, the payments poller
@@ -367,7 +370,7 @@ func (s *service) CancelOrder(ctx context.Context, userID string, id string) (*O
 	}
 	if order.Status == OrderStatusPaid {
 		notification := notifications.OrderCancelled(order.SellerID, order.ID, order.Number)
-		change.Notification = &notification
+		change.Notifications = []notifications.NewNotification{notification}
 	}
 	if err := s.changeStatus(ctx, change); err != nil {
 		return nil, err

@@ -64,7 +64,7 @@ func (r *postgresRepository) GetStatusHistory(ctx context.Context, orderID strin
 }
 
 // ChangeOrderStatus locks the order, so two changes can't both start from the same status. The
-// shipment (when shipped), the delivery time (when delivered) and the notification are written in
+// shipment (when shipped), the delivery time (when delivered) and the notifications are written in
 // the same transaction.
 func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change orders.StatusChange) error {
 	tx, err := r.pool.Begin(ctx)
@@ -122,8 +122,8 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 	if err := RecordStatusChange(ctx, tx, change.OrderID, change.ChangedBy, &from, change.To, change.Reason, auditContext, now); err != nil {
 		return err
 	}
-	if change.Notification != nil {
-		if err := notificationsdb.Create(ctx, tx, *change.Notification, now); err != nil {
+	for _, notification := range change.Notifications {
+		if err := notificationsdb.Create(ctx, tx, notification, now); err != nil {
 			return err
 		}
 	}
@@ -146,6 +146,18 @@ func (r *postgresRepository) CountOrdersBySeller(ctx context.Context, sellerID s
 
 func (r *postgresRepository) GetOrdersBySeller(ctx context.Context, sellerID string, query orders.OrderQuery, limit uint, offset uint) ([]*orders.OrderEntity, error) {
 	return r.getOrders(ctx, "s.id = $1 AND "+paidOrders+" ORDER BY o.paid_at DESC, o.id DESC LIMIT $5 OFFSET $6", append(historyArgs(sellerID, query), limit, offset)...)
+}
+
+// overdueBatch caps how many orders one round of the delivery job handles; the rest wait for the next round.
+const overdueBatch = 200
+
+// GetOverdueShippedOrders returns the orders still shipped whose shipment was posted before postedBefore.
+func (r *postgresRepository) GetOverdueShippedOrders(ctx context.Context, postedBefore time.Time) ([]*orders.OrderEntity, error) {
+	return r.getOrders(
+		ctx,
+		"o.status = 'shipped' AND EXISTS (SELECT 1 FROM shipments sh WHERE sh.order_id = o.id AND sh.posted_at < $1) ORDER BY o.updated_at, o.id LIMIT $2",
+		postedBefore, overdueBatch,
+	)
 }
 
 // GetShipment returns the order's shipment, or nil when it wasn't shipped.

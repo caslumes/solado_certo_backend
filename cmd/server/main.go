@@ -8,10 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/config"
+	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 	"github.com/caslumes/solado_certo_backend/internal/features/payments"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -44,11 +46,9 @@ func run() error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	pollerDone := make(chan struct{})
-	go func() {
-		defer close(pollerDone)
-		payments.RunPoller(ctx, app.PaymentPoller, payments.PollInterval)
-	}()
+	var jobs sync.WaitGroup
+	jobs.Go(func() { payments.RunPoller(ctx, app.PaymentPoller, payments.PollInterval) })
+	jobs.Go(func() { orders.RunDeliveryJob(ctx, app.DeliveryJob, orders.DeliveryJobInterval) })
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -59,7 +59,7 @@ func run() error {
 	select {
 	case err := <-serverErr:
 		stop()
-		<-pollerDone
+		jobs.Wait()
 		return err
 	case <-ctx.Done():
 	}
@@ -72,7 +72,7 @@ func run() error {
 	if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	<-pollerDone
+	jobs.Wait()
 	app.PaymentsHandler.Wait()
 	return nil
 }

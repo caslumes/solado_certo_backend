@@ -24,6 +24,14 @@ func fulfillmentFixture() (*fakeRepository, *service) {
 	return r, NewService(r)
 }
 
+// notified returns the change's single notification, or nil when it has none or several.
+func notified(change StatusChange) *notifications.NewNotification {
+	if len(change.Notifications) != 1 {
+		return nil
+	}
+	return &change.Notifications[0]
+}
+
 func TestValidateShipment(t *testing.T) {
 	valid := []struct {
 		input ShipmentInput
@@ -128,7 +136,7 @@ func TestStartProcessing(t *testing.T) {
 	if change.ChangedBy != testSellerID || change.From != OrderStatusPaid || change.To != OrderStatusProcessing || change.Reason != ReasonSellerProcessing || change.ReleaseStock {
 		t.Errorf("change = %+v", change)
 	}
-	if n := change.Notification; n == nil || n.UserID != testBuyerID || n.Type != notifications.TypeOrderProcessing || n.Data["order_id"] != testOrderID {
+	if n := notified(change); n == nil || n.UserID != testBuyerID || n.Type != notifications.TypeOrderProcessing || n.Data["order_id"] != testOrderID {
 		t.Errorf("notification = %+v, want the buyer's", n)
 	}
 
@@ -163,7 +171,7 @@ func TestShipOrder(t *testing.T) {
 	if change.Shipment == nil || *change.Shipment != (NewShipment{Carrier: "Correios", TrackingCode: "AA123456789BR"}) || change.Reason != ReasonSellerShipped {
 		t.Errorf("change = %+v", change)
 	}
-	if n := change.Notification; n == nil || n.UserID != testBuyerID || n.Type != notifications.TypeOrderShipped {
+	if n := notified(change); n == nil || n.UserID != testBuyerID || n.Type != notifications.TypeOrderShipped {
 		t.Errorf("notification = %+v, want the buyer's", n)
 	}
 }
@@ -205,7 +213,7 @@ func TestConfirmDelivery(t *testing.T) {
 	if change.ChangedBy != testBuyerID || change.Reason != ReasonBuyerConfirmedDelivery {
 		t.Errorf("change = %+v", change)
 	}
-	if n := change.Notification; n == nil || n.UserID != testSellerID || n.Type != notifications.TypeOrderDelivered {
+	if n := notified(change); n == nil || n.UserID != testSellerID || n.Type != notifications.TypeOrderDelivered {
 		t.Errorf("notification = %+v, want the seller's", n)
 	}
 }
@@ -216,7 +224,7 @@ func TestCancelPaidOrderNotifiesTheSeller(t *testing.T) {
 	if _, err := s.CancelOrder(context.Background(), testBuyerID, testOrderID); err != nil {
 		t.Fatalf("CancelOrder: %v", err)
 	}
-	if n := r.changes[0].Notification; n == nil || n.UserID != testSellerID || n.Type != notifications.TypeOrderCancelled {
+	if n := notified(r.changes[0]); n == nil || n.UserID != testSellerID || n.Type != notifications.TypeOrderCancelled {
 		t.Errorf("notification = %+v, want the seller's", n)
 	}
 
@@ -224,7 +232,7 @@ func TestCancelPaidOrderNotifiesTheSeller(t *testing.T) {
 	if _, err := s.CancelOrder(context.Background(), testBuyerID, otherOrderID); err != nil {
 		t.Fatalf("CancelOrder: %v", err)
 	}
-	if n := r.changes[1].Notification; n != nil {
+	if n := r.changes[1].Notifications; n != nil {
 		t.Errorf("notification = %+v, want none", n)
 	}
 }

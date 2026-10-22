@@ -11,6 +11,7 @@ const (
 	TypeOrderProcessing Type = "order_processing"
 	TypeOrderShipped    Type = "order_shipped"
 	TypeOrderDelivered  Type = "order_delivered"
+	TypeDeliveryDeadline Type = "delivery_deadline"
 )
 
 type NotificationEntity struct {
@@ -109,6 +110,28 @@ func OrderDelivered(sellerID string, orderID string, number string) NewNotificat
 		Type:   TypeOrderDelivered,
 		Title:  "Pedido entregue",
 		Body:   "O comprador confirmou o recebimento do pedido " + number + ".",
+		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// BuyerDeliveryDeadline tells the buyer that an order shipped 30 days ago was taken as delivered.
+func BuyerDeliveryDeadline(buyerID string, orderID string, number string) NewNotification {
+	return NewNotification{
+		UserID: buyerID,
+		Type:   TypeDeliveryDeadline,
+		Title:  "Pedido dado como entregue",
+		Body:   "O pedido " + number + " foi enviado há 30 dias e foi dado como entregue. Avalie os produtos; se ele não chegou, procure o suporte.",
+		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// SellerDeliveryDeadline tells the seller that an order shipped 30 days ago was taken as delivered.
+func SellerDeliveryDeadline(sellerID string, orderID string, number string) NewNotification {
+	return NewNotification{
+		UserID: sellerID,
+		Type:   TypeOrderDelivered,
+		Title:  "Pedido entregue",
+		Body:   "O pedido " + number + " foi enviado há 30 dias e foi dado como entregue.",
 		Data:   map[string]string{"order_id": orderID},
 	}
 }

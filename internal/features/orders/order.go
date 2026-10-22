@@ -137,10 +137,8 @@ type StatusChange struct {
 	To           OrderStatus
 	Reason       string
 	ReleaseStock bool
-	// Shipment is recorded when the order becomes shipped.
 	Shipment *NewShipment
-	// Notification is written in the same transaction, so it exists exactly when the change does.
-	Notification *notifications.NewNotification
+	Notifications []notifications.NewNotification
 }
 
 type OrderDetail struct {

@@ -58,4 +58,5 @@ const (
 	ReasonSellerProcessing       = "seller_started_processing"
 	ReasonSellerShipped          = "seller_shipped"
 	ReasonBuyerConfirmedDelivery = "buyer_confirmed_delivery"
+	ReasonDeliveryDeadline       = "delivery_deadline_passed"
 )

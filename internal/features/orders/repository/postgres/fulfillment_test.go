@@ -121,7 +121,7 @@ func TestStatusChangeWritesItsNotification(t *testing.T) {
 	notification := notifications.OrderProcessing(s.buyer.ID, insolesOrder.ID, insolesOrder.Number)
 
 	err := s.r.ChangeOrderStatus(context.Background(), orders.StatusChange{
-		OrderID: insolesOrder.ID, From: orders.OrderStatusPaid, To: orders.OrderStatusProcessing, Notification: &notification,
+		OrderID: insolesOrder.ID, From: orders.OrderStatusPaid, To: orders.OrderStatusProcessing, Notifications: []notifications.NewNotification{notification},
 	})
 
 	if err != nil {
@@ -133,12 +133,47 @@ func TestStatusChangeWritesItsNotification(t *testing.T) {
 
 	// A change that fails writes no notification.
 	err = s.r.ChangeOrderStatus(context.Background(), orders.StatusChange{
-		OrderID: socksOrder.ID, From: orders.OrderStatusPaid, To: orders.OrderStatusProcessing, Notification: &notification,
+		OrderID: socksOrder.ID, From: orders.OrderStatusPaid, To: orders.OrderStatusProcessing, Notifications: []notifications.NewNotification{notification},
 	})
 	if !errors.Is(err, app.ErrInvalidStatusTransition) {
 		t.Errorf("error = %v, want ErrInvalidStatusTransition", err)
 	}
 	if n := s.count(t, "SELECT count(*) FROM notifications"); n != 1 {
 		t.Errorf("notifications = %d, want still 1", n)
+	}
+}
+
+func TestGetOverdueShippedOrders(t *testing.T) {
+	s := newCheckoutSetup(t)
+	ctx := context.Background()
+	insolesOrder, socksOrder := s.placeOrders(t)
+	s.exec(t, "UPDATE orders SET status = 'processing', paid_at = now() WHERE id = ANY($1::uuid[])", []string{insolesOrder.ID, socksOrder.ID})
+	s.advance(t, insolesOrder.ID, orders.OrderStatusProcessing, orders.OrderStatusShipped, &orders.NewShipment{Carrier: "Correios", TrackingCode: "AA123456789BR"})
+	s.advance(t, socksOrder.ID, orders.OrderStatusProcessing, orders.OrderStatusShipped, &orders.NewShipment{Carrier: "Correios", TrackingCode: "AA987654321BR"})
+	s.exec(t, "UPDATE shipments SET posted_at = now() - interval '31 days' WHERE order_id = $1", insolesOrder.ID)
+	cutoff := time.Now().Add(-orders.DeliveryDeadline)
+
+	overdue, err := s.r.GetOverdueShippedOrders(ctx, cutoff)
+
+	if err != nil || len(overdue) != 1 || overdue[0].ID != insolesOrder.ID || overdue[0].SellerID != s.seller.ID {
+		t.Fatalf("overdue = %+v, %v, want the insoles order", overdue, err)
+	}
+
+	// Taken as delivered, with a notification to each side.
+	err = s.r.ChangeOrderStatus(ctx, orders.StatusChange{
+		OrderID: insolesOrder.ID, From: orders.OrderStatusShipped, To: orders.OrderStatusDelivered, Reason: orders.ReasonDeliveryDeadline,
+		Notifications: []notifications.NewNotification{
+			notifications.BuyerDeliveryDeadline(s.buyer.ID, insolesOrder.ID, insolesOrder.Number),
+			notifications.SellerDeliveryDeadline(s.seller.ID, insolesOrder.ID, insolesOrder.Number),
+		},
+	})
+	if err != nil {
+		t.Fatalf("ChangeOrderStatus: %v", err)
+	}
+	if n := s.count(t, "SELECT count(*) FROM notifications WHERE data->>'order_id' = $1 AND user_id = ANY($2::uuid[])", insolesOrder.ID, []string{s.buyer.ID, s.seller.ID}); n != 2 {
+		t.Errorf("notifications = %d, want 2", n)
+	}
+	if overdue, _ := s.r.GetOverdueShippedOrders(ctx, cutoff); len(overdue) != 0 {
+		t.Errorf("overdue after delivery = %+v, want none", overdue)
 	}
 }

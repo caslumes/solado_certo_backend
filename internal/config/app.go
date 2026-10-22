@@ -58,6 +58,7 @@ type App struct {
 
 	PaymentsHandler      *httppayments.Handler
 	PaymentPoller        payments.CheckPaymentsUseCase
+	DeliveryJob          orders.DeliverOverdueOrdersUseCase
 	NotificationsHandler *httpnotifications.Handler
 	ReviewsHandler       *httpreviews.Handler
 }
@@ -102,6 +103,7 @@ func InitApp(ctx context.Context) (*App, error) {
 
 		PaymentsHandler:      httppayments.NewHandler(paymentsService, envs.AsaasWebhookToken),
 		PaymentPoller:        paymentsService,
+		DeliveryJob:          ordersService,
 		NotificationsHandler: httpnotifications.NewHandler(notificationsService),
 		ReviewsHandler:       httpreviews.NewHandler(reviewsService),
 	}, nil

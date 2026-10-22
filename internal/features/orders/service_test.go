@@ -41,6 +41,8 @@ type fakeRepository struct {
 	// changeErr is returned by ChangeOrderStatus, as if another request changed the order first.
 	changeErr error
 	shipments map[string]*ShipmentEntity
+	// postedBefore is the cutoff GetOverdueShippedOrders was asked for.
+	postedBefore time.Time
 }
 
 func newFakeRepository() *fakeRepository {
@@ -488,4 +490,20 @@ func (f *fakeRepository) GetOrdersBySeller(_ context.Context, sellerID string, q
 
 func (f *fakeRepository) GetShipment(_ context.Context, orderID string) (*ShipmentEntity, error) {
 	return f.shipments[orderID], nil
+}
+
+func (f *fakeRepository) GetOverdueShippedOrders(_ context.Context, postedBefore time.Time) ([]*OrderEntity, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.postedBefore = postedBefore
+	overdue := []*OrderEntity{}
+	for _, order := range f.placed {
+		shipment := f.shipments[order.ID]
+		if order.Status == OrderStatusShipped && shipment != nil && shipment.PostedAt.Before(postedBefore) {
+			copied := *order
+			overdue = append(overdue, &copied)
+		}
+	}
+	return overdue, nil
 }
