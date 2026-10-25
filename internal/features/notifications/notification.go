@@ -1,17 +1,22 @@
 package notifications
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type Type string
 
 const (
-	TypeOrderPaid       Type = "order_paid"
-	TypeOrderRefunded   Type = "order_refunded"
-	TypeOrderCancelled  Type = "order_cancelled"
-	TypeOrderProcessing Type = "order_processing"
-	TypeOrderShipped    Type = "order_shipped"
-	TypeOrderDelivered  Type = "order_delivered"
-	TypeDeliveryDeadline Type = "delivery_deadline"
+	TypeOrderPaid            Type = "order_paid"
+	TypeOrderRefunded        Type = "order_refunded"
+	TypeOrderCancelled       Type = "order_cancelled"
+	TypeOrderProcessing      Type = "order_processing"
+	TypeOrderShipped         Type = "order_shipped"
+	TypeOrderDelivered       Type = "order_delivered"
+	TypeDeliveryDeadline     Type = "delivery_deadline"
+	TypePrescriptionRejected Type = "prescription_rejected"
+	TypePrescriptionSent     Type = "prescription_sent"
 )
 
 type NotificationEntity struct {
@@ -132,6 +137,30 @@ func SellerDeliveryDeadline(sellerID string, orderID string, number string) NewN
 		Type:   TypeOrderDelivered,
 		Title:  "Pedido entregue",
 		Body:   "O pedido " + number + " foi enviado há 30 dias e foi dado como entregue.",
+		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// PrescriptionRejected tells the buyer that the seller refused a prescription, and why; the order waits
+// for a new one.
+func PrescriptionRejected(buyerID string, orderID string, number string, title string, reason string) NewNotification {
+	return NewNotification{
+		UserID: buyerID,
+		Type:   TypePrescriptionRejected,
+		Title:  "Receita recusada",
+		Body:   "O vendedor recusou a receita de " + title + " no pedido " + number + ": " + strings.TrimRight(reason, ".") + ". Envie uma nova receita para o pedido seguir.",
+		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// PrescriptionSent tells the seller that the buyer sent a new prescription for a paid order, after one
+// was rejected.
+func PrescriptionSent(sellerID string, orderID string, number string, title string) NewNotification {
+	return NewNotification{
+		UserID: sellerID,
+		Type:   TypePrescriptionSent,
+		Title:  "Nova receita enviada",
+		Body:   "O comprador enviou uma nova receita de " + title + " no pedido " + number + ".",
 		Data:   map[string]string{"order_id": orderID},
 	}
 }

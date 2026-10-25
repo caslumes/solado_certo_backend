@@ -93,3 +93,21 @@ func (e *ShippingRequiredError) Error() string {
 func (e *ShippingRequiredError) Unwrap() error {
 	return ErrShippingRequired
 }
+
+var ErrPrescriptionRequired = errors.New("prescription required")
+var ErrPrescriptionNotNeeded = errors.New("this item does not need a prescription")
+var ErrDocumentNotFound = errors.New("document not found")
+var ErrUnreadableDocument = errors.New("unreadable document")
+
+// PrescriptionRequiredError lists the order items still without an approved prescription.
+type PrescriptionRequiredError struct {
+	ItemIDs []string
+}
+
+func (e *PrescriptionRequiredError) Error() string {
+	return ErrPrescriptionRequired.Error() + ": " + strings.Join(e.ItemIDs, ", ")
+}
+
+func (e *PrescriptionRequiredError) Unwrap() error {
+	return ErrPrescriptionRequired
+}

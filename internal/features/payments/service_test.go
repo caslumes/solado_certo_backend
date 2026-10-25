@@ -507,6 +507,22 @@ func TestCreatePaymentOrderNotPayable(t *testing.T) {
 	}
 }
 
+func TestCreatePaymentNeedsPrescriptions(t *testing.T) {
+	s := newSetup(t)
+	s.r.orders[orderID].MissingPrescriptions = []string{"item-1"}
+	pix := payments.CreatePaymentInput{Method: payments.MethodPix, TaxID: validCPF}
+
+	_, _, err := s.s.CreatePayment(s.ctx, buyerID, orderID, "key-1", pix)
+
+	var missing *app.PrescriptionRequiredError
+	if !errors.As(err, &missing) || len(missing.ItemIDs) != 1 || missing.ItemIDs[0] != "item-1" {
+		t.Fatalf("error = %v, want PrescriptionRequiredError for item-1", err)
+	}
+	if len(s.r.payments) != 0 {
+		t.Error("a payment was started without the prescriptions")
+	}
+}
+
 func TestCreatePaymentGatewayUnavailable(t *testing.T) {
 	s := newSetup(t)
 	pix := payments.CreatePaymentInput{Method: payments.MethodPix, TaxID: validCPF}

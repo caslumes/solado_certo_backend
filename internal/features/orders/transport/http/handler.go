@@ -51,6 +51,7 @@ func writeError(c *gin.Context, err error, fallback string) {
 func writeErrorWith(c *gin.Context, err error, fallback string, extra gin.H) {
 	var outOfStock *app.OutOfStockError
 	var shippingRequired *app.ShippingRequiredError
+	var prescriptionRequired *app.PrescriptionRequiredError
 	switch {
 	case errors.As(err, &outOfStock):
 		extra["error"] = app.ErrOutOfStock.Error()
@@ -61,6 +62,8 @@ func writeErrorWith(c *gin.Context, err error, fallback string, extra gin.H) {
 		c.JSON(http.StatusConflict, extra)
 	case errors.As(err, &shippingRequired):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": app.ErrShippingRequired.Error(), "advertisement_ids": shippingRequired.AdvertisementIDs})
+	case errors.As(err, &prescriptionRequired):
+		c.JSON(http.StatusConflict, gin.H{"error": app.ErrPrescriptionRequired.Error(), "item_ids": prescriptionRequired.ItemIDs})
 	case errors.Is(err, app.ErrCartEmpty):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 	case errors.Is(err, app.ErrOrderNotFound):

@@ -520,7 +520,7 @@ func TestGrantConsentIsIdempotent(t *testing.T) {
 func TestGrantConsentRejectsUnknownPurposeOrOutdatedTerms(t *testing.T) {
 	tests := map[string]ConsentInput{
 		"unknown purpose":          {Purpose: "marketing", TermsVersion: "podological-profile-v1"},
-		"no terms for purpose yet": {Purpose: "prescription", TermsVersion: "podological-profile-v1"},
+		"terms of another purpose": {Purpose: "prescription", TermsVersion: "podological-profile-v1"},
 		"outdated terms":           {Purpose: "podological_profile", TermsVersion: "podological-profile-v0"},
 	}
 
@@ -1247,5 +1247,26 @@ func TestAvatarReturnsNotFoundForUnknownUser(t *testing.T) {
 	}
 	if _, err := s.RemoveAvatar(context.Background(), "unknown"); !errors.Is(err, app.ErrUserNotFound) {
 		t.Fatalf("RemoveAvatar: err = %v", err)
+	}
+}
+
+func TestPrescriptionConsent(t *testing.T) {
+	s := NewService(newFakeRepository(), storage.NewMemoryStorage())
+	ctx := context.Background()
+
+	if err := s.RequireConsent(ctx, testUserID, ConsentPurposePrescription); !errors.Is(err, app.ErrConsentRequired) {
+		t.Fatalf("before granting: err = %v, want %v", err, app.ErrConsentRequired)
+	}
+	if _, _, err := s.GrantConsent(ctx, testUserID, ConsentInput{Purpose: "prescription", TermsVersion: "prescription-v1"}); err != nil {
+		t.Fatalf("GrantConsent: %v", err)
+	}
+	if err := s.RequireConsent(ctx, testUserID, ConsentPurposePrescription); err != nil {
+		t.Fatalf("after granting: err = %v", err)
+	}
+	if err := s.RevokeConsent(ctx, testUserID, "prescription"); err != nil {
+		t.Fatalf("RevokeConsent: %v", err)
+	}
+	if err := s.RequireConsent(ctx, testUserID, ConsentPurposePrescription); !errors.Is(err, app.ErrConsentRequired) {
+		t.Fatalf("after revoking: err = %v, want %v", err, app.ErrConsentRequired)
 	}
 }

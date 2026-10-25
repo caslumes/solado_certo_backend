@@ -390,7 +390,7 @@ func (s *service) changeStatus(ctx context.Context, change StatusChange) error {
 		return fmt.Errorf("%w: an order cannot go from %s to %s", app.ErrInvalidStatusTransition, change.From, change.To)
 	}
 	if err := s.r.ChangeOrderStatus(ctx, change); err != nil {
-		if !errors.Is(err, app.ErrInvalidStatusTransition) {
+		if !errors.Is(err, app.ErrInvalidStatusTransition) && !errors.Is(err, app.ErrPrescriptionRequired) {
 			slog.ErrorContext(ctx, "ChangeOrderStatus failed", "order_id", change.OrderID, "to", change.To, "error", err)
 		}
 		return err

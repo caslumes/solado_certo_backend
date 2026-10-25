@@ -23,6 +23,9 @@ type OrderItemEntity struct {
 	Subtotal        string
 	Snapshot        ProductSnapshot
 	Review          *ItemReviewEntity
+	// PrescriptionRequired is whether the ad required a prescription when the item was bought.
+	PrescriptionRequired bool
+	Prescription         *PrescriptionEntity
 }
 
 // ItemReviewEntity is the buyer's review of an item, shown to the buyer and to the seller.
@@ -71,18 +74,30 @@ type OrderEntity struct {
 }
 
 func (o *OrderEntity) ToOutput() OrderOutput {
+	return o.output(false)
+}
+
+// output tells, for each item, what the buyer can do with its prescription, or what the seller can when
+// seller is true.
+func (o *OrderEntity) output(seller bool) OrderOutput {
 	items := make([]OrderItemOutput, len(o.Items))
 	for i, item := range o.Items {
 		items[i] = OrderItemOutput{
-			ID:              item.ID,
-			AdvertisementID: item.AdvertisementID,
-			Title:           item.Snapshot.Title,
-			CoverImageURL:   item.Snapshot.CoverImageURL,
-			Quantity:        item.Quantity,
-			UnitPrice:       item.UnitPrice,
-			Subtotal:        item.Subtotal,
-			ShippingOption:  item.Snapshot.ShippingOption,
-			Review:          item.Review.ToOutput(),
+			ID:                   item.ID,
+			AdvertisementID:      item.AdvertisementID,
+			Title:                item.Snapshot.Title,
+			CoverImageURL:        item.Snapshot.CoverImageURL,
+			Quantity:             item.Quantity,
+			UnitPrice:            item.UnitPrice,
+			Subtotal:             item.Subtotal,
+			ShippingOption:       item.Snapshot.ShippingOption,
+			Review:               item.Review.ToOutput(),
+			PrescriptionRequired: item.PrescriptionRequired,
+			Prescription:         item.Prescription.ToOutput(),
+		}
+		if item.PrescriptionRequired {
+			items[i].CanUploadPrescription = !seller && CanUploadPrescription(o.Status, item.Prescription)
+			items[i].CanRejectPrescription = seller && CanRejectPrescription(o.Status, item.Prescription)
 		}
 	}
 	return OrderOutput{
@@ -104,7 +119,7 @@ func (o *OrderEntity) ToOutput() OrderOutput {
 }
 
 func (o *OrderEntity) ToSellerOutput() SellerOrderOutput {
-	return SellerOrderOutput{OrderOutput: o.ToOutput(), Buyer: BuyerOutput{ID: o.BuyerID, Name: o.BuyerName}}
+	return SellerOrderOutput{OrderOutput: o.output(true), Buyer: BuyerOutput{ID: o.BuyerID, Name: o.BuyerName}}
 }
 
 type CheckoutEntity struct {
@@ -131,13 +146,13 @@ type StatusChangeEntity struct {
 }
 
 type StatusChange struct {
-	OrderID      string
-	ChangedBy    string
-	From         OrderStatus
-	To           OrderStatus
-	Reason       string
-	ReleaseStock bool
-	Shipment *NewShipment
+	OrderID       string
+	ChangedBy     string
+	From          OrderStatus
+	To            OrderStatus
+	Reason        string
+	ReleaseStock  bool
+	Shipment      *NewShipment
 	Notifications []notifications.NewNotification
 }
 
@@ -163,7 +178,7 @@ func (d *OrderDetail) ToSellerOutput() *SellerOrderDetailOutput {
 		History:            d.historyOutput(),
 		Shipment:           d.Shipment.ToOutput(),
 		CanStartProcessing: d.Order.Status == OrderStatusPaid,
-		CanShip:            d.Order.Status == OrderStatusProcessing,
+		CanShip:            d.Order.Status == OrderStatusProcessing && len(d.Order.MissingPrescriptions()) == 0,
 	}
 }
 

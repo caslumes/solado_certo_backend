@@ -13,6 +13,9 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 	catalogRepository "github.com/caslumes/solado_certo_backend/internal/features/catalog/repository/postgres"
 	httpcatalog "github.com/caslumes/solado_certo_backend/internal/features/catalog/transport/http"
+	"github.com/caslumes/solado_certo_backend/internal/features/documents"
+	documentsRepository "github.com/caslumes/solado_certo_backend/internal/features/documents/repository/postgres"
+	httpdocuments "github.com/caslumes/solado_certo_backend/internal/features/documents/transport/http"
 	httpfiles "github.com/caslumes/solado_certo_backend/internal/features/files/transport/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	meRepository "github.com/caslumes/solado_certo_backend/internal/features/me/repository/postgres"
@@ -61,6 +64,7 @@ type App struct {
 	DeliveryJob          orders.DeliverOverdueOrdersUseCase
 	NotificationsHandler *httpnotifications.Handler
 	ReviewsHandler       *httpreviews.Handler
+	DocumentsHandler     *httpdocuments.Handler
 }
 
 func InitApp(ctx context.Context) (*App, error) {
@@ -88,6 +92,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	ordersService.SetRefunder(paymentsService)
 	notificationsService := notifications.NewService(notificationsRepository.NewPostgresRepository(dbPool))
 	reviewsService := reviews.NewService(reviewsRepository.NewPostgresRepository(dbPool))
+	documentsService := documents.NewService(documentsRepository.NewPostgresRepository(dbPool), fileStorage, meService)
 
 	return &App{
 		Envs:           envs,
@@ -106,6 +111,7 @@ func InitApp(ctx context.Context) (*App, error) {
 		DeliveryJob:          ordersService,
 		NotificationsHandler: httpnotifications.NewHandler(notificationsService),
 		ReviewsHandler:       httpreviews.NewHandler(reviewsService),
+		DocumentsHandler:     httpdocuments.NewHandler(documentsService),
 	}, nil
 }
 

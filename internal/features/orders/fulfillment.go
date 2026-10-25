@@ -91,7 +91,8 @@ func (s *service) StartProcessing(ctx context.Context, sellerID string, id strin
 	return s.GetSellerOrder(ctx, sellerID, id)
 }
 
-// ShipOrder records the carrier and tracking code of an order being prepared (RF-021, UC-009).
+// ShipOrder records the carrier and tracking code of an order being prepared (RF-021, UC-009). An
+// item whose prescription the seller rejected holds the order back until the buyer sends a new one.
 func (s *service) ShipOrder(ctx context.Context, sellerID string, id string, input ShipmentInput) (*OrderDetail, error) {
 	shipment, err := ValidateShipment(input)
 	if err != nil {
@@ -100,6 +101,9 @@ func (s *service) ShipOrder(ctx context.Context, sellerID string, id string, inp
 	order, err := s.sellerOrder(ctx, sellerID, id)
 	if err != nil {
 		return nil, err
+	}
+	if missing := order.MissingPrescriptions(); len(missing) > 0 {
+		return nil, &app.PrescriptionRequiredError{ItemIDs: missing}
 	}
 	notification := notifications.OrderShipped(order.BuyerID, order.ID, order.Number, shipment.Carrier, shipment.TrackingCode)
 	err = s.changeStatus(ctx, StatusChange{

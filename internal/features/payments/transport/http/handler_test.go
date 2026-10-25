@@ -183,6 +183,7 @@ func TestPaymentErrors(t *testing.T) {
 		{app.ErrInvalidStatusTransition, http.StatusConflict},
 		{app.ErrOrderExpired, http.StatusConflict},
 		{app.ErrPaymentInProgress, http.StatusConflict},
+		{&app.PrescriptionRequiredError{ItemIDs: []string{"item-1"}}, http.StatusConflict},
 		{app.ErrTaxIDInUse, http.StatusConflict},
 		{app.ErrTaxIDRequired, http.StatusUnprocessableEntity},
 		{app.ErrIdempotencyKeyReused, http.StatusUnprocessableEntity},

@@ -20,6 +20,8 @@ type OrderEntity struct {
 	PostalCode    string
 	AddressNumber string
 	CreatedAt     time.Time
+	// MissingPrescriptions are the items that need a prescription and have no approved one (RF-036).
+	MissingPrescriptions []string
 }
 
 // Expired tells whether the order's due date is over.

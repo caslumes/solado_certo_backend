@@ -46,7 +46,10 @@ func requireUserID(c *gin.Context) (string, bool) {
 }
 
 func writeError(c *gin.Context, err error, fallback string) {
+	var prescriptionRequired *app.PrescriptionRequiredError
 	switch {
+	case errors.As(err, &prescriptionRequired):
+		c.JSON(http.StatusConflict, gin.H{"error": app.ErrPrescriptionRequired.Error(), "item_ids": prescriptionRequired.ItemIDs})
 	case errors.Is(err, app.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, app.ErrOrderNotFound):

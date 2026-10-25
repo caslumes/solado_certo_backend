@@ -219,6 +219,9 @@ func (s *service) payable(order *OrderEntity) error {
 	if order.Expired(s.now()) {
 		return app.ErrOrderExpired
 	}
+	if len(order.MissingPrescriptions) > 0 {
+		return &app.PrescriptionRequiredError{ItemIDs: order.MissingPrescriptions}
+	}
 	return nil
 }
 

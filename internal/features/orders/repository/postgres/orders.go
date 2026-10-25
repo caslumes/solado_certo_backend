@@ -65,7 +65,8 @@ func (r *postgresRepository) GetStatusHistory(ctx context.Context, orderID strin
 
 // ChangeOrderStatus locks the order, so two changes can't both start from the same status. The
 // shipment (when shipped), the delivery time (when delivered) and the notifications are written in
-// the same transaction.
+// the same transaction. Shipping checks the prescriptions again under the lock, since the seller
+// rejecting one also locks the order.
 func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change orders.StatusChange) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -82,6 +83,15 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 	}
 	if status != change.From {
 		return app.ErrInvalidStatusTransition
+	}
+	if change.To == orders.OrderStatusShipped {
+		missing, err := MissingPrescriptions(ctx, tx, change.OrderID)
+		if err != nil {
+			return err
+		}
+		if len(missing) > 0 {
+			return &app.PrescriptionRequiredError{ItemIDs: missing}
+		}
 	}
 
 	now := time.Now().UTC()

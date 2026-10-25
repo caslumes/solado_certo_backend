@@ -51,6 +51,9 @@ func (r *postgresRepository) GetOrder(ctx context.Context, id string) (*payments
 		}
 		return nil, err
 	}
+	if order.MissingPrescriptions, err = ordersdb.MissingPrescriptions(ctx, r.pool, id); err != nil {
+		return nil, err
+	}
 	return &order, nil
 }
 

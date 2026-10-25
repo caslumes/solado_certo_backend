@@ -55,15 +55,19 @@ type ItemReviewOutput struct {
 }
 
 type OrderItemOutput struct {
-	ID              string               `json:"id,omitempty"`
-	AdvertisementID string               `json:"advertisement_id"`
-	Title           string               `json:"title"`
-	CoverImageURL   *string              `json:"cover_image_url"`
-	Quantity        int                  `json:"quantity"`
-	UnitPrice       string               `json:"unit_price"`
-	Subtotal        string               `json:"subtotal"`
-	ShippingOption  ShippingOptionOutput `json:"shipping_option"`
-	Review          *ItemReviewOutput    `json:"review"`
+	ID                    string               `json:"id,omitempty"`
+	AdvertisementID       string               `json:"advertisement_id"`
+	Title                 string               `json:"title"`
+	CoverImageURL         *string              `json:"cover_image_url"`
+	Quantity              int                  `json:"quantity"`
+	UnitPrice             string               `json:"unit_price"`
+	Subtotal              string               `json:"subtotal"`
+	ShippingOption        ShippingOptionOutput `json:"shipping_option"`
+	Review                *ItemReviewOutput    `json:"review"`
+	PrescriptionRequired  bool                 `json:"prescription_required"`
+	Prescription          *PrescriptionOutput  `json:"prescription"`
+	CanUploadPrescription bool                 `json:"can_upload_prescription"`
+	CanRejectPrescription bool                 `json:"can_reject_prescription"`
 }
 
 type PlannedOrderOutput struct {
@@ -165,4 +169,12 @@ type SellerOrderPageOutput struct {
 	TotalItems  uint                `json:"total_items"`
 	HasNext     bool                `json:"has_next"`
 	HasPrevious bool                `json:"has_previous"`
+}
+
+type PrescriptionOutput struct {
+	ID              string    `json:"id"`
+	Status          string    `json:"status"`
+	RejectionReason *string   `json:"rejection_reason"`
+	URL             string    `json:"url"`
+	CreatedAt       time.Time `json:"created_at"`
 }

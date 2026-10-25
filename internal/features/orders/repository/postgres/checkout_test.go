@@ -96,6 +96,9 @@ func newCheckoutSetup(t *testing.T) checkoutSetup {
 
 func TestCreateCheckout(t *testing.T) {
 	s := newCheckoutSetup(t)
+	if _, err := s.pool.Exec(context.Background(), "UPDATE advertisements SET prescription_required = true WHERE id = $1", s.socks.ID); err != nil {
+		t.Fatal(err)
+	}
 	plan := s.planFor(t, s.buyer.ID, s.addressID)
 
 	id, created, err := s.r.CreateCheckout(context.Background(), s.buyer.ID, "key-1", plan)
@@ -124,6 +127,10 @@ func TestCreateCheckout(t *testing.T) {
 		}
 		if len(order.Items) != 1 {
 			t.Fatalf("items = %+v", order.Items)
+		}
+		needs := order.SellerID == s.otherSeller.ID
+		if order.Items[0].PrescriptionRequired != needs || (len(order.MissingPrescriptions()) == 1) != needs {
+			t.Errorf("seller %s: prescription required = %v, missing = %v", order.SellerID, order.Items[0].PrescriptionRequired, order.MissingPrescriptions())
 		}
 		totals[order.SellerID] = order.Subtotal + " + " + order.ShippingTotal + " - " + order.DiscountTotal + " = " + order.Total
 	}

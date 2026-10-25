@@ -111,6 +111,19 @@ func TestShipOrderMapsTrackingErrors(t *testing.T) {
 	}
 }
 
+func TestShipOrderListsTheItemsWithoutPrescription(t *testing.T) {
+	service := ordersService(nil)
+	service.ship = func(context.Context, string, string, orders.ShipmentInput) (*orders.OrderDetail, error) {
+		return nil, &app.PrescriptionRequiredError{ItemIDs: []string{"item-1"}}
+	}
+
+	recorder := serve(NewHandler(service), http.MethodPost, "/seller/orders/"+testOrderID+"/shipment", `{"carrier":"Correios","tracking_code":"AA123456789BR"}`)
+
+	if recorder.Code != http.StatusConflict || recorder.Body.String() != `{"error":"prescription required","item_ids":["item-1"]}` {
+		t.Errorf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestConfirmDeliveryOutput(t *testing.T) {
 	recorder := serve(NewHandler(ordersService(nil)), http.MethodPost, "/orders/"+testOrderID+"/delivered", "")
 

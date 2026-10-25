@@ -309,6 +309,11 @@ func (s *service) EditPodologicalProfile(context context.Context, userID string,
 	return saved, nil
 }
 
+// RequireConsent answers ErrConsentRequired unless the user has an active consent to the current terms of purpose.
+func (s *service) RequireConsent(context context.Context, userID string, purpose ConsentPurpose) error {
+	return s.requireConsent(context, userID, purpose)
+}
+
 func (s *service) requireConsent(context context.Context, userID string, purpose ConsentPurpose) error {
 	consent, err := s.r.GetActiveConsent(context, userID, purpose)
 	if err != nil {

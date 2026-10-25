@@ -282,8 +282,8 @@ func insertOrder(ctx context.Context, tx pgx.Tx, buyerID string, checkoutID stri
 		}
 		_, err = tx.Exec(
 			ctx,
-			"INSERT INTO order_items (order_id, advertisement_id, seller_id, shipping_option_id, quantity, unit_price, subtotal, product_snapshot, created_at) "+
-				"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+			"INSERT INTO order_items (order_id, advertisement_id, seller_id, shipping_option_id, quantity, unit_price, subtotal, product_snapshot, prescription_required, created_at) "+
+				"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT prescription_required FROM advertisements WHERE id = $2), $9)",
 			orderID, item.AdvertisementID, item.SellerID, item.ShippingOption.ID, item.Quantity, item.Price, item.Subtotal().String(), snapshot, now,
 		)
 		if err != nil {
@@ -373,8 +373,10 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 	rows, err = r.pool.Query(
 		ctx,
 		"SELECT oi.order_id, oi.id, oi.advertisement_id, oi.quantity, oi.unit_price::text, oi.subtotal::text, oi.product_snapshot, "+
-			"rv.product_rating, rv.seller_rating, rv.comfort_rating, rv.comment, rv.adaptation_feedback, rv.created_at "+
+			"rv.product_rating, rv.seller_rating, rv.comfort_rating, rv.comment, rv.adaptation_feedback, rv.created_at, "+
+			"oi.prescription_required, pd.id, pd.validation_status, pd.rejection_reason, pd.created_at "+
 			"FROM order_items oi LEFT JOIN reviews rv ON rv.order_item_id = oi.id "+
+			"LEFT JOIN LATERAL ("+LatestPrescription+") pd ON true "+
 			"WHERE oi.order_id = ANY($1::uuid[]) ORDER BY oi.created_at, oi.product_snapshot->>'title', oi.id",
 		ids,
 	)
@@ -388,8 +390,13 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 		var productRating, sellerRating *int
 		var review orders.ItemReviewEntity
 		var reviewedAt *time.Time
+		var prescriptionID *string
+		var prescriptionStatus *orders.DocumentStatus
+		var prescription orders.PrescriptionEntity
+		var prescribedAt *time.Time
 		err := rows.Scan(&orderID, &item.ID, &item.AdvertisementID, &item.Quantity, &item.UnitPrice, &item.Subtotal, &item.Snapshot,
-			&productRating, &sellerRating, &review.ComfortRating, &review.Comment, &review.AdaptationFeedback, &reviewedAt)
+			&productRating, &sellerRating, &review.ComfortRating, &review.Comment, &review.AdaptationFeedback, &reviewedAt,
+			&item.PrescriptionRequired, &prescriptionID, &prescriptionStatus, &prescription.RejectionReason, &prescribedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -397,7 +404,34 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 			review.ProductRating, review.SellerRating, review.CreatedAt = *productRating, *sellerRating, *reviewedAt
 			item.Review = &review
 		}
+		if prescriptionID != nil {
+			prescription.ID, prescription.Status, prescription.CreatedAt = *prescriptionID, *prescriptionStatus, *prescribedAt
+			item.Prescription = &prescription
+		}
 		byID[orderID].Items = append(byID[orderID].Items, item)
 	}
 	return result, rows.Err()
+}
+
+// LatestPrescription selects the newest prescription sent for the order item oi; older ones no longer count.
+const LatestPrescription = "SELECT d.id, d.validation_status, d.rejection_reason, d.created_at FROM order_documents d " +
+	"WHERE d.order_item_id = oi.id AND d.document_type = 'prescription' ORDER BY d.created_at DESC, d.id DESC LIMIT 1"
+
+// Querier is a pool or a transaction.
+type Querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// MissingPrescriptions returns the order's items that need a prescription and have no approved one.
+func MissingPrescriptions(ctx context.Context, db Querier, orderID string) ([]string, error) {
+	rows, err := db.Query(
+		ctx,
+		"SELECT oi.id FROM order_items oi LEFT JOIN LATERAL ("+LatestPrescription+") pd ON true "+
+			"WHERE oi.order_id = $1 AND oi.prescription_required AND pd.validation_status IS DISTINCT FROM 'approved' ORDER BY oi.created_at, oi.id",
+		orderID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }

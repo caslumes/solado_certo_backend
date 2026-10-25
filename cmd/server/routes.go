@@ -81,6 +81,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		sellerGroup.GET("/orders/:orderID", a.OrdersHandler.GetSellerOrder)
 		sellerGroup.POST("/orders/:orderID/processing", a.OrdersHandler.StartProcessing)
 		sellerGroup.POST("/orders/:orderID/shipment", a.OrdersHandler.ShipOrder)
+		sellerGroup.POST("/orders/:orderID/documents/:documentID/reject", a.DocumentsHandler.RejectPrescription)
 	}
 
 	cartGroup := r.Group("/cart", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleBuyer))
@@ -104,6 +105,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		ordersGroup.POST("/:orderID/cancel", a.OrdersHandler.CancelOrder)
 		ordersGroup.POST("/:orderID/delivered", a.OrdersHandler.ConfirmDelivery)
 		ordersGroup.POST("/:orderID/items/:itemID/review", a.ReviewsHandler.CreateReview)
+		ordersGroup.POST("/:orderID/items/:itemID/prescription", a.DocumentsHandler.UploadPrescription)
 		ordersGroup.GET("/:orderID/payments", a.PaymentsHandler.ListPayments)
 		ordersGroup.POST("/:orderID/payments", a.PaymentsHandler.CreatePayment)
 	}
@@ -117,6 +119,9 @@ func initRoutes(r *gin.Engine, a *config.App) {
 
 	// Called by Asaas, authenticated by the asaas-access-token header.
 	r.POST("/webhooks/asaas", a.PaymentsHandler.AsaasWebhook)
+
+	// Buyers, sellers and admins read documents; the service decides who may read which.
+	r.GET("/documents/:documentID", a.AuthMiddleware.Middleware(), a.DocumentsHandler.OpenDocument)
 
 	r.GET("/files/public/*path", a.FilesHandler.ServePublic)
 }
