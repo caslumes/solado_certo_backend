@@ -32,6 +32,7 @@ type ConsentPurpose string
 const (
 	ConsentPurposePodologicalProfile ConsentPurpose = "podological_profile"
 	ConsentPurposePrescription       ConsentPurpose = "prescription"
+	ConsentPurposeCustomOrder        ConsentPurpose = "custom_order"
 )
 
 func (p ConsentPurpose) String() string {
@@ -41,6 +42,7 @@ func (p ConsentPurpose) String() string {
 var currentTermsVersions = map[ConsentPurpose]string{
 	ConsentPurposePodologicalProfile: "podological-profile-v1",
 	ConsentPurposePrescription:       "prescription-v1",
+	ConsentPurposeCustomOrder:        "custom-order-v1",
 }
 
 type FootstrikeType string

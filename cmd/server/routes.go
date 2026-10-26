@@ -82,6 +82,13 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		sellerGroup.POST("/orders/:orderID/processing", a.OrdersHandler.StartProcessing)
 		sellerGroup.POST("/orders/:orderID/shipment", a.OrdersHandler.ShipOrder)
 		sellerGroup.POST("/orders/:orderID/documents/:documentID/reject", a.DocumentsHandler.RejectPrescription)
+
+		sellerGroup.GET("/custom-orders", a.CustomOrdersHandler.ListSellerRequests)
+		sellerGroup.GET("/custom-orders/:requestID", a.CustomOrdersHandler.GetSellerRequest)
+		sellerGroup.POST("/custom-orders/:requestID/review", a.CustomOrdersHandler.ReviewRequest)
+		sellerGroup.POST("/custom-orders/:requestID/accept", a.CustomOrdersHandler.AcceptRequest)
+		sellerGroup.POST("/custom-orders/:requestID/reject", a.CustomOrdersHandler.RejectRequest)
+		sellerGroup.POST("/custom-orders/:requestID/request-info", a.CustomOrdersHandler.RequestInfo)
 	}
 
 	cartGroup := r.Group("/cart", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleBuyer))
@@ -108,6 +115,15 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		ordersGroup.POST("/:orderID/items/:itemID/prescription", a.DocumentsHandler.UploadPrescription)
 		ordersGroup.GET("/:orderID/payments", a.PaymentsHandler.ListPayments)
 		ordersGroup.POST("/:orderID/payments", a.PaymentsHandler.CreatePayment)
+	}
+
+	customOrdersGroup := r.Group("/custom-orders", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleBuyer))
+	{
+		customOrdersGroup.GET("", a.CustomOrdersHandler.ListRequests)
+		customOrdersGroup.POST("", a.CustomOrdersHandler.CreateRequest)
+		customOrdersGroup.GET("/:requestID", a.CustomOrdersHandler.GetRequest)
+		customOrdersGroup.POST("/:requestID/complement", a.CustomOrdersHandler.ComplementRequest)
+		customOrdersGroup.POST("/:requestID/cancel", a.CustomOrdersHandler.CancelRequest)
 	}
 
 	notificationsGroup := r.Group("/notifications", a.AuthMiddleware.Middleware())

@@ -13,6 +13,9 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/catalog"
 	catalogRepository "github.com/caslumes/solado_certo_backend/internal/features/catalog/repository/postgres"
 	httpcatalog "github.com/caslumes/solado_certo_backend/internal/features/catalog/transport/http"
+	"github.com/caslumes/solado_certo_backend/internal/features/customorders"
+	customordersRepository "github.com/caslumes/solado_certo_backend/internal/features/customorders/repository/postgres"
+	httpcustomorders "github.com/caslumes/solado_certo_backend/internal/features/customorders/transport/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/documents"
 	documentsRepository "github.com/caslumes/solado_certo_backend/internal/features/documents/repository/postgres"
 	httpdocuments "github.com/caslumes/solado_certo_backend/internal/features/documents/transport/http"
@@ -65,6 +68,7 @@ type App struct {
 	NotificationsHandler *httpnotifications.Handler
 	ReviewsHandler       *httpreviews.Handler
 	DocumentsHandler     *httpdocuments.Handler
+	CustomOrdersHandler  *httpcustomorders.Handler
 }
 
 func InitApp(ctx context.Context) (*App, error) {
@@ -93,6 +97,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	notificationsService := notifications.NewService(notificationsRepository.NewPostgresRepository(dbPool))
 	reviewsService := reviews.NewService(reviewsRepository.NewPostgresRepository(dbPool))
 	documentsService := documents.NewService(documentsRepository.NewPostgresRepository(dbPool), fileStorage, meService)
+	customOrdersService := customorders.NewService(customordersRepository.NewPostgresRepository(dbPool), meService)
 
 	return &App{
 		Envs:           envs,
@@ -112,6 +117,7 @@ func InitApp(ctx context.Context) (*App, error) {
 		NotificationsHandler: httpnotifications.NewHandler(notificationsService),
 		ReviewsHandler:       httpreviews.NewHandler(reviewsService),
 		DocumentsHandler:     httpdocuments.NewHandler(documentsService),
+		CustomOrdersHandler:  httpcustomorders.NewHandler(customOrdersService),
 	}, nil
 }
 

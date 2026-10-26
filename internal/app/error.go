@@ -111,3 +111,6 @@ func (e *PrescriptionRequiredError) Error() string {
 func (e *PrescriptionRequiredError) Unwrap() error {
 	return ErrPrescriptionRequired
 }
+
+var ErrCustomOrderNotFound = errors.New("custom order request not found")
+var ErrCustomMadeNotAllowed = errors.New("this advertisement does not take custom orders")

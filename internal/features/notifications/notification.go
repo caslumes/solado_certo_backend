@@ -17,6 +17,8 @@ const (
 	TypeDeliveryDeadline     Type = "delivery_deadline"
 	TypePrescriptionRejected Type = "prescription_rejected"
 	TypePrescriptionSent     Type = "prescription_sent"
+	TypeCustomOrderRequested Type = "custom_order_requested"
+	TypeCustomOrderUpdated   Type = "custom_order_updated"
 )
 
 type NotificationEntity struct {
@@ -162,6 +164,59 @@ func PrescriptionSent(sellerID string, orderID string, number string, title stri
 		Title:  "Nova receita enviada",
 		Body:   "O comprador enviou uma nova receita de " + title + " no pedido " + number + ".",
 		Data:   map[string]string{"order_id": orderID},
+	}
+}
+
+// CustomOrderRequested tells a seller that a buyer asked for a custom item (RF-037).
+func CustomOrderRequested(sellerID string, requestID string, title string) NewNotification {
+	return NewNotification{
+		UserID: sellerID,
+		Type:   TypeCustomOrderRequested,
+		Title:  "Nova solicitação sob medida",
+		Body:   "Um comprador pediu " + title + " sob medida. Analise as medidas e responda.",
+		Data:   map[string]string{"custom_order_id": requestID},
+	}
+}
+
+// CustomOrderUnderReview tells the buyer that the seller started looking at the request.
+func CustomOrderUnderReview(buyerID string, requestID string, title string) NewNotification {
+	return customOrderUpdated(buyerID, requestID, "Solicitação em análise", "O vendedor está analisando sua solicitação de "+title+" sob medida.")
+}
+
+// CustomOrderNeedsInfo tells the buyer what the seller needs to know to decide (RF-038).
+func CustomOrderNeedsInfo(buyerID string, requestID string, title string, question string) NewNotification {
+	return customOrderUpdated(buyerID, requestID, "O vendedor precisa de mais informações",
+		"Sobre "+title+" sob medida: "+strings.TrimRight(question, ".")+". Responda para a análise continuar.")
+}
+
+// CustomOrderComplemented tells the seller that the buyer answered their question.
+func CustomOrderComplemented(sellerID string, requestID string, title string) NewNotification {
+	return customOrderUpdated(sellerID, requestID, "Solicitação complementada", "O comprador respondeu sobre "+title+" sob medida.")
+}
+
+// CustomOrderAccepted tells the buyer the price of the custom item, which they confirm by paying.
+func CustomOrderAccepted(buyerID string, requestID string, title string, price string) NewNotification {
+	return customOrderUpdated(buyerID, requestID, "Solicitação aceita",
+		"O vendedor aceitou fazer "+title+" sob medida por R$ "+strings.Replace(price, ".", ",", 1)+". Confirme e pague para a produção começar.")
+}
+
+// CustomOrderRejected tells the buyer why the seller won't make the item (RF-038).
+func CustomOrderRejected(buyerID string, requestID string, title string, reason string) NewNotification {
+	return customOrderUpdated(buyerID, requestID, "Solicitação recusada", "O vendedor recusou fazer "+title+" sob medida: "+strings.TrimRight(reason, ".")+".")
+}
+
+// CustomOrderCancelled tells the seller that the buyer gave up the request.
+func CustomOrderCancelled(sellerID string, requestID string, title string) NewNotification {
+	return customOrderUpdated(sellerID, requestID, "Solicitação cancelada", "O comprador cancelou a solicitação de "+title+" sob medida.")
+}
+
+func customOrderUpdated(userID string, requestID string, title string, body string) NewNotification {
+	return NewNotification{
+		UserID: userID,
+		Type:   TypeCustomOrderUpdated,
+		Title:  title,
+		Body:   body,
+		Data:   map[string]string{"custom_order_id": requestID},
 	}
 }
 
