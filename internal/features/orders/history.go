@@ -9,15 +9,12 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 )
 
-// HistoryFilter narrows an order history (RF-025) to one status and to a range of days in Brasília
-// time, both included. The buyer's history goes by order date, the seller's by payment date.
 type HistoryFilter struct {
 	Status OrderStatus
 	From   string
 	To     string
 }
 
-// OrderQuery is a checked HistoryFilter; Since is included and Until is not.
 type OrderQuery struct {
 	Status OrderStatus
 	Since  *time.Time

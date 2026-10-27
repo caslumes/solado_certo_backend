@@ -9,7 +9,9 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
+	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
 type Status string
@@ -29,7 +31,6 @@ var statuses = []Status{
 	StatusRequested, StatusUnderReview, StatusNeedsInfo, StatusApproved, StatusRejected, StatusInProduction, StatusCompleted, StatusCancelled,
 }
 
-// Action is something the buyer or the seller does to a request. Each one moves it to one status.
 type Action string
 
 const (
@@ -39,6 +40,9 @@ const (
 	ActionRequestInfo Action = "request_info"
 	ActionComplement  Action = "complement"
 	ActionCancel      Action = "cancel"
+	ActionReport      Action = "report"
+	ActionCheckout    Action = "checkout"
+	ActionSendPhoto   Action = "send_photo"
 )
 
 type transition struct {
@@ -46,9 +50,6 @@ type transition struct {
 	to   Status
 }
 
-// transitions is the custom order status machine (UC-008). The seller reviews, accepts, rejects or asks
-// for more information; the buyer complements what was asked or cancels before paying. Checkout and the
-// fitting report (task 3) take an approved request to in_production and completed.
 var transitions = map[Action]transition{
 	ActionReview:      {from: []Status{StatusRequested}, to: StatusUnderReview},
 	ActionAccept:      {from: []Status{StatusRequested, StatusUnderReview}, to: StatusApproved},
@@ -56,15 +57,21 @@ var transitions = map[Action]transition{
 	ActionRequestInfo: {from: []Status{StatusRequested, StatusUnderReview}, to: StatusNeedsInfo},
 	ActionComplement:  {from: []Status{StatusNeedsInfo}, to: StatusUnderReview},
 	ActionCancel:      {from: []Status{StatusRequested, StatusUnderReview, StatusNeedsInfo, StatusApproved}, to: StatusCancelled},
+	ActionReport:      {from: []Status{StatusInProduction}, to: StatusCompleted},
 }
 
 var (
-	sellerActions = []Action{ActionReview, ActionAccept, ActionReject, ActionRequestInfo}
-	buyerActions  = []Action{ActionComplement, ActionCancel}
+	sellerActions = []Action{ActionReview, ActionAccept, ActionReject, ActionRequestInfo, ActionReport}
+	buyerActions  = []Action{ActionComplement, ActionCancel, ActionCheckout, ActionSendPhoto}
+	photoStatuses = []Status{StatusRequested, StatusUnderReview, StatusNeedsInfo}
 )
 
 func (s Status) Allows(action Action) bool {
 	return slices.Contains(transitions[action].from, s)
+}
+
+func (s Status) TakesPhoto() bool {
+	return slices.Contains(photoStatuses, s)
 }
 
 type ArchType string
@@ -84,10 +91,10 @@ const (
 	minShoeSize   = 15
 	maxShoeSize   = 50
 
-	maxNotesLength   = 2000
-	maxMessageLength = 1000
-	// maxQuotedPrice is the largest value of numeric(10,2).
-	maxQuotedPrice helpers.Cents = 99_999_999_99
+	maxNotesLength                      = 2000
+	maxMessageLength                    = 1000
+	maxInstructionsLength               = 4000
+	maxQuotedPrice        helpers.Cents = 99_999_999_99
 )
 
 type Foot struct {
@@ -95,8 +102,6 @@ type Foot struct {
 	WidthCm  float64 `json:"width_cm"`
 }
 
-// Measurements are what the seller needs to make the item: each foot's length and width, the arch
-// type and the usual shoe size (BR).
 type Measurements struct {
 	Left     *Foot    `json:"left"`
 	Right    *Foot    `json:"right"`
@@ -104,7 +109,6 @@ type Measurements struct {
 	ShoeSize int      `json:"shoe_size"`
 }
 
-// check validates the measurements and rounds the lengths to millimetres.
 func (m Measurements) check() (Measurements, error) {
 	var missing []string
 	if m.Left == nil {
@@ -158,7 +162,6 @@ func checkFoot(side string, foot Foot) (Foot, []string) {
 	return rounded, invalid
 }
 
-// text trims an optional text; an empty one is no text.
 func text(field string, value *string, maxLength int) (*string, error) {
 	if value == nil {
 		return nil, nil
@@ -176,7 +179,6 @@ func text(field string, value *string, maxLength int) (*string, error) {
 	return &trimmed, nil
 }
 
-// requiredText is a text the action can't go without, such as the reason of a rejection.
 func requiredText(field string, value string, maxLength int) (string, error) {
 	trimmed, err := text(field, &value, maxLength)
 	if err != nil {
@@ -207,14 +209,36 @@ type CancelInput struct {
 	Reason *string `json:"reason"`
 }
 
-// ComplementInput answers the seller's question. New measurements or notes, when sent, replace the old ones.
+type CheckoutInput struct {
+	AddressID        string `json:"address_id"`
+	ShippingOptionID string `json:"shipping_option_id"`
+}
+
+type Checkout struct {
+	RequestID      string
+	BuyerID        string
+	IdempotencyKey string
+	Plan           *orders.CheckoutPlan
+}
+
+type PhotoChange struct {
+	RequestID string
+	BuyerID   string
+	Key       string
+}
+
+type PhotoFile struct {
+	*storage.File
+	ContentType string
+	Name        string
+}
+
 type ComplementInput struct {
 	Message        string        `json:"message"`
 	Measurements   *Measurements `json:"measurements"`
 	TechnicalNotes *string       `json:"technical_notes"`
 }
 
-// CustomizableAd is the ad a request is made for.
 type CustomizableAd struct {
 	ID                string
 	SellerID          string
@@ -228,24 +252,23 @@ type NewRequest struct {
 	AdvertisementID string
 	Measurements    Measurements
 	TechnicalNotes  *string
-	// Notification tells the seller, once the request has its ID.
-	Notification func(requestID string) notifications.NewNotification
+	Notification    func(requestID string) notifications.NewNotification
 }
 
-// StatusChange moves a request from one status to another, if it is still in From when the change is
-// written. The other fields are set only by the actions that change them.
 type StatusChange struct {
-	RequestID       string
-	From            Status
-	To              Status
-	Action          Action
-	ChangedBy       string
-	Reason          *string
-	QuotedPrice     *string
-	RejectionReason *string
-	Measurements    *Measurements
-	TechnicalNotes  *string
-	Notification    notifications.NewNotification
+	RequestID              string
+	From                   Status
+	To                     Status
+	Action                 Action
+	ChangedBy              string
+	Reason                 *string
+	QuotedPrice            *string
+	RejectionReason        *string
+	Measurements           *Measurements
+	TechnicalNotes         *string
+	AdaptationInstructions *string
+	ReportKey              *string
+	Notification           notifications.NewNotification
 }
 
 type HistoryEntity struct {
@@ -256,7 +279,6 @@ type HistoryEntity struct {
 	CreatedAt      time.Time
 }
 
-// RequestEntity is a request with the ad it is for and both parties.
 type RequestEntity struct {
 	ID                     string
 	BuyerID                string
@@ -273,11 +295,29 @@ type RequestEntity struct {
 	QuotedPrice            *string
 	RejectionReason        *string
 	AdaptationInstructions *string
+	FootPhotoKey           *string
+	FittingReport          *FittingReportEntity
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 }
 
-// actions are what the viewer may do now: the buyer, or the seller of the ad.
+type FittingReportEntity struct {
+	ID        string
+	CreatedAt time.Time
+}
+
+func (r *RequestEntity) can(action Action) bool {
+	switch action {
+	case ActionCheckout:
+		return r.Status == StatusApproved && r.OrderID == nil
+	case ActionSendPhoto:
+		return r.Status.TakesPhoto()
+	case ActionCancel:
+		return r.Status.Allows(action) && r.OrderID == nil
+	}
+	return r.Status.Allows(action)
+}
+
 func (r *RequestEntity) actions(viewerID string) []Action {
 	var mine []Action
 	switch viewerID {
@@ -288,7 +328,7 @@ func (r *RequestEntity) actions(viewerID string) []Action {
 	}
 	allowed := []Action{}
 	for _, action := range mine {
-		if r.Status.Allows(action) && (action != ActionCancel || r.OrderID == nil) {
+		if r.can(action) {
 			allowed = append(allowed, action)
 		}
 	}
@@ -339,6 +379,18 @@ func (d *RequestDetailEntity) ToOutput(viewerID string) *RequestDetailOutput {
 	for i, action := range actions {
 		names[i] = string(action)
 	}
+	var photoURL *string
+	if d.FootPhotoKey != nil {
+		path := "/custom-orders/" + d.ID + "/photo"
+		if viewerID == d.SellerID {
+			path = "/seller" + path
+		}
+		photoURL = &path
+	}
+	var report *FittingReportOutput
+	if d.FittingReport != nil {
+		report = &FittingReportOutput{ID: d.FittingReport.ID, URL: orders.DocumentPath(d.FittingReport.ID), CreatedAt: d.FittingReport.CreatedAt}
+	}
 	return &RequestDetailOutput{
 		RequestSummaryOutput:   d.ToSummaryOutput(),
 		OrderID:                d.OrderID,
@@ -346,12 +398,13 @@ func (d *RequestDetailEntity) ToOutput(viewerID string) *RequestDetailOutput {
 		TechnicalNotes:         d.TechnicalNotes,
 		RejectionReason:        d.RejectionReason,
 		AdaptationInstructions: d.AdaptationInstructions,
+		FootPhotoURL:           photoURL,
+		FittingReport:          report,
 		History:                history,
 		Actions:                names,
 	}
 }
 
-// Filter narrows a list of requests to one party, and optionally to one status.
 type Filter struct {
 	BuyerID  string
 	SellerID string

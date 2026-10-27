@@ -14,7 +14,6 @@ import (
 
 const uniqueViolation = "23505"
 
-// historyFilter is the query's status ($2) and range ($3, $4) on the given column.
 func historyFilter(column string) string {
 	return " AND ($2 = '' OR o.status = $2) AND ($3::timestamptz IS NULL OR " + column + " >= $3) AND ($4::timestamptz IS NULL OR " + column + " < $4)"
 }
@@ -23,7 +22,6 @@ func historyArgs(id string, query orders.OrderQuery) []any {
 	return []any{id, string(query.Status), query.Since, query.Until}
 }
 
-// buyerOrders are the buyer's orders, filtered by order date.
 var buyerOrders = "o.buyer_id = $1" + historyFilter("o.created_at")
 
 func (r *postgresRepository) CountOrdersByBuyer(ctx context.Context, buyerID string, query orders.OrderQuery) (uint, error) {
@@ -63,10 +61,6 @@ func (r *postgresRepository) GetStatusHistory(ctx context.Context, orderID strin
 	})
 }
 
-// ChangeOrderStatus locks the order, so two changes can't both start from the same status. The
-// shipment (when shipped), the delivery time (when delivered) and the notifications are written in
-// the same transaction. Shipping checks the prescriptions again under the lock, since the seller
-// rejecting one also locks the order.
 func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change orders.StatusChange) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -91,6 +85,13 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 		}
 		if len(missing) > 0 {
 			return &app.PrescriptionRequiredError{ItemIDs: missing}
+		}
+		pending, err := PendingFittingReports(ctx, tx, change.OrderID)
+		if err != nil {
+			return err
+		}
+		if len(pending) > 0 {
+			return &app.FittingReportRequiredError{ItemIDs: pending}
 		}
 	}
 
@@ -140,7 +141,6 @@ func (r *postgresRepository) ChangeOrderStatus(ctx context.Context, change order
 	return tx.Commit(ctx)
 }
 
-// paidOrders are the orders once paid, filtered by payment date.
 var paidOrders = "o.paid_at IS NOT NULL" + historyFilter("o.paid_at")
 
 func (r *postgresRepository) CountOrdersBySeller(ctx context.Context, sellerID string, query orders.OrderQuery) (uint, error) {
@@ -158,10 +158,8 @@ func (r *postgresRepository) GetOrdersBySeller(ctx context.Context, sellerID str
 	return r.getOrders(ctx, "s.id = $1 AND "+paidOrders+" ORDER BY o.paid_at DESC, o.id DESC LIMIT $5 OFFSET $6", append(historyArgs(sellerID, query), limit, offset)...)
 }
 
-// overdueBatch caps how many orders one round of the delivery job handles; the rest wait for the next round.
 const overdueBatch = 200
 
-// GetOverdueShippedOrders returns the orders still shipped whose shipment was posted before postedBefore.
 func (r *postgresRepository) GetOverdueShippedOrders(ctx context.Context, postedBefore time.Time) ([]*orders.OrderEntity, error) {
 	return r.getOrders(
 		ctx,
@@ -170,7 +168,6 @@ func (r *postgresRepository) GetOverdueShippedOrders(ctx context.Context, posted
 	)
 }
 
-// GetShipment returns the order's shipment, or nil when it wasn't shipped.
 func (r *postgresRepository) GetShipment(ctx context.Context, orderID string) (*orders.ShipmentEntity, error) {
 	var s orders.ShipmentEntity
 	err := r.pool.QueryRow(
@@ -187,11 +184,11 @@ func (r *postgresRepository) GetShipment(ctx context.Context, orderID string) (*
 	return &s, nil
 }
 
-// ReleaseStock puts the order's units back on sale.
 func ReleaseStock(ctx context.Context, tx pgx.Tx, orderID string) error {
 	_, err := tx.Exec(
 		ctx,
-		"UPDATE advertisements a SET stock = a.stock + oi.quantity FROM order_items oi WHERE oi.order_id = $1 AND a.id = oi.advertisement_id",
+		"UPDATE advertisements a SET stock = a.stock + oi.quantity FROM order_items oi "+
+			"WHERE oi.order_id = $1 AND a.id = oi.advertisement_id AND oi.custom_order_request_id IS NULL",
 		orderID,
 	)
 	return err

@@ -12,8 +12,6 @@ import (
 	"github.com/caslumes/solado_certo_backend/pkg/gateway"
 )
 
-// sandboxClient talks to the real Asaas sandbox. It runs only with ASAAS_API_KEY set, and never
-// against a URL that isn't a sandbox.
 func sandboxClient(t *testing.T) *Client {
 	t.Helper()
 	key := os.Getenv("ASAAS_API_KEY")
@@ -114,8 +112,6 @@ func TestSandboxCardApproved(t *testing.T) {
 		t.Errorf("charge = %+v, want captured with the card's last digits", charge)
 	}
 
-	// Asaas refuses a refund right after the capture ("tente novamente em alguns instantes"); it took
-	// about 20 s in the sandbox on 2026-10-17.
 	var refunded *gateway.Charge
 	for start := time.Now(); ; {
 		refunded, err = client.Refund(context.Background(), charge.ID, gateway.MethodCreditCard)

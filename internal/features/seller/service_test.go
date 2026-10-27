@@ -21,13 +21,12 @@ const (
 )
 
 type fakeRepository struct {
-	ads          map[string]*AdvertisementEntity
-	categories   map[string][]string
-	purposes     []string
-	conditions   []string
-	nextID       int
-	nextOptionID int
-	// changedStatus simulates another request changing the status between the read and the write.
+	ads           map[string]*AdvertisementEntity
+	categories    map[string][]string
+	purposes      []string
+	conditions    []string
+	nextID        int
+	nextOptionID  int
 	changedStatus AdvertisementStatus
 }
 

@@ -6,7 +6,6 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 )
 
-// NormalizeCPF accepts "123.456.789-09" or "12345678909" and returns the 11 digits if the check digits match.
 func NormalizeCPF(cpf string) (string, error) {
 	var digits strings.Builder
 	for _, r := range strings.TrimSpace(cpf) {

@@ -101,7 +101,6 @@ func (r *postgresRepository) GetAdvertisementByID(ctx context.Context, id string
 	return ad, nil
 }
 
-// loadRelations fills purposes, conditions, active shipping options and images with one query each.
 func (r *postgresRepository) loadRelations(ctx context.Context, ads []*seller.AdvertisementEntity) error {
 	if len(ads) == 0 {
 		return nil
@@ -255,8 +254,6 @@ func (r *postgresRepository) CreateAdvertisement(ctx context.Context, ad *seller
 	return id, tx.Commit(ctx)
 }
 
-// UpdateAdvertisement saves the ad only if its status is still expectedStatus, so an edit validated
-// for a draft can't land on an ad that was published meanwhile (app.ErrInvalidStatusTransition).
 func (r *postgresRepository) UpdateAdvertisement(ctx context.Context, ad *seller.AdvertisementEntity, expectedStatus seller.AdvertisementStatus) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -321,8 +318,6 @@ func saveLinks(ctx context.Context, tx pgx.Tx, id string, ad *seller.Advertiseme
 	return nil
 }
 
-// saveShippingOptions updates the options that have an ID, inserts the new ones and deactivates the rest.
-// Options are never deleted, because shipments reference them.
 func saveShippingOptions(ctx context.Context, tx pgx.Tx, advertisementID string, options []seller.ShippingOptionEntity) error {
 	keep := []string{}
 	for _, o := range options {
@@ -391,7 +386,6 @@ func (r *postgresRepository) RemoveAdvertisement(ctx context.Context, id string)
 	return nil
 }
 
-// AddImage locks the ad row so concurrent uploads can't go past maxImages. The first image becomes the cover.
 func (r *postgresRepository) AddImage(ctx context.Context, advertisementID string, url string, altText *string, maxImages int) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -432,8 +426,6 @@ func (r *postgresRepository) AddImage(ctx context.Context, advertisementID strin
 	return tx.Commit(ctx)
 }
 
-// RemoveImage deletes the image, renumbers the others from 1 and, if the cover was removed,
-// makes the first remaining image the cover.
 func (r *postgresRepository) RemoveImage(ctx context.Context, advertisementID string, imageID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

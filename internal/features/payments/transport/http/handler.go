@@ -22,7 +22,6 @@ type Service interface {
 	payments.ApplyPaymentStatusUseCase
 }
 
-// webhookTimeout bounds the work a webhook starts: reading the charge back, with the client's retries.
 const webhookTimeout = time.Minute
 
 type Handler struct {
@@ -31,8 +30,6 @@ type Handler struct {
 	webhooks     sync.WaitGroup
 }
 
-// NewHandler takes the token Asaas sends in the asaas-access-token header; webhooks are refused
-// while it is empty.
 func NewHandler(service Service, webhookToken string) *Handler {
 	return &Handler{service: service, webhookToken: webhookToken}
 }
@@ -66,8 +63,6 @@ func writeError(c *gin.Context, err error, fallback string) {
 	}
 }
 
-// CreatePayment answers 201 with the new attempt, or 200 with the same attempt when the
-// Idempotency-Key was already used. A refused card is a 201 with the attempt failed.
 func (h *Handler) CreatePayment(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {
@@ -114,9 +109,6 @@ type asaasEvent struct {
 	} `json:"payment"`
 }
 
-// AsaasWebhook answers at once and applies the status in the background: Asaas stops delivering
-// after repeated slow or failed answers, and the poller covers an event whose work fails. Only the
-// charge's id is used; its status is read back from Asaas.
 func (h *Handler) AsaasWebhook(c *gin.Context) {
 	token := c.GetHeader("asaas-access-token")
 	if h.webhookToken == "" || subtle.ConstantTimeCompare([]byte(token), []byte(h.webhookToken)) != 1 {
@@ -146,7 +138,6 @@ func (h *Handler) AsaasWebhook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"received": true})
 }
 
-// Wait blocks until the webhooks being applied are done, so shutting down doesn't cut them off.
 func (h *Handler) Wait() {
 	h.webhooks.Wait()
 }

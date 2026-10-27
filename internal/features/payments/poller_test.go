@@ -11,7 +11,6 @@ import (
 	"github.com/caslumes/solado_certo_backend/pkg/gateway"
 )
 
-// The order was placed on Oct 15 (Brazil); it is due on Oct 18 and expires when that day ends.
 var afterWindow = time.Date(2026, 10, 19, 0, 0, 0, 0, time.FixedZone("BRT", -3*60*60))
 
 func (s setup) chargeStatus(t *testing.T, id string) gateway.Status {
@@ -94,7 +93,6 @@ func TestCheckPaymentsCancelsChargesOfCancelledOrders(t *testing.T) {
 	s := newSetup(t)
 	pix := s.pay(t, "key-1", payments.CreatePaymentInput{Method: payments.MethodPix})
 	s.r.orders[orderID].Status = orders.OrderStatusCancelled
-	// Attempts whose gateway call never returned: an old one is abandoned, a young one may still get its charge.
 	abandoned := &payments.PaymentEntity{ID: "payment-old", OrderID: orderID, Status: payments.StatusPending, CreatedAt: orderCreated}
 	young := &payments.PaymentEntity{ID: "payment-young", OrderID: orderID, Status: payments.StatusPending, CreatedAt: orderCreated.Add(time.Hour - time.Minute)}
 	s.r.payments = append(s.r.payments, abandoned, young)

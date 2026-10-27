@@ -19,8 +19,6 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 	return &postgresRepository{pool: pool}
 }
 
-// Create writes a notification inside the transaction of the change it tells about, so it exists
-// exactly when the change does.
 func Create(ctx context.Context, tx pgx.Tx, notification notifications.NewNotification, now time.Time) error {
 	var data []byte
 	if notification.Data != nil {

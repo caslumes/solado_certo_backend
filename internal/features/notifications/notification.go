@@ -45,17 +45,14 @@ func (n *NotificationEntity) ToOutput() NotificationOutput {
 	}
 }
 
-// NewNotification is a notification to write together with the change it tells about.
 type NewNotification struct {
 	UserID string
 	Type   Type
 	Title  string
 	Body   string
-	// Data tells the app where to go when the notification is tapped, e.g. {"order_id": "..."}.
-	Data map[string]string
+	Data   map[string]string
 }
 
-// OrderPaid tells a seller that an order with their items was paid and can be prepared (RF-020).
 func OrderPaid(sellerID string, orderID string, number string) NewNotification {
 	return NewNotification{
 		UserID: sellerID,
@@ -66,7 +63,6 @@ func OrderPaid(sellerID string, orderID string, number string) NewNotification {
 	}
 }
 
-// OrderRefunded tells the buyer that the money of an order came back.
 func OrderRefunded(buyerID string, orderID string, number string) NewNotification {
 	return NewNotification{
 		UserID: buyerID,
@@ -77,7 +73,6 @@ func OrderRefunded(buyerID string, orderID string, number string) NewNotificatio
 	}
 }
 
-// OrderCancelled tells the seller that the buyer cancelled a paid order, which won't be shipped.
 func OrderCancelled(sellerID string, orderID string, number string) NewNotification {
 	return NewNotification{
 		UserID: sellerID,
@@ -88,7 +83,6 @@ func OrderCancelled(sellerID string, orderID string, number string) NewNotificat
 	}
 }
 
-// OrderProcessing tells the buyer that the seller started preparing the order.
 func OrderProcessing(buyerID string, orderID string, number string) NewNotification {
 	return NewNotification{
 		UserID: buyerID,
@@ -99,7 +93,6 @@ func OrderProcessing(buyerID string, orderID string, number string) NewNotificat
 	}
 }
 
-// OrderShipped tells the buyer how to track the order (RF-022).
 func OrderShipped(buyerID string, orderID string, number string, carrier string, trackingCode string) NewNotification {
 	return NewNotification{
 		UserID: buyerID,
@@ -110,7 +103,6 @@ func OrderShipped(buyerID string, orderID string, number string, carrier string,
 	}
 }
 
-// OrderDelivered tells the seller that the buyer received the order.
 func OrderDelivered(sellerID string, orderID string, number string) NewNotification {
 	return NewNotification{
 		UserID: sellerID,
@@ -121,7 +113,6 @@ func OrderDelivered(sellerID string, orderID string, number string) NewNotificat
 	}
 }
 
-// BuyerDeliveryDeadline tells the buyer that an order shipped 30 days ago was taken as delivered.
 func BuyerDeliveryDeadline(buyerID string, orderID string, number string) NewNotification {
 	return NewNotification{
 		UserID: buyerID,
@@ -132,7 +123,6 @@ func BuyerDeliveryDeadline(buyerID string, orderID string, number string) NewNot
 	}
 }
 
-// SellerDeliveryDeadline tells the seller that an order shipped 30 days ago was taken as delivered.
 func SellerDeliveryDeadline(sellerID string, orderID string, number string) NewNotification {
 	return NewNotification{
 		UserID: sellerID,
@@ -143,8 +133,6 @@ func SellerDeliveryDeadline(sellerID string, orderID string, number string) NewN
 	}
 }
 
-// PrescriptionRejected tells the buyer that the seller refused a prescription, and why; the order waits
-// for a new one.
 func PrescriptionRejected(buyerID string, orderID string, number string, title string, reason string) NewNotification {
 	return NewNotification{
 		UserID: buyerID,
@@ -155,8 +143,6 @@ func PrescriptionRejected(buyerID string, orderID string, number string, title s
 	}
 }
 
-// PrescriptionSent tells the seller that the buyer sent a new prescription for a paid order, after one
-// was rejected.
 func PrescriptionSent(sellerID string, orderID string, number string, title string) NewNotification {
 	return NewNotification{
 		UserID: sellerID,
@@ -167,7 +153,6 @@ func PrescriptionSent(sellerID string, orderID string, number string, title stri
 	}
 }
 
-// CustomOrderRequested tells a seller that a buyer asked for a custom item (RF-037).
 func CustomOrderRequested(sellerID string, requestID string, title string) NewNotification {
 	return NewNotification{
 		UserID: sellerID,
@@ -178,36 +163,35 @@ func CustomOrderRequested(sellerID string, requestID string, title string) NewNo
 	}
 }
 
-// CustomOrderUnderReview tells the buyer that the seller started looking at the request.
 func CustomOrderUnderReview(buyerID string, requestID string, title string) NewNotification {
 	return customOrderUpdated(buyerID, requestID, "Solicitação em análise", "O vendedor está analisando sua solicitação de "+title+" sob medida.")
 }
 
-// CustomOrderNeedsInfo tells the buyer what the seller needs to know to decide (RF-038).
 func CustomOrderNeedsInfo(buyerID string, requestID string, title string, question string) NewNotification {
 	return customOrderUpdated(buyerID, requestID, "O vendedor precisa de mais informações",
 		"Sobre "+title+" sob medida: "+strings.TrimRight(question, ".")+". Responda para a análise continuar.")
 }
 
-// CustomOrderComplemented tells the seller that the buyer answered their question.
 func CustomOrderComplemented(sellerID string, requestID string, title string) NewNotification {
 	return customOrderUpdated(sellerID, requestID, "Solicitação complementada", "O comprador respondeu sobre "+title+" sob medida.")
 }
 
-// CustomOrderAccepted tells the buyer the price of the custom item, which they confirm by paying.
 func CustomOrderAccepted(buyerID string, requestID string, title string, price string) NewNotification {
 	return customOrderUpdated(buyerID, requestID, "Solicitação aceita",
 		"O vendedor aceitou fazer "+title+" sob medida por R$ "+strings.Replace(price, ".", ",", 1)+". Confirme e pague para a produção começar.")
 }
 
-// CustomOrderRejected tells the buyer why the seller won't make the item (RF-038).
 func CustomOrderRejected(buyerID string, requestID string, title string, reason string) NewNotification {
 	return customOrderUpdated(buyerID, requestID, "Solicitação recusada", "O vendedor recusou fazer "+title+" sob medida: "+strings.TrimRight(reason, ".")+".")
 }
 
-// CustomOrderCancelled tells the seller that the buyer gave up the request.
 func CustomOrderCancelled(sellerID string, requestID string, title string) NewNotification {
 	return customOrderUpdated(sellerID, requestID, "Solicitação cancelada", "O comprador cancelou a solicitação de "+title+" sob medida.")
+}
+
+func CustomOrderCompleted(buyerID string, requestID string, title string) NewNotification {
+	return customOrderUpdated(buyerID, requestID, "Laudo e instruções de adaptação",
+		"O vendedor enviou o laudo de "+title+" sob medida e as instruções de adaptação gradual. Leia antes de usar.")
 }
 
 func customOrderUpdated(userID string, requestID string, title string, body string) NewNotification {

@@ -7,8 +7,7 @@ type ProfileOutput struct {
 	Email     string `json:"email"`
 	Phone     string `json:"phone"`
 	AvatarURL string `json:"avatar_url"`
-	// HasTaxID tells the app whether to ask for the CPF before the first payment.
-	HasTaxID bool `json:"has_tax_id"`
+	HasTaxID  bool   `json:"has_tax_id"`
 }
 
 type AddressOutput struct {

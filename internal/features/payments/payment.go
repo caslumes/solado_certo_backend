@@ -7,47 +7,39 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
-// OrderEntity is what a payment needs to know about its order.
 type OrderEntity struct {
-	ID            string
-	BuyerID       string
-	Number        string
-	Status        orders.OrderStatus
-	Subtotal      string
-	ShippingTotal string
-	DiscountTotal string
-	Total         string
-	PostalCode    string
-	AddressNumber string
-	CreatedAt     time.Time
-	// MissingPrescriptions are the items that need a prescription and have no approved one (RF-036).
+	ID                   string
+	BuyerID              string
+	Number               string
+	Status               orders.OrderStatus
+	Subtotal             string
+	ShippingTotal        string
+	DiscountTotal        string
+	Total                string
+	PostalCode           string
+	AddressNumber        string
+	CreatedAt            time.Time
 	MissingPrescriptions []string
 }
 
-// Expired tells whether the order's due date is over.
 func (o *OrderEntity) Expired(now time.Time) bool {
 	return !now.Before(EndOfDay(o.DueDate()))
 }
 
-// DueDate is the last day to pay, PaymentDays after checkout in Brazil's calendar.
 func (o *OrderEntity) DueDate() time.Time {
 	created := o.CreatedAt.In(brazilTime)
 	return time.Date(created.Year(), created.Month(), created.Day()+PaymentDays, 0, 0, 0, 0, time.UTC)
 }
 
-// EndOfDay is the moment a due date ends in Brazil.
 func EndOfDay(date time.Time) time.Time {
 	return time.Date(date.Year(), date.Month(), date.Day()+1, 0, 0, 0, 0, brazilTime)
 }
 
-// expiredBefore returns the checkout time before which an order is expired at now.
 func expiredBefore(now time.Time) time.Time {
 	today := now.In(brazilTime)
 	return time.Date(today.Year(), today.Month(), today.Day()-PaymentDays, 0, 0, 0, 0, brazilTime)
 }
 
-// Totals gives the discount and total the order has when paid with method: Pix takes
-// PixDiscountPercent off the subtotal, rounded to the nearest cent (RF-013).
 func (o *OrderEntity) Totals(method Method) (discount string, total string) {
 	subtotal := helpers.MustParseCents(o.Subtotal)
 	var off helpers.Cents
@@ -65,26 +57,19 @@ type BuyerEntity struct {
 	TaxID *string
 }
 
-// PaymentDetails is stored in payments.gateway_payload: what the app shows for each method. Card
-// numbers and CVVs are never part of it.
 type PaymentDetails struct {
-	GatewayStatus string     `json:"gateway_status,omitempty"`
-	GatewayError  string     `json:"gateway_error,omitempty"`
-	InvoiceURL    string     `json:"invoice_url,omitempty"`
-	BoletoURL     string     `json:"boleto_url,omitempty"`
-	PixPayload    string     `json:"pix_payload,omitempty"`
-	PixExpiresAt  *time.Time `json:"pix_expires_at,omitempty"`
-	CardLast4     string     `json:"card_last4,omitempty"`
-	CardBrand     string     `json:"card_brand,omitempty"`
-	// RefundRequestedAt is set once the money is asked back from the gateway; the payment stays captured
-	// until the gateway reports it refunded.
+	GatewayStatus     string     `json:"gateway_status,omitempty"`
+	GatewayError      string     `json:"gateway_error,omitempty"`
+	InvoiceURL        string     `json:"invoice_url,omitempty"`
+	BoletoURL         string     `json:"boleto_url,omitempty"`
+	PixPayload        string     `json:"pix_payload,omitempty"`
+	PixExpiresAt      *time.Time `json:"pix_expires_at,omitempty"`
+	CardLast4         string     `json:"card_last4,omitempty"`
+	CardBrand         string     `json:"card_brand,omitempty"`
 	RefundRequestedAt *time.Time `json:"refund_requested_at,omitempty"`
-	// RefundURL is where the payer of a boleto gives the bank account to refund.
-	RefundURL string `json:"refund_url,omitempty"`
-	// RefundError is the gateway's last refusal of the refund, and RefundAttempts how many it refused.
-	// The poller asks again until MaxRefundAttempts; then support takes over.
-	RefundError    string `json:"refund_error,omitempty"`
-	RefundAttempts int    `json:"refund_attempts,omitempty"`
+	RefundURL         string     `json:"refund_url,omitempty"`
+	RefundError       string     `json:"refund_error,omitempty"`
+	RefundAttempts    int        `json:"refund_attempts,omitempty"`
 }
 
 type PaymentEntity struct {
@@ -104,7 +89,6 @@ type PaymentEntity struct {
 	UpdatedAt     time.Time
 }
 
-// NewPayment starts a payment attempt; the order's discount and total change with it.
 type NewPayment struct {
 	OrderID        string
 	CreatedBy      string
@@ -116,7 +100,6 @@ type NewPayment struct {
 	DueDate        time.Time
 }
 
-// StatusChange moves a payment to a new status. A capture also marks its order as paid.
 type StatusChange struct {
 	PaymentID     string
 	To            Status

@@ -60,14 +60,12 @@ func TestOrderTotals(t *testing.T) {
 }
 
 func TestOrderPaymentWindow(t *testing.T) {
-	// 22:30 in Brazil on Oct 14 is already Oct 15 in UTC; the due date follows Brazil's calendar.
 	created := time.Date(2026, 10, 15, 1, 30, 0, 0, time.UTC)
 	order := OrderEntity{CreatedAt: created}
 
 	if due := order.DueDate(); !due.Equal(time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("DueDate = %v, want 2026-10-17", due)
 	}
-	// The order expires when Oct 17 ends in Brazil, 03:00 UTC on Oct 18.
 	end := time.Date(2026, 10, 18, 3, 0, 0, 0, time.UTC)
 	if order.Expired(end.Add(-time.Second)) {
 		t.Error("expired before the due date ended")
@@ -75,7 +73,6 @@ func TestOrderPaymentWindow(t *testing.T) {
 	if !order.Expired(end) {
 		t.Error("not expired when the due date ended")
 	}
-	// The poller's cutoff agrees with Expired at both moments.
 	if !created.Before(expiredBefore(end)) || created.Before(expiredBefore(end.Add(-time.Second))) {
 		t.Errorf("expiredBefore = %v, %v", expiredBefore(end), expiredBefore(end.Add(-time.Second)))
 	}

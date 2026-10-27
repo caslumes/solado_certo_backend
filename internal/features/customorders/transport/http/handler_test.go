@@ -1,10 +1,13 @@
 package httpcustomorders
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/customorders"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,14 +30,16 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// fakeService records the last call and answers with err, or with a request in status.
 type fakeService struct {
-	call   string
-	userID string
-	id     string
-	input  any
-	status customorders.Status
-	err    error
+	call    string
+	userID  string
+	id      string
+	input   any
+	status  customorders.Status
+	err     error
+	key     string
+	created bool
+	content []byte
 }
 
 func (f *fakeService) answer(call string, userID string, id string, input any) (*customorders.RequestDetailEntity, error) {
@@ -92,7 +98,74 @@ func (f *fakeService) RequestInfo(_ context.Context, sellerID string, id string,
 	return f.answer("request info", sellerID, id, input)
 }
 
+func (f *fakeService) Checkout(_ context.Context, buyerID string, id string, key string, input customorders.CheckoutInput) (*customorders.RequestDetailEntity, bool, error) {
+	f.key = key
+	request, err := f.answer("checkout", buyerID, id, input)
+	return request, f.created, err
+}
+
+func (f *fakeService) ReportRequest(_ context.Context, sellerID string, id string, instructions string, content io.Reader) (*customorders.RequestDetailEntity, error) {
+	f.content, _ = io.ReadAll(content)
+	return f.answer("report", sellerID, id, instructions)
+}
+
+func (f *fakeService) SendPhoto(_ context.Context, buyerID string, id string, content io.Reader) (*customorders.RequestDetailEntity, error) {
+	f.content, _ = io.ReadAll(content)
+	return f.answer("send photo", buyerID, id, nil)
+}
+
+func (f *fakeService) OpenPhoto(_ context.Context, buyerID string, id string) (*customorders.PhotoFile, error) {
+	return f.photo("open photo", buyerID, id)
+}
+
+func (f *fakeService) OpenSellerPhoto(_ context.Context, sellerID string, id string) (*customorders.PhotoFile, error) {
+	return f.photo("seller open photo", sellerID, id)
+}
+
+func (f *fakeService) photo(call string, userID string, id string) (*customorders.PhotoFile, error) {
+	f.call, f.userID, f.id = call, userID, id
+	if f.err != nil {
+		return nil, f.err
+	}
+	content := []byte("png bytes")
+	return &customorders.PhotoFile{
+		File:        &storage.File{ReadCloser: io.NopCloser(bytes.NewReader(content)), Size: int64(len(content))},
+		ContentType: "image/png",
+		Name:        "foot-photo.png",
+	}, nil
+}
+
 func serve(service *fakeService, userID string, method string, target string, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, target, strings.NewReader(body))
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	return serveRequest(service, userID, request)
+}
+
+func serveMultipart(t *testing.T, service *fakeService, userID string, method string, target string, file []byte, fields map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range fields {
+		if err := writer.WriteField(name, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if file != nil {
+		part, err := writer.CreateFormFile("file", "upload")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part.Write(file)
+	}
+	writer.Close()
+	request := httptest.NewRequest(method, target, &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	return serveRequest(service, userID, request)
+}
+
+func serveRequest(service *fakeService, userID string, request *http.Request) *httptest.ResponseRecorder {
 	handler := NewHandler(service)
 	router := gin.New()
 	group := router.Group("", func(c *gin.Context) {
@@ -111,12 +184,13 @@ func serve(service *fakeService, userID string, method string, target string, bo
 	group.POST("/seller/custom-orders/:requestID/accept", handler.AcceptRequest)
 	group.POST("/seller/custom-orders/:requestID/reject", handler.RejectRequest)
 	group.POST("/seller/custom-orders/:requestID/request-info", handler.RequestInfo)
+	group.POST("/custom-orders/:requestID/checkout", handler.Checkout)
+	group.PUT("/custom-orders/:requestID/photo", handler.SendPhoto)
+	group.GET("/custom-orders/:requestID/photo", handler.OpenPhoto)
+	group.POST("/seller/custom-orders/:requestID/report", handler.ReportRequest)
+	group.GET("/seller/custom-orders/:requestID/photo", handler.OpenSellerPhoto)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(method, target, strings.NewReader(body))
-	if body != "" {
-		request.Header.Set("Content-Type", "application/json")
-	}
 	router.ServeHTTP(recorder, request)
 	return recorder
 }
@@ -145,7 +219,7 @@ func TestCreateRequest(t *testing.T) {
 		t.Errorf("user = %q, input = %+v", service.userID, input)
 	}
 	body := decode(t, recorder)
-	if body.ID != testRequestID || body.Status != "requested" || len(body.Actions) != 1 || body.Actions[0] != "cancel" {
+	if body.ID != testRequestID || body.Status != "requested" || strings.Join(body.Actions, ",") != "cancel,send_photo" {
 		t.Errorf("body = %s", recorder.Body.String())
 	}
 }
@@ -247,6 +321,12 @@ func TestErrors(t *testing.T) {
 		"not custom made": {app.ErrCustomMadeNotAllowed, http.StatusConflict},
 		"own ad":          {app.ErrOwnAdvertisement, http.StatusConflict},
 		"wrong status":    {app.ErrInvalidStatusTransition, http.StatusConflict},
+		"prices changed":  {app.ErrPricesChanged, http.StatusConflict},
+		"no address":      {app.ErrAddressNotFound, http.StatusNotFound},
+		"no shipping":     {&app.ShippingRequiredError{AdvertisementIDs: []string{"ad-1"}}, http.StatusUnprocessableEntity},
+		"no photo":        {app.ErrFootPhotoNotFound, http.StatusNotFound},
+		"unreadable":      {fmt.Errorf("%w: the PDF is incomplete", app.ErrUnreadableDocument), http.StatusUnprocessableEntity},
+		"too large":       {storage.ErrTooLarge, http.StatusRequestEntityTooLarge},
 		"unexpected":      {errors.New("boom"), http.StatusInternalServerError},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -262,5 +342,87 @@ func TestErrors(t *testing.T) {
 	}
 	if recorder := serve(&fakeService{}, "", http.MethodGet, "/custom-orders", ""); recorder.Code != http.StatusUnauthorized {
 		t.Errorf("no user: status = %d", recorder.Code)
+	}
+}
+
+func TestCheckout(t *testing.T) {
+	for _, test := range []struct {
+		created bool
+		want    int
+	}{{true, http.StatusCreated}, {false, http.StatusOK}} {
+		service := &fakeService{status: customorders.StatusApproved, created: test.created}
+		request := httptest.NewRequest(http.MethodPost, "/custom-orders/"+testRequestID+"/checkout", strings.NewReader(`{"address_id":"a-1","shipping_option_id":"s-1"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", "key-1")
+
+		recorder := serveRequest(service, testBuyerID, request)
+
+		if recorder.Code != test.want {
+			t.Fatalf("created = %v: status = %d, want %d, body = %s", test.created, recorder.Code, test.want, recorder.Body.String())
+		}
+		input := service.input.(customorders.CheckoutInput)
+		if service.call != "checkout" || service.userID != testBuyerID || service.id != testRequestID || service.key != "key-1" ||
+			input.AddressID != "a-1" || input.ShippingOptionID != "s-1" {
+			t.Errorf("call = %q, key = %q, input = %+v", service.call, service.key, input)
+		}
+	}
+	if recorder := serve(&fakeService{}, testBuyerID, http.MethodPost, "/custom-orders/"+testRequestID+"/checkout", "{"); recorder.Code != http.StatusBadRequest {
+		t.Errorf("bad JSON: status = %d", recorder.Code)
+	}
+}
+
+func TestReportRequest(t *testing.T) {
+	service := &fakeService{status: customorders.StatusCompleted}
+
+	recorder := serveMultipart(t, service, testSellerID, http.MethodPost, "/seller/custom-orders/"+testRequestID+"/report",
+		[]byte("%PDF report"), map[string]string{"adaptation_instructions": "Use 2 horas por dia."})
+
+	if recorder.Code != http.StatusOK || decode(t, recorder).Status != string(customorders.StatusCompleted) {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if service.call != "report" || service.userID != testSellerID || service.input != "Use 2 horas por dia." || string(service.content) != "%PDF report" {
+		t.Errorf("call = %q, input = %v, content = %q", service.call, service.input, service.content)
+	}
+
+	if recorder := serveMultipart(t, service, testSellerID, http.MethodPost, "/seller/custom-orders/"+testRequestID+"/report", nil, nil); recorder.Code != http.StatusBadRequest {
+		t.Errorf("no file: status = %d", recorder.Code)
+	}
+	service.err = storage.ErrUnsupportedType
+	recorder = serveMultipart(t, service, testSellerID, http.MethodPost, "/seller/custom-orders/"+testRequestID+"/report", []byte("x"), nil)
+	if recorder.Code != http.StatusUnsupportedMediaType || !strings.Contains(recorder.Body.String(), "PDF, JPEG or PNG") {
+		t.Errorf("wrong type: status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestFootPhoto(t *testing.T) {
+	service := &fakeService{status: customorders.StatusRequested}
+
+	recorder := serveMultipart(t, service, testBuyerID, http.MethodPut, "/custom-orders/"+testRequestID+"/photo", []byte("png bytes"), nil)
+
+	if recorder.Code != http.StatusOK || service.call != "send photo" || string(service.content) != "png bytes" {
+		t.Fatalf("send: status = %d, call = %q, body = %s", recorder.Code, service.call, recorder.Body.String())
+	}
+	service.err = storage.ErrUnsupportedType
+	recorder = serveMultipart(t, service, testBuyerID, http.MethodPut, "/custom-orders/"+testRequestID+"/photo", []byte("%PDF"), nil)
+	if recorder.Code != http.StatusUnsupportedMediaType || !strings.Contains(recorder.Body.String(), "JPEG or PNG") {
+		t.Errorf("wrong type: status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	service.err = nil
+
+	for _, open := range []struct{ userID, path, call string }{
+		{testBuyerID, "/custom-orders/", "open photo"},
+		{testSellerID, "/seller/custom-orders/", "seller open photo"},
+	} {
+		recorder := serve(service, open.userID, http.MethodGet, open.path+testRequestID+"/photo", "")
+		if recorder.Code != http.StatusOK || service.call != open.call || recorder.Body.String() != "png bytes" {
+			t.Errorf("%s: status = %d, call = %q, body = %q", open.call, recorder.Code, service.call, recorder.Body.String())
+		}
+		if recorder.Header().Get("Cache-Control") != "private, no-store" || recorder.Header().Get("Content-Type") != "image/png" {
+			t.Errorf("%s: headers = %v", open.call, recorder.Header())
+		}
+	}
+	service.err = app.ErrFootPhotoNotFound
+	if recorder := serve(service, testBuyerID, http.MethodGet, "/custom-orders/"+testRequestID+"/photo", ""); recorder.Code != http.StatusNotFound {
+		t.Errorf("no photo: status = %d", recorder.Code)
 	}
 }

@@ -22,27 +22,23 @@ const (
 )
 
 type fakeRepository struct {
-	ads       map[string]*AdvertisementEntity
-	options   map[string][]ShippingOptionEntity
-	carts     map[string][]CartItemEntity
-	addresses map[string]AddressSnapshot
-	checkouts map[string]string
-	orders    map[string][]*OrderEntity
-	err       error
-	// createErr is returned by CreateCheckout, as if the locked ads no longer matched the plan.
-	createErr error
-	// concurrentCheckoutID simulates another request with the same key committing first.
+	ads                  map[string]*AdvertisementEntity
+	options              map[string][]ShippingOptionEntity
+	carts                map[string][]CartItemEntity
+	addresses            map[string]AddressSnapshot
+	checkouts            map[string]string
+	orders               map[string][]*OrderEntity
+	err                  error
+	createErr            error
 	concurrentCheckoutID string
 	plans                []*CheckoutPlan
 	refreshedCarts       []string
 	placed               []*OrderEntity
 	history              map[string][]StatusChangeEntity
 	changes              []StatusChange
-	// changeErr is returned by ChangeOrderStatus, as if another request changed the order first.
-	changeErr error
-	shipments map[string]*ShipmentEntity
-	// postedBefore is the cutoff GetOverdueShippedOrders was asked for.
-	postedBefore time.Time
+	changeErr            error
+	shipments            map[string]*ShipmentEntity
+	postedBefore         time.Time
 }
 
 func newFakeRepository() *fakeRepository {
@@ -92,6 +88,17 @@ func (f *fakeRepository) GetAdvertisement(_ context.Context, id string) (*Advert
 	}
 	copied := *ad
 	return &copied, nil
+}
+
+func (f *fakeRepository) GetAdvertisementItem(_ context.Context, id string) (*CartItemEntity, error) {
+	ad, ok := f.ads[id]
+	if !ok {
+		return nil, app.ErrAdvertisementNotFound
+	}
+	return &CartItemEntity{
+		AdvertisementID: ad.ID, SellerID: ad.SellerID, SellerName: "Loja " + ad.SellerID, Title: "Anúncio " + ad.ID, Quantity: 1,
+		AddedPrice: ad.Price, Price: ad.Price, Stock: ad.Stock, AdStatus: ad.Status, ShippingOptions: f.options[id],
+	}, nil
 }
 
 func (f *fakeRepository) AddCartItem(_ context.Context, userID string, advertisementID string, quantity int, unitPrice string) error {
@@ -391,7 +398,6 @@ func (f *fakeRepository) GetOrdersByCheckout(_ context.Context, checkoutID strin
 	return f.orders[checkoutID], nil
 }
 
-// includes tells whether the query keeps an order with the status and the date.
 func includes(query OrderQuery, status OrderStatus, at time.Time) bool {
 	return (query.Status == "" || status == query.Status) &&
 		(query.Since == nil || !at.Before(*query.Since)) &&

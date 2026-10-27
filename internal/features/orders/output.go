@@ -68,6 +68,8 @@ type OrderItemOutput struct {
 	Prescription          *PrescriptionOutput  `json:"prescription"`
 	CanUploadPrescription bool                 `json:"can_upload_prescription"`
 	CanRejectPrescription bool                 `json:"can_reject_prescription"`
+	CustomOrderID         *string              `json:"custom_order_id"`
+	FittingReportPending  bool                 `json:"fitting_report_pending"`
 }
 
 type PlannedOrderOutput struct {
@@ -139,7 +141,6 @@ type BuyerOutput struct {
 	Name string `json:"name"`
 }
 
-// SellerOrderOutput is an order as its seller sees it, with the buyer.
 type SellerOrderOutput struct {
 	OrderOutput
 	Buyer BuyerOutput `json:"buyer"`

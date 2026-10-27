@@ -34,14 +34,12 @@ type fakeRepository struct {
 	buyers    map[string]*payments.BuyerEntity
 	customers map[string]string
 	payments  []*payments.PaymentEntity
-	// keys maps a payment's id to its idempotency key, which the entity doesn't carry.
-	keys map[string]string
-	// changes lists the status changes that were applied, as the audit log would.
-	changes []payments.StatusChange
-	paid    []string
-	refunds []payments.RefundRecord
-	expired []string
-	err     error
+	keys      map[string]string
+	changes   []payments.StatusChange
+	paid      []string
+	refunds   []payments.RefundRecord
+	expired   []string
+	err       error
 }
 
 func newFakeRepository() *fakeRepository {
@@ -329,7 +327,6 @@ func TestCreateBoletoPaymentRemovesPixDiscount(t *testing.T) {
 	if order := s.r.orders[orderID]; order.DiscountTotal != "0.00" || order.Total != "120.00" {
 		t.Errorf("order totals = %s, %s, want no discount", order.DiscountTotal, order.Total)
 	}
-	// The Pix charge is cancelled, so the buyer can't pay both.
 	replaced, _ := s.r.GetPayment(s.ctx, pix.ID)
 	if replaced.Status != payments.StatusCancelled {
 		t.Errorf("first payment = %s, want cancelled", replaced.Status)
@@ -378,7 +375,6 @@ func TestCreateCardPaymentRefusedThenPix(t *testing.T) {
 		t.Errorf("order = %s, want still awaiting payment", s.r.orders[orderID].Status)
 	}
 
-	// UC-006 alternative flow: the buyer chooses another method.
 	pix := s.pay(t, "key-2", payments.CreatePaymentInput{Method: payments.MethodPix})
 	if pix.Status != payments.StatusPending {
 		t.Errorf("Pix after refusal = %s, want pending", pix.Status)
@@ -398,7 +394,6 @@ func TestCreatePaymentRepeatedKey(t *testing.T) {
 		t.Errorf("charges = %d, want 1", len(s.gateway.Requests))
 	}
 
-	// After the order is paid, the key still answers with its payment.
 	s.gateway.Confirm(*first.TransactionID)
 	if err := s.s.ApplyPaymentStatus(s.ctx, *first.TransactionID, payments.SourceWebhook); err != nil {
 		t.Fatalf("ApplyPaymentStatus: %v", err)
@@ -535,7 +530,6 @@ func TestCreatePaymentGatewayUnavailable(t *testing.T) {
 		t.Error("a payment was started without a customer")
 	}
 
-	// With the customer already created, the attempt is recorded as failed.
 	s.r.customers[buyerID+"/fake"] = "cus_known"
 	if _, _, err := s.s.CreatePayment(s.ctx, buyerID, orderID, "key-2", pix); !errors.Is(err, app.ErrGatewayUnavailable) {
 		t.Errorf("creating the charge: error = %v, want ErrGatewayUnavailable", err)
@@ -630,7 +624,6 @@ func TestApplyPaymentStatus(t *testing.T) {
 	pix := s.pay(t, "key-1", payments.CreatePaymentInput{Method: payments.MethodPix})
 	s.gateway.Confirm(*pix.TransactionID)
 
-	// The same webhook delivered twice changes the payment once.
 	for range 2 {
 		if err := s.s.ApplyPaymentStatus(s.ctx, *pix.TransactionID, payments.SourceWebhook); err != nil {
 			t.Fatalf("ApplyPaymentStatus: %v", err)
@@ -671,7 +664,6 @@ func TestApplyPaymentStatusIgnoresOutOfOrderStatus(t *testing.T) {
 	payment := s.pay(t, "key-1", payments.CreatePaymentInput{Method: payments.MethodCreditCard, Card: card(visaNumber)})
 	changes := len(s.r.changes)
 
-	// The gateway would never report a captured card as overdue; if it did, it is not applied.
 	s.gateway.Expire(*payment.TransactionID)
 	if err := s.s.ApplyPaymentStatus(s.ctx, *payment.TransactionID, payments.SourceWebhook); err != nil {
 		t.Fatalf("ApplyPaymentStatus: %v", err)

@@ -21,24 +21,17 @@ const (
 	DocumentTypeTechnicalReport DocumentType = "technical_report"
 )
 
-// prescriptionTypes are the formats a prescription may be sent in (UC-007 step 4).
-var prescriptionTypes = storage.AllowedTypes{"image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf"}
+var FileTypes = storage.AllowedTypes{"image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf"}
 
 const (
 	prescriptionsFolder = "prescriptions"
-	// minImageSide is the smallest width and height of a photo that can still be read.
-	minImageSide = 300
-	// maxImagePixels keeps a small file that decodes to a huge image from using up the memory.
-	maxImagePixels  = 40_000_000
-	maxReasonLength = 500
-	// pdfTrailerWindow is how far from the end of a PDF its %%EOF marker is looked for.
-	pdfTrailerWindow = 1024
+	minImageSide        = 300
+	maxImagePixels      = 40_000_000
+	maxReasonLength     = 500
+	pdfTrailerWindow    = 1024
 )
 
-// checkReadable is the automatic check of a prescription: the platform checks that a document is there
-// and can be opened, not what it says (T08). A photo must decode in full and be large enough to read;
-// a PDF must be complete.
-func checkReadable(upload *storage.Upload) error {
+func CheckReadable(upload *storage.Upload) error {
 	if upload.ContentType == "application/pdf" {
 		tail := upload.Content[max(0, len(upload.Content)-pdfTrailerWindow):]
 		if !bytes.Contains(tail, []byte("%%EOF")) {
@@ -63,7 +56,6 @@ func checkReadable(upload *storage.Upload) error {
 	return nil
 }
 
-// PrescriptionItem is the order item a prescription is sent for. ID is empty when the order has no such item.
 type PrescriptionItem struct {
 	ID                   string
 	Title                string
@@ -77,13 +69,12 @@ type PrescriptionItem struct {
 }
 
 type NewDocument struct {
-	OrderID     string
-	OrderItemID string
-	UploadedBy  string
-	Type        DocumentType
-	Key         string
-	Status      orders.DocumentStatus
-	// Notification, when set, is written in the same transaction as the document.
+	OrderID      string
+	OrderItemID  string
+	UploadedBy   string
+	Type         DocumentType
+	Key          string
+	Status       orders.DocumentStatus
 	Notification *notifications.NewNotification
 }
 
@@ -110,7 +101,6 @@ func (d *DocumentEntity) ToOutput() DocumentOutput {
 	}
 }
 
-// StoredDocument is a document with its file and the people of its order, who may read it.
 type StoredDocument struct {
 	DocumentEntity
 	Key         string
@@ -126,8 +116,6 @@ type RejectionInput struct {
 	Reason string `json:"reason"`
 }
 
-// Rejection is the seller refusing a prescription. It only applies while the document is the item's
-// latest, approved one and the order hasn't shipped (orders.CanRejectPrescription).
 type Rejection struct {
 	DocumentID   string
 	OrderID      string
@@ -137,7 +125,6 @@ type Rejection struct {
 	Notification notifications.NewNotification
 }
 
-// DocumentFile is a document's content, to be closed after reading.
 type DocumentFile struct {
 	*storage.File
 	ContentType string

@@ -11,7 +11,6 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 )
 
-// advance moves the order one step through the fulfillment flow.
 func (s checkoutSetup) advance(t *testing.T, orderID string, from orders.OrderStatus, to orders.OrderStatus, shipment *orders.NewShipment) {
 	t.Helper()
 	err := s.r.ChangeOrderStatus(context.Background(), orders.StatusChange{OrderID: orderID, From: from, To: to, Reason: "test", Shipment: shipment})
@@ -25,7 +24,6 @@ func TestOrdersBySeller(t *testing.T) {
 	ctx := context.Background()
 	insolesOrder, socksOrder := s.placeOrders(t)
 
-	// Not paid yet: the seller doesn't see it.
 	if total, err := s.r.CountOrdersBySeller(ctx, s.seller.ID, orders.OrderQuery{}); err != nil || total != 0 {
 		t.Errorf("before payment: total = %d, %v", total, err)
 	}
@@ -54,7 +52,6 @@ func TestOrdersBySeller(t *testing.T) {
 		t.Errorf("other seller = %+v", other)
 	}
 
-	// The seller's history goes by payment date.
 	tomorrow := time.Now().Add(24 * time.Hour)
 	later := orders.OrderQuery{Since: &tomorrow}
 	if total, _ := s.r.CountOrdersBySeller(ctx, s.seller.ID, later); total != 0 {
@@ -131,7 +128,6 @@ func TestStatusChangeWritesItsNotification(t *testing.T) {
 		t.Errorf("notifications = %d, want 1", n)
 	}
 
-	// A change that fails writes no notification.
 	err = s.r.ChangeOrderStatus(context.Background(), orders.StatusChange{
 		OrderID: socksOrder.ID, From: orders.OrderStatusPaid, To: orders.OrderStatusProcessing, Notifications: []notifications.NewNotification{notification},
 	})
@@ -159,7 +155,6 @@ func TestGetOverdueShippedOrders(t *testing.T) {
 		t.Fatalf("overdue = %+v, %v, want the insoles order", overdue, err)
 	}
 
-	// Taken as delivered, with a notification to each side.
 	err = s.r.ChangeOrderStatus(ctx, orders.StatusChange{
 		OrderID: insolesOrder.ID, From: orders.OrderStatusShipped, To: orders.OrderStatusDelivered, Reason: orders.ReasonDeliveryDeadline,
 		Notifications: []notifications.NewNotification{

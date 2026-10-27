@@ -12,17 +12,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// pollBatch caps how many rows one round of the poller handles; the rest wait for the next round.
 const pollBatch = 200
 
-// GetPendingPayments returns the pending payments that have a charge, oldest first.
 func (r *postgresRepository) GetPendingPayments(ctx context.Context) ([]*payments.PaymentEntity, error) {
 	return r.getPayments(ctx, "status = 'pending' AND gateway_transaction_id IS NOT NULL ORDER BY created_at, id LIMIT $1", pollBatch)
 }
 
-// GetClosedOrderPayments returns the pending payments of orders no longer awaiting payment. An
-// attempt without a charge is only returned once it is older than startedBefore, so a charge being
-// created right now isn't taken for an abandoned one.
 func (r *postgresRepository) GetClosedOrderPayments(ctx context.Context, startedBefore time.Time) ([]*payments.PaymentEntity, error) {
 	return r.getPayments(
 		ctx,
@@ -42,7 +37,6 @@ func (r *postgresRepository) getPayments(ctx context.Context, where string, args
 	})
 }
 
-// GetExpiredOrderIDs returns the orders still awaiting payment that were placed before createdBefore.
 func (r *postgresRepository) GetExpiredOrderIDs(ctx context.Context, createdBefore time.Time) ([]string, error) {
 	rows, err := r.pool.Query(
 		ctx,
@@ -55,8 +49,6 @@ func (r *postgresRepository) GetExpiredOrderIDs(ctx context.Context, createdBefo
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// ExpireOrder cancels an order whose payment window is over and puts its units back on sale, as a
-// system change. It returns false when the order was paid or cancelled meanwhile.
 func (r *postgresRepository) ExpireOrder(ctx context.Context, orderID string, createdBefore time.Time) (bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -92,9 +84,6 @@ func (r *postgresRepository) ExpireOrder(ctx context.Context, orderID string, cr
 	return true, tx.Commit(ctx)
 }
 
-// GetPaymentsToRefund returns the captured payments whose money goes back to the buyer: those of
-// cancelled orders, those captured after another attempt had paid the order, and those whose refund
-// is on its way. A refund the gateway refused MaxRefundAttempts times is left out: support handles it.
 func (r *postgresRepository) GetPaymentsToRefund(ctx context.Context) ([]*payments.PaymentEntity, error) {
 	return r.getPayments(
 		ctx,

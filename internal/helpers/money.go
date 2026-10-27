@@ -14,7 +14,6 @@ var ErrInvalidAmount = errors.New("invalid amount")
 
 var amountPattern = regexp.MustCompile(`^\d{1,13}(\.\d{1,2})?$`)
 
-// ParseCents reads a decimal such as "89.90", "89.9" or "89", as numeric(10,2) is printed by PostgreSQL.
 func ParseCents(s string) (Cents, error) {
 	if !amountPattern.MatchString(s) {
 		return 0, fmt.Errorf("%w: %q", ErrInvalidAmount, s)

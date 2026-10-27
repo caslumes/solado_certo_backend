@@ -126,7 +126,6 @@ func (s *service) Login(context context.Context, input *LoginInput) (TokenPair, 
 	ue, err := s.r.GetUserByEmail(context, email)
 	if err != nil {
 		if errors.Is(err, app.ErrUserNotFound) {
-			// prevents email enumeration by timing. every email, known or unkown, takes the same amount of time.
 			passwordMatches(dummyPasswordHash, input.Password)
 			return TokenPair{}, app.ErrInvalidCredentials
 		}

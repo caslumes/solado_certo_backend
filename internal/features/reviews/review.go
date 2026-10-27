@@ -23,7 +23,6 @@ type ReviewInput struct {
 	AdaptationFeedback *string `json:"adaptation_feedback"`
 }
 
-// ReviewedItem is the order item a review is about. ID is empty when the order has no such item.
 type ReviewedItem struct {
 	ID          string
 	OrderID     string
@@ -41,7 +40,6 @@ type NewReview struct {
 	AdaptationFeedback *string
 }
 
-// newReview checks the ratings (1 to 5, comfort optional) and trims the texts; an empty text is no text.
 func newReview(itemID string, reviewerID string, input ReviewInput) (NewReview, error) {
 	var invalid []string
 	if input.ProductRating < minRating || input.ProductRating > maxRating {
@@ -115,8 +113,6 @@ func (r *ReviewEntity) ToOutput() ReviewOutput {
 	}
 }
 
-// PublicReviewEntity is a review as anyone sees it on the ad: the reviewer's first name only, and
-// no adaptation feedback, which may describe the buyer's health.
 type PublicReviewEntity struct {
 	ID            string
 	ReviewerName  string

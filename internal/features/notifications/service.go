@@ -42,8 +42,6 @@ func NewService(r repository) *service {
 	return &service{r: r}
 }
 
-// ListNotifications returns the user's notifications, newest first, with how many are unread for
-// the badge.
 func (s *service) ListNotifications(ctx context.Context, userID string, page uint, limit uint) (*NotificationPage, error) {
 	if page == 0 {
 		page = 1
@@ -74,8 +72,6 @@ func (s *service) ListNotifications(ctx context.Context, userID string, page uin
 	}, nil
 }
 
-// MarkRead answers 404 for another user's notification, like for one that doesn't exist. Marking
-// it again keeps the first read time.
 func (s *service) MarkRead(ctx context.Context, userID string, id string) error {
 	if !helpers.IsUUID(id) {
 		return app.ErrNotificationNotFound

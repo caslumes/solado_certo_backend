@@ -1,4 +1,3 @@
--- Comfort after the first days of use (RF-040), from 1 (very uncomfortable) to 5 (very comfortable).
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS comfort_rating smallint;
 
 DO $$
@@ -9,5 +8,4 @@ BEGIN
 END
 $$;
 
--- Reviews of an ad are found through its order items.
 CREATE INDEX IF NOT EXISTS idx_order_items_advertisement ON order_items (advertisement_id);

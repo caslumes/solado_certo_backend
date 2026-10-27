@@ -36,7 +36,6 @@ func TestGetPendingPayments(t *testing.T) {
 	}
 }
 
-// insertPending adds a pending attempt started age ago, with a charge when transactionID isn't empty.
 func (f fixture) insertPending(t *testing.T, key string, transactionID string, age time.Duration) string {
 	t.Helper()
 	var transaction *string
@@ -116,7 +115,6 @@ func TestExpireOrder(t *testing.T) {
 		t.Errorf("audit rows = %d, want one", n)
 	}
 
-	// Running again, or for orders that aren't expired, changes nothing.
 	for _, id := range []string{f.orderID, recent, paid} {
 		if changed, err := f.r.ExpireOrder(ctx, id, cutoff); err != nil || changed {
 			t.Errorf("ExpireOrder(%s) = %v, %v, want no change", id, changed, err)
@@ -127,7 +125,6 @@ func TestExpireOrder(t *testing.T) {
 	}
 }
 
-// capturedPayment adds an attempt captured age ago, with its charge.
 func (f fixture) capturedPayment(t *testing.T, key string, age time.Duration) string {
 	t.Helper()
 	id := f.insertPending(t, key, "pay_"+key, age)
@@ -171,7 +168,6 @@ func TestGetPaymentsToRefund(t *testing.T) {
 	}
 }
 
-// A refund on its way is checked again even when the order isn't cancelled (asked in the dashboard).
 func TestGetPaymentsToRefundRequested(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

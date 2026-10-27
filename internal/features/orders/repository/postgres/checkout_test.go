@@ -50,7 +50,6 @@ func (f fixture) count(t *testing.T, sql string, args ...any) int {
 	return n
 }
 
-// planFor plans the buyer's cart with the first shipping option of each item, as the service does.
 func (f fixture) planFor(t *testing.T, buyerID string, addressID string) *orders.CheckoutPlan {
 	t.Helper()
 	cart, err := f.r.GetActiveCart(context.Background(), buyerID)
@@ -80,7 +79,6 @@ type checkoutSetup struct {
 	otherSeller testutil.User
 }
 
-// newCheckoutSetup fills the buyer's cart with 2 insoles from the seller and 3 socks from another seller.
 func newCheckoutSetup(t *testing.T) checkoutSetup {
 	t.Helper()
 	f := newFixture(t)

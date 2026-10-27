@@ -111,7 +111,6 @@ func TestCreatePaymentPassesTheRequestOn(t *testing.T) {
 	if gotInput.Method != payments.MethodCreditCard || gotInput.TaxID != "529.982.247-25" || gotInput.Card == nil || *gotInput.Card != want {
 		t.Errorf("input = %+v", gotInput)
 	}
-	// The client's address comes from the connection, never from the body.
 	if gotInput.RemoteIP != "203.0.113.7" {
 		t.Errorf("RemoteIP = %q, want the connection's address", gotInput.RemoteIP)
 	}

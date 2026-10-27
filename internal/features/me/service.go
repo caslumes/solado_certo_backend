@@ -309,7 +309,6 @@ func (s *service) EditPodologicalProfile(context context.Context, userID string,
 	return saved, nil
 }
 
-// RequireConsent answers ErrConsentRequired unless the user has an active consent to the current terms of purpose.
 func (s *service) RequireConsent(context context.Context, userID string, purpose ConsentPurpose) error {
 	return s.requireConsent(context, userID, purpose)
 }
@@ -644,7 +643,6 @@ func (s *service) resolveNextOnboardingStep(context context.Context, currentStep
 
 const avatarsPath = "avatars"
 
-// ChangeAvatar stores the new photo, points the profile to it and then deletes the old one.
 func (s *service) ChangeAvatar(context context.Context, userID string, content io.Reader) (*ProfileEntity, error) {
 	profile, err := s.GetProfileByUserID(context, userID)
 	if err != nil {
@@ -689,7 +687,6 @@ func (s *service) RemoveAvatar(context context.Context, userID string) (*Profile
 	return profile, nil
 }
 
-// deleteAvatarFile ignores URLs that were not uploaded here and only logs a failure.
 func (s *service) deleteAvatarFile(context context.Context, url string) {
 	key, ok := storage.KeyFromPublicPath(url)
 	if !ok {

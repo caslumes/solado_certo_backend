@@ -88,7 +88,6 @@ func (h *Handler) UploadPrescription(c *gin.Context) {
 	c.JSON(http.StatusCreated, document.ToOutput())
 }
 
-// OpenDocument serves the file without caching it anywhere along the way: it is health data.
 func (h *Handler) OpenDocument(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {

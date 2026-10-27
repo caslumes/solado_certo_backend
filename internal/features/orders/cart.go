@@ -16,7 +16,6 @@ func (o *ShippingOptionEntity) ToOutput() ShippingOptionOutput {
 	return ShippingOptionOutput{ID: o.ID, Name: o.Name, Carrier: o.Carrier, Price: o.Price, DeliveryDays: o.DeliveryDays}
 }
 
-// AdvertisementEntity is what the cart needs to know about an ad when an item is added or changed.
 type AdvertisementEntity struct {
 	ID       string
 	SellerID string
@@ -43,7 +42,6 @@ type CartItemEntity struct {
 	ShippingOptions []ShippingOptionEntity
 }
 
-// Problem says why the item can't be bought as it is, or "" if it can.
 func (i *CartItemEntity) Problem() ItemProblem {
 	switch {
 	case i.AdStatus != AdvertisementStatusPublished:
@@ -78,8 +76,6 @@ func (c *CartEntity) Item(advertisementID string) *CartItemEntity {
 	return nil
 }
 
-// ToOutput groups the items by seller, in the order the repository returned them.
-// Totals only count items that can be bought.
 func (c *CartEntity) ToOutput() *CartOutput {
 	output := &CartOutput{Groups: []CartGroupOutput{}}
 	if c.ID != "" {

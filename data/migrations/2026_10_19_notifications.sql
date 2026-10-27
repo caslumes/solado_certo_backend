@@ -1,4 +1,3 @@
--- In-app notifications (RF-020): written in the same transaction as the change they tell about.
 CREATE TABLE IF NOT EXISTS notifications (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL,

@@ -3,11 +3,15 @@ package httpcustomorders
 import (
 	"context"
 	"errors"
+	"fmt"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/customorders"
+	"github.com/caslumes/solado_certo_backend/internal/helpers"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,6 +21,9 @@ type Service interface {
 	customorders.GetRequestUseCase
 	customorders.BuyerActionsUseCase
 	customorders.SellerActionsUseCase
+	customorders.CheckoutUseCase
+	customorders.ReportUseCase
+	customorders.FootPhotoUseCase
 }
 
 type Handler struct {
@@ -37,6 +44,7 @@ func requireUserID(c *gin.Context) (string, bool) {
 
 func writeError(c *gin.Context, err error, fallback string) {
 	var missingFields *app.MissingFieldsError
+	var shippingRequired *app.ShippingRequiredError
 	switch {
 	case errors.As(err, &missingFields):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": app.ErrMissingRequiredFields.Error(), "fields": missingFields.Fields})
@@ -48,8 +56,19 @@ func writeError(c *gin.Context, err error, fallback string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "advertisement not found"})
 	case errors.Is(err, app.ErrCustomOrderNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "custom order request not found"})
-	case errors.Is(err, app.ErrCustomMadeNotAllowed), errors.Is(err, app.ErrOwnAdvertisement), errors.Is(err, app.ErrInvalidStatusTransition):
+	case errors.Is(err, app.ErrCustomMadeNotAllowed), errors.Is(err, app.ErrOwnAdvertisement), errors.Is(err, app.ErrInvalidStatusTransition),
+		errors.Is(err, app.ErrPricesChanged):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrAddressNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "address not found"})
+	case errors.As(err, &shippingRequired):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": app.ErrShippingRequired.Error(), "advertisement_ids": shippingRequired.AdvertisementIDs})
+	case errors.Is(err, app.ErrFootPhotoNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "foot photo not found"})
+	case errors.Is(err, storage.ErrTooLarge):
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("the file must have at most %d MB", app.MaxUploadSize>>20)})
+	case errors.Is(err, app.ErrUnreadableDocument):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fallback})
 	}
@@ -137,7 +156,6 @@ func (h *Handler) ComplementRequest(c *gin.Context) {
 	})
 }
 
-// CancelRequest takes an optional body with the reason.
 func (h *Handler) CancelRequest(c *gin.Context) {
 	var input customorders.CancelInput
 	if c.Request.ContentLength != 0 && !bind(c, &input) {
@@ -184,6 +202,116 @@ func (h *Handler) RequestInfo(c *gin.Context) {
 	})
 }
 
+func (h *Handler) Checkout(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var input customorders.CheckoutInput
+	if !bind(c, &input) {
+		return
+	}
+
+	request, created, err := h.service.Checkout(c.Request.Context(), userID, c.Param("requestID"), c.GetHeader("Idempotency-Key"), input)
+	if err != nil {
+		writeError(c, err, "could not check out custom order request")
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	c.JSON(status, request.ToOutput(userID))
+}
+
+func (h *Handler) ReportRequest(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+	file, ok := formFile(c, "report")
+	if !ok {
+		return
+	}
+	defer file.Close()
+
+	request, err := h.service.ReportRequest(c.Request.Context(), userID, c.Param("requestID"), c.PostForm("adaptation_instructions"), file)
+	if err != nil {
+		writeUploadError(c, err, "the report must be a PDF, JPEG or PNG file", "could not save fitting report")
+		return
+	}
+	c.JSON(http.StatusOK, request.ToOutput(userID))
+}
+
+func (h *Handler) SendPhoto(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+	file, ok := formFile(c, "photo")
+	if !ok {
+		return
+	}
+	defer file.Close()
+
+	request, err := h.service.SendPhoto(c.Request.Context(), userID, c.Param("requestID"), file)
+	if err != nil {
+		writeUploadError(c, err, "the photo must be a JPEG or PNG file", "could not save foot photo")
+		return
+	}
+	c.JSON(http.StatusOK, request.ToOutput(userID))
+}
+
+func (h *Handler) OpenPhoto(c *gin.Context) {
+	h.openPhoto(c, h.service.OpenPhoto)
+}
+
+func (h *Handler) OpenSellerPhoto(c *gin.Context) {
+	h.openPhoto(c, h.service.OpenSellerPhoto)
+}
+
+func (h *Handler) openPhoto(c *gin.Context, open func(context.Context, string, string) (*customorders.PhotoFile, error)) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	file, err := open(c.Request.Context(), userID, c.Param("requestID"))
+	if err != nil {
+		writeError(c, err, "could not open foot photo")
+		return
+	}
+	defer file.Close()
+
+	c.DataFromReader(http.StatusOK, file.Size, file.ContentType, file, map[string]string{
+		"Cache-Control":          "private, no-store",
+		"Content-Disposition":    fmt.Sprintf("inline; filename=%q", file.Name),
+		"X-Content-Type-Options": "nosniff",
+	})
+}
+
+func formFile(c *gin.Context, what string) (multipart.File, bool) {
+	file, err := helpers.FormFile(c, "file", app.MaxUploadSize)
+	if err != nil {
+		if errors.Is(err, storage.ErrTooLarge) {
+			writeError(c, err, "")
+			return nil, false
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("send the %s as multipart form field \"file\"", what)})
+		return nil, false
+	}
+	return file, true
+}
+
+func writeUploadError(c *gin.Context, err error, unsupported string, fallback string) {
+	if errors.Is(err, storage.ErrUnsupportedType) {
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": unsupported})
+		return
+	}
+	writeError(c, err, fallback)
+}
+
 func bind(c *gin.Context, input any) bool {
 	if err := c.ShouldBindJSON(input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
@@ -192,7 +320,6 @@ func bind(c *gin.Context, input any) bool {
 	return true
 }
 
-// act runs one call on the request in the path and answers with the request as the user now sees it.
 func (h *Handler) act(c *gin.Context, fallback string, call func(ctx context.Context, userID string, id string) (viewerOutput, error)) {
 	userID, ok := requireUserID(c)
 	if !ok {

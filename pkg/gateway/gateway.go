@@ -1,5 +1,3 @@
-// Package gateway is the boundary to a payment provider (RF-016). Asaas is the real implementation;
-// the fake one runs the whole flow offline. PAYMENT_GATEWAY picks one.
 package gateway
 
 import (
@@ -15,8 +13,6 @@ type PaymentGateway interface {
 	GetCharge(ctx context.Context, id string) (*Charge, error)
 	GetPixQRCode(ctx context.Context, chargeID string) (*PixQRCode, error)
 	CancelCharge(ctx context.Context, id string) error
-	// Refund returns the whole amount of a captured charge. A boleto can't be refunded by itself: the
-	// payer gives their bank account at the charge's RefundURL.
 	Refund(ctx context.Context, id string, method Method) (*Charge, error)
 }
 
@@ -28,7 +24,6 @@ const (
 	MethodCreditCard Method = "credit_card"
 )
 
-// Status is a charge's status, mapped from the provider's own.
 type Status string
 
 const (
@@ -39,10 +34,8 @@ const (
 	StatusCancelled Status = "cancelled"
 )
 
-// ErrUnavailable is returned when the provider can't be reached or answers with a server error.
 var ErrUnavailable = errors.New("payment gateway unavailable")
 
-// ErrCardRefused is returned by CreateCharge when the issuer refuses the card.
 var ErrCardRefused = errors.New("card refused")
 
 type CardRefusedError struct {
@@ -64,7 +57,6 @@ type Customer struct {
 	TaxID string
 }
 
-// Card is sent to the provider once and never stored.
 type Card struct {
 	HolderName  string
 	Number      string
@@ -73,7 +65,6 @@ type Card struct {
 	CVV         string
 }
 
-// CardHolder is the billing data the provider asks for with a card charge.
 type CardHolder struct {
 	Name          string
 	Email         string
@@ -89,25 +80,22 @@ type ChargeRequest struct {
 	Amount      string
 	DueDate     time.Time
 	Description string
-	// Reference identifies the charge on our side (the payment's id), shown in the provider's dashboard.
-	Reference string
-	Card      *Card
-	Holder    *CardHolder
-	RemoteIP  string
+	Reference   string
+	Card        *Card
+	Holder      *CardHolder
+	RemoteIP    string
 }
 
 type Charge struct {
-	ID            string
-	Status        Status
-	GatewayStatus string
-	InvoiceURL    string
-	BoletoURL     string
-	CardLast4     string
-	CardBrand     string
-	// RefundRequested tells that a refund was asked for and is not final yet; Status stays captured.
+	ID              string
+	Status          Status
+	GatewayStatus   string
+	InvoiceURL      string
+	BoletoURL       string
+	CardLast4       string
+	CardBrand       string
 	RefundRequested bool
-	// RefundURL is where the payer of a boleto gives the bank account to refund.
-	RefundURL string
+	RefundURL       string
 }
 
 type PixQRCode struct {

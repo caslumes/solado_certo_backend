@@ -29,7 +29,6 @@ func newFixture(t *testing.T) fixture {
 	return f
 }
 
-// insertOrder adds an order of 100.00 plus 20.00 shipping, awaiting payment.
 func (f fixture) insertOrder(t *testing.T, number string) string {
 	t.Helper()
 	ctx := context.Background()
@@ -130,7 +129,6 @@ func TestSetTaxID(t *testing.T) {
 	if err := f.r.SetTaxID(ctx, other.ID, "52998224725"); !errors.Is(err, app.ErrTaxIDInUse) {
 		t.Errorf("another user's CPF: error = %v, want ErrTaxIDInUse", err)
 	}
-	// A saved CPF is not replaced.
 	if err := f.r.SetTaxID(ctx, f.buyer.ID, "11144477735"); err != nil {
 		t.Fatalf("SetTaxID: %v", err)
 	}
@@ -181,7 +179,6 @@ func TestStartPayment(t *testing.T) {
 		t.Errorf("payment audit rows = %d, want 1", n)
 	}
 
-	// The same key returns the payment without changing anything.
 	again, created, err := f.r.StartPayment(ctx, payments.NewPayment{OrderID: f.orderID, IdempotencyKey: "key-1", Gateway: "fake", Method: payments.MethodBoleto, Amount: "120.00", DiscountTotal: "0.00"})
 	if err != nil || created || again.ID != payment.ID {
 		t.Errorf("repeat = %+v, %v, %v", again, created, err)
@@ -191,12 +188,10 @@ func TestStartPayment(t *testing.T) {
 		t.Errorf("key of another order: error = %v", err)
 	}
 
-	// While a payment is pending, another attempt is refused.
 	if _, _, err := f.r.StartPayment(ctx, payments.NewPayment{OrderID: f.orderID, IdempotencyKey: "key-2", Gateway: "fake", Method: payments.MethodBoleto, Amount: "120.00", DiscountTotal: "0.00"}); !errors.Is(err, app.ErrPaymentInProgress) {
 		t.Errorf("second pending attempt: error = %v, want ErrPaymentInProgress", err)
 	}
 
-	// Once it is cancelled, a boleto removes the discount.
 	if _, err := f.r.ChangePaymentStatus(ctx, payments.StatusChange{PaymentID: payment.ID, To: payments.StatusCancelled, Source: payments.SourceReplaced}); err != nil {
 		t.Fatalf("ChangePaymentStatus: %v", err)
 	}
@@ -235,7 +230,6 @@ func TestAttachChargeAndLookups(t *testing.T) {
 	if err := f.r.AttachCharge(ctx, payment.ID, "pay_1", payments.PaymentDetails{GatewayStatus: "PENDING", InvoiceURL: "https://i"}); err != nil {
 		t.Fatalf("AttachCharge: %v", err)
 	}
-	// Details are merged, so a later Pix code keeps what was stored.
 	if err := f.r.AttachCharge(ctx, payment.ID, "pay_1", payments.PaymentDetails{PixPayload: "000201", PixExpiresAt: &expires}); err != nil {
 		t.Fatalf("AttachCharge: %v", err)
 	}
@@ -308,7 +302,6 @@ func TestChangePaymentStatusCapture(t *testing.T) {
 		t.Errorf("order audit rows = %d, want 1", n)
 	}
 
-	// The same webhook again changes nothing.
 	changed, err = f.r.ChangePaymentStatus(ctx, capture)
 	if err != nil || changed {
 		t.Errorf("repeat = %v, %v, want no change", changed, err)
@@ -317,7 +310,6 @@ func TestChangePaymentStatusCapture(t *testing.T) {
 		t.Errorf("payment audit rows after the repeat = %d, want 1", n)
 	}
 
-	// A refund keeps the order as it is: the order was cancelled before it.
 	if changed, err := f.r.ChangePaymentStatus(ctx, payments.StatusChange{PaymentID: payment.ID, To: payments.StatusRefunded, Source: payments.SourceWebhook}); err != nil || !changed {
 		t.Errorf("refund = %v, %v", changed, err)
 	}
@@ -330,7 +322,6 @@ func TestChangePaymentStatusCapture(t *testing.T) {
 	}
 }
 
-// addItem adds an item of the seller to the fixture's order.
 func (f fixture) addItem(t *testing.T, sellerID string) {
 	t.Helper()
 	category := testutil.InsertCategory(t, f.pool, nil)
@@ -376,7 +367,6 @@ func TestChangePaymentStatusConcurrentCaptures(t *testing.T) {
 	payment := f.start(t, "key-1", payments.MethodPix, "115.00", "5.00")
 	capture := payments.StatusChange{PaymentID: payment.ID, To: payments.StatusCaptured, Source: payments.SourceWebhook}
 
-	// A webhook and the poller apply the same capture at once.
 	var wg sync.WaitGroup
 	results := make([]bool, 2)
 	errs := make([]error, 2)

@@ -49,7 +49,6 @@ var ErrOrderItemNotFound = errors.New("order item not found")
 var ErrReviewNotAllowed = errors.New("only a delivered order can be reviewed")
 var ErrAlreadyReviewed = errors.New("item already reviewed")
 
-// MissingFieldsError lists the JSON names of the fields that must be filled.
 type MissingFieldsError struct {
 	Fields []string
 }
@@ -62,7 +61,6 @@ func (e *MissingFieldsError) Unwrap() error {
 	return ErrMissingRequiredFields
 }
 
-// StockShortage is an item the buyer asked for more units of than the ad has.
 type StockShortage struct {
 	AdvertisementID string `json:"advertisement_id"`
 	Requested       int    `json:"requested"`
@@ -81,7 +79,6 @@ func (e *OutOfStockError) Unwrap() error {
 	return ErrOutOfStock
 }
 
-// ShippingRequiredError lists the cart items without a valid shipping option.
 type ShippingRequiredError struct {
 	AdvertisementIDs []string
 }
@@ -99,7 +96,6 @@ var ErrPrescriptionNotNeeded = errors.New("this item does not need a prescriptio
 var ErrDocumentNotFound = errors.New("document not found")
 var ErrUnreadableDocument = errors.New("unreadable document")
 
-// PrescriptionRequiredError lists the order items still without an approved prescription.
 type PrescriptionRequiredError struct {
 	ItemIDs []string
 }
@@ -114,3 +110,17 @@ func (e *PrescriptionRequiredError) Unwrap() error {
 
 var ErrCustomOrderNotFound = errors.New("custom order request not found")
 var ErrCustomMadeNotAllowed = errors.New("this advertisement does not take custom orders")
+var ErrFootPhotoNotFound = errors.New("foot photo not found")
+var ErrFittingReportRequired = errors.New("fitting report required")
+
+type FittingReportRequiredError struct {
+	ItemIDs []string
+}
+
+func (e *FittingReportRequiredError) Error() string {
+	return ErrFittingReportRequired.Error() + ": " + strings.Join(e.ItemIDs, ", ")
+}
+
+func (e *FittingReportRequiredError) Unwrap() error {
+	return ErrFittingReportRequired
+}

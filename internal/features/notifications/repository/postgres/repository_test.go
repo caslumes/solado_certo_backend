@@ -90,7 +90,6 @@ func TestMarkRead(t *testing.T) {
 		t.Fatalf("read_at = %v, %v, want only the first set", firstRead, list[1].ReadAt)
 	}
 
-	// Reading again keeps the first time.
 	if err := r.MarkRead(ctx, user.ID, id); err != nil {
 		t.Fatalf("MarkRead again: %v", err)
 	}

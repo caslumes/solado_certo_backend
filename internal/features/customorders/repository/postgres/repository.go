@@ -9,7 +9,10 @@ import (
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/customorders"
+	"github.com/caslumes/solado_certo_backend/internal/features/documents"
 	notificationsdb "github.com/caslumes/solado_certo_backend/internal/features/notifications/repository/postgres"
+	"github.com/caslumes/solado_certo_backend/internal/features/orders"
+	ordersdb "github.com/caslumes/solado_certo_backend/internal/features/orders/repository/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -39,7 +42,6 @@ func (r *postgresRepository) GetAdvertisement(ctx context.Context, id string) (*
 	return &ad, nil
 }
 
-// CreateRequest stores the request with its first history entry, its audit row and the seller's notification.
 func (r *postgresRepository) CreateRequest(ctx context.Context, request customorders.NewRequest) (string, error) {
 	measurements, err := json.Marshal(request.Measurements)
 	if err != nil {
@@ -82,19 +84,26 @@ func (r *postgresRepository) CreateRequest(ctx context.Context, request customor
 const selectRequests = "SELECT r.id, r.buyer_id, b.name, a.seller_id, s.name, a.id, a.title, " +
 	"(SELECT i.url FROM advertisement_images i WHERE i.advertisement_id = a.id AND i.is_cover LIMIT 1), " +
 	"r.order_id, r.status, r.measurements, r.technical_notes, r.quoted_price::text, r.rejection_reason, r.adaptation_instructions, " +
-	"r.created_at, r.updated_at " +
+	"r.foot_photo_key, fr.id, fr.created_at, r.created_at, r.updated_at " +
 	"FROM custom_order_requests r JOIN advertisements a ON a.id = r.advertisement_id " +
-	"JOIN users b ON b.id = r.buyer_id JOIN users s ON s.id = a.seller_id "
+	"JOIN users b ON b.id = r.buyer_id JOIN users s ON s.id = a.seller_id " +
+	"LEFT JOIN LATERAL (SELECT d.id, d.created_at FROM order_documents d WHERE d.custom_order_request_id = r.id " +
+	"AND d.document_type = 'technical_report' ORDER BY d.created_at DESC, d.id DESC LIMIT 1) fr ON true "
 
 func scanRequest(row pgx.Row) (*customorders.RequestEntity, error) {
 	var request customorders.RequestEntity
 	var measurements []byte
+	var reportID *string
+	var reportedAt *time.Time
 	err := row.Scan(&request.ID, &request.BuyerID, &request.BuyerName, &request.SellerID, &request.SellerName,
 		&request.AdvertisementID, &request.AdvertisementTitle, &request.CoverURL, &request.OrderID, &request.Status,
 		&measurements, &request.TechnicalNotes, &request.QuotedPrice, &request.RejectionReason, &request.AdaptationInstructions,
-		&request.CreatedAt, &request.UpdatedAt)
+		&request.FootPhotoKey, &reportID, &reportedAt, &request.CreatedAt, &request.UpdatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if reportID != nil {
+		request.FittingReport = &customorders.FittingReportEntity{ID: *reportID, CreatedAt: *reportedAt}
 	}
 	if err := json.Unmarshal(measurements, &request.Measurements); err != nil {
 		return nil, err
@@ -134,7 +143,6 @@ func (r *postgresRepository) GetRequest(ctx context.Context, id string) (*custom
 	return &customorders.RequestDetailEntity{RequestEntity: *request, History: history}, nil
 }
 
-// filter turns a Filter into a WHERE clause and its arguments, numbered from $1.
 func filter(f customorders.Filter) (string, []any) {
 	where, args := "a.seller_id = $1", []any{f.SellerID}
 	if f.BuyerID != "" {
@@ -178,9 +186,6 @@ func (r *postgresRepository) GetRequests(ctx context.Context, f customorders.Fil
 	})
 }
 
-// ChangeStatus locks the request and applies the change only if it is still in change.From, so two
-// decisions made at the same time can't both apply. History, audit and notification go in the same
-// transaction.
 func (r *postgresRepository) ChangeStatus(ctx context.Context, change customorders.StatusChange) error {
 	var measurements []byte
 	if change.Measurements != nil {
@@ -197,7 +202,9 @@ func (r *postgresRepository) ChangeStatus(ctx context.Context, change customorde
 	defer tx.Rollback(ctx)
 
 	var status customorders.Status
-	if err := tx.QueryRow(ctx, "SELECT status FROM custom_order_requests WHERE id = $1 FOR UPDATE", change.RequestID).Scan(&status); err != nil {
+	var orderID *string
+	err = tx.QueryRow(ctx, "SELECT status, order_id FROM custom_order_requests WHERE id = $1 FOR UPDATE", change.RequestID).Scan(&status, &orderID)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return app.ErrCustomOrderNotFound
 		}
@@ -212,12 +219,28 @@ func (r *postgresRepository) ChangeStatus(ctx context.Context, change customorde
 		ctx,
 		"UPDATE custom_order_requests SET status = $2, updated_at = $3, "+
 			"quoted_price = COALESCE($4::numeric, quoted_price), rejection_reason = COALESCE($5, rejection_reason), "+
-			"measurements = COALESCE($6::jsonb, measurements), technical_notes = COALESCE($7, technical_notes) "+
+			"measurements = COALESCE($6::jsonb, measurements), technical_notes = COALESCE($7, technical_notes), "+
+			"adaptation_instructions = COALESCE($8, adaptation_instructions) "+
 			"WHERE id = $1",
 		change.RequestID, change.To, now, change.QuotedPrice, change.RejectionReason, measurements, change.TechnicalNotes,
+		change.AdaptationInstructions,
 	)
 	if err != nil {
 		return err
+	}
+	if change.ReportKey != nil {
+		if orderID == nil {
+			return app.ErrInvalidStatusTransition
+		}
+		_, err := tx.Exec(
+			ctx,
+			"INSERT INTO order_documents (order_id, order_item_id, custom_order_request_id, uploaded_by, document_type, file_url, validation_status, validated_at, created_at) "+
+				"VALUES ($1, (SELECT id FROM order_items WHERE order_id = $1 AND custom_order_request_id = $2 LIMIT 1), $2, $3, $4, $5, $6, $7, $7)",
+			*orderID, change.RequestID, change.ChangedBy, documents.DocumentTypeTechnicalReport, *change.ReportKey, orders.DocumentStatusApproved, now,
+		)
+		if err != nil {
+			return err
+		}
 	}
 	from := change.From
 	if err := recordHistory(ctx, tx, change.RequestID, &change.ChangedBy, &from, change.To, change.Reason, now); err != nil {
@@ -230,10 +253,108 @@ func (r *postgresRepository) ChangeStatus(ctx context.Context, change customorde
 	if change.Measurements != nil {
 		details["measurements_changed"] = true
 	}
+	if change.ReportKey != nil {
+		details["order_id"] = *orderID
+	}
 	if err := audit(ctx, tx, change.ChangedBy, change.RequestID, "custom_order."+string(change.Action), details, now); err != nil {
 		return err
 	}
 	if err := notificationsdb.Create(ctx, tx, change.Notification, now); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *postgresRepository) CheckoutExists(ctx context.Context, buyerID string, idempotencyKey string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT EXISTS (SELECT 1 FROM checkouts WHERE buyer_id = $1 AND idempotency_key = $2)",
+		buyerID, idempotencyKey,
+	).Scan(&exists)
+	return exists, err
+}
+
+func (r *postgresRepository) Checkout(ctx context.Context, checkout customorders.Checkout) (bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	now := time.Now().UTC()
+	checkoutID, created, err := ordersdb.InsertCheckout(ctx, tx, checkout.BuyerID, checkout.IdempotencyKey, now)
+	if err != nil || !created {
+		return false, err
+	}
+
+	var status customorders.Status
+	var orderID *string
+	err = tx.QueryRow(ctx, "SELECT status, order_id FROM custom_order_requests WHERE id = $1 FOR UPDATE", checkout.RequestID).Scan(&status, &orderID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, app.ErrCustomOrderNotFound
+		}
+		return false, err
+	}
+	if status != customorders.StatusApproved || orderID != nil {
+		return false, app.ErrInvalidStatusTransition
+	}
+	if err := ordersdb.CheckShippingOptions(ctx, tx, checkout.Plan); err != nil {
+		return false, err
+	}
+
+	newOrderID, err := ordersdb.InsertOrder(ctx, tx, checkout.BuyerID, checkoutID, checkout.Plan, checkout.Plan.Orders[0], now)
+	if err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, "UPDATE custom_order_requests SET order_id = $2, updated_at = $3 WHERE id = $1", checkout.RequestID, newOrderID, now); err != nil {
+		return false, err
+	}
+	if err := audit(ctx, tx, checkout.BuyerID, checkout.RequestID, "custom_order.checkout", map[string]any{"order_id": newOrderID}, now); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
+}
+
+func (r *postgresRepository) SetFootPhoto(ctx context.Context, change customorders.PhotoChange) (*string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var status customorders.Status
+	var previous *string
+	err = tx.QueryRow(ctx, "SELECT status, foot_photo_key FROM custom_order_requests WHERE id = $1 FOR UPDATE", change.RequestID).Scan(&status, &previous)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrCustomOrderNotFound
+		}
+		return nil, err
+	}
+	if !status.TakesPhoto() {
+		return nil, app.ErrInvalidStatusTransition
+	}
+
+	now := time.Now().UTC()
+	if _, err := tx.Exec(ctx, "UPDATE custom_order_requests SET foot_photo_key = $2, updated_at = $3 WHERE id = $1", change.RequestID, change.Key, now); err != nil {
+		return nil, err
+	}
+	if err := audit(ctx, tx, change.BuyerID, change.RequestID, "custom_order.photo_sent", map[string]any{"replaced": previous != nil}, now); err != nil {
+		return nil, err
+	}
+	return previous, tx.Commit(ctx)
+}
+
+func (r *postgresRepository) RecordPhotoView(ctx context.Context, requestID string, userID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := audit(ctx, tx, userID, requestID, "custom_order.photo_viewed", map[string]any{}, time.Now().UTC()); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

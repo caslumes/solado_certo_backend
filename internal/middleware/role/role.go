@@ -22,8 +22,6 @@ func NewRoleMiddleware(service service) *RoleMiddleware {
 	return &RoleMiddleware{service: service}
 }
 
-// RequireRole must run after the auth middleware. Roles are read from the
-// database on every request, so a new role applies without a new token.
 func (m *RoleMiddleware) RequireRole(role enum.Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := authmiddleware.UserIDFrom(c.Request.Context())

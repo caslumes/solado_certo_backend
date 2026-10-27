@@ -203,7 +203,6 @@ func TestChangeStatusFromAnOldStatus(t *testing.T) {
 	}
 }
 
-// TestConcurrentDecisions has the seller accept and reject at the same time: only one applies.
 func TestConcurrentDecisions(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

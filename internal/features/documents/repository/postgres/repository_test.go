@@ -26,7 +26,6 @@ type fixture struct {
 	itemID string
 }
 
-// newFixture has an order of buyer, in status, with one item that needs a prescription.
 func newFixture(t *testing.T, status orders.OrderStatus) fixture {
 	t.Helper()
 	ctx := context.Background()

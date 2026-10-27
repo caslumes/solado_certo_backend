@@ -1,4 +1,3 @@
--- Technical attributes an ad of the category must fill before it is published (RF-031).
 ALTER TABLE categories ADD COLUMN IF NOT EXISTS required_attributes varchar(30)[] NOT NULL DEFAULT '{}';
 
 DO $$

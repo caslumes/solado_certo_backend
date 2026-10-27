@@ -23,7 +23,6 @@ type call struct {
 	header http.Header
 }
 
-// fakeAPI answers each request with the next response scripted for "METHOD /path".
 type fakeAPI struct {
 	t         *testing.T
 	mu        sync.Mutex
@@ -89,7 +88,6 @@ func (a *fakeAPI) count(route string) int {
 	return n
 }
 
-// noWait records the backoff instead of sleeping.
 func noWait(c *Client) *[]time.Duration {
 	var waits []time.Duration
 	c.sleep = func(_ context.Context, d time.Duration) error {
@@ -296,7 +294,6 @@ func TestGivesUpAfterThreeAttempts(t *testing.T) {
 func TestRetriedChargeIsNotCreatedTwice(t *testing.T) {
 	api, client := newFakeAPI(t)
 	noWait(client)
-	// The first POST timed out on our side but Asaas created the charge.
 	api.on("POST /payments", response{500, ""})
 	api.on("GET /payments", response{200, `{"data": [{"id": "pay_9", "status": "PENDING", "externalReference": "payment-1"}]}`})
 
@@ -334,7 +331,6 @@ func TestRetryStopsWhenLookupFails(t *testing.T) {
 
 	_, err := client.CreateCharge(context.Background(), chargeRequest(gateway.MethodPix))
 
-	// Without knowing whether the first attempt made a charge, it is never sent again.
 	if !errors.Is(err, gateway.ErrUnavailable) || api.count("POST /payments") != 1 {
 		t.Errorf("error = %v after %d POSTs, want ErrUnavailable after 1", err, api.count("POST /payments"))
 	}
@@ -427,7 +423,6 @@ func TestRefund(t *testing.T) {
 	}
 }
 
-// A boleto's refund only opens a request: the payer gives a bank account at the URL Asaas returns.
 func TestRefundBoleto(t *testing.T) {
 	api, client := newFakeAPI(t)
 	api.on("POST /payments/pay_1/bankSlip/refund", response{200, `{"requestUrl": "https://sandbox.asaas.com/r/abc"}`})
@@ -443,7 +438,6 @@ func TestRefundBoleto(t *testing.T) {
 	}
 }
 
-// A refund whose answer was lost is found by reading the charge, and is not asked again.
 func TestRefundRetryFindsTheRefund(t *testing.T) {
 	api, client := newFakeAPI(t)
 	noWait(client)

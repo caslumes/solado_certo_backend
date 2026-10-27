@@ -1,4 +1,3 @@
-// Package asaas is the Asaas implementation of gateway.PaymentGateway (API v3).
 package asaas
 
 import (
@@ -26,7 +25,6 @@ const (
 	userAgent      = "solado-certo"
 )
 
-// brazilTime is the zone of the dates Asaas returns without one.
 var brazilTime = time.FixedZone("BRT", -3*60*60)
 
 var billingTypes = map[gateway.Method]string{
@@ -35,8 +33,6 @@ var billingTypes = map[gateway.Method]string{
 	gateway.MethodCreditCard: "CREDIT_CARD",
 }
 
-// statuses maps Asaas payment statuses to the gateway's. A refund or chargeback in progress keeps the
-// charge captured until it is final; statuses not listed are treated as pending.
 var statuses = map[string]gateway.Status{
 	"PENDING":                      gateway.StatusPending,
 	"AWAITING_RISK_ANALYSIS":       gateway.StatusPending,
@@ -64,7 +60,6 @@ func MapStatus(status string, deleted bool) gateway.Status {
 	return gateway.StatusPending
 }
 
-// APIError is an answer with a 4xx status; it is never retried.
 type APIError struct {
 	StatusCode int
 	Errors     []struct {
@@ -92,8 +87,7 @@ type Client struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
-	// sleep waits between attempts; tests replace it.
-	sleep func(ctx context.Context, d time.Duration) error
+	sleep   func(ctx context.Context, d time.Duration) error
 }
 
 func New(baseURL string, apiKey string) *Client {
@@ -135,8 +129,6 @@ type customerList struct {
 	} `json:"data"`
 }
 
-// CreateCustomer reuses the customer with that CPF if there is one, so a retry or a database reset
-// doesn't create duplicates. Asaas's own e-mails are turned off: the app notifies the buyer.
 func (c *Client) CreateCustomer(ctx context.Context, customer gateway.Customer) (string, error) {
 	if id, err := c.findCustomer(ctx, customer.TaxID); err != nil || id != "" {
 		return id, err
@@ -223,9 +215,6 @@ func (p *payment) charge() *gateway.Charge {
 	return charge
 }
 
-// CreateCharge creates a payment. Asaas has no idempotency key, so before repeating a failed attempt
-// the client looks for a charge with the same reference: a timeout may hide a charge that was made.
-// A card the issuer refuses comes back as a 400 and is not saved by Asaas (gateway.CardRefusedError).
 func (c *Client) CreateCharge(ctx context.Context, request gateway.ChargeRequest) (*gateway.Charge, error) {
 	billingType, ok := billingTypes[request.Method]
 	if !ok {
@@ -318,7 +307,6 @@ func (c *Client) GetPixQRCode(ctx context.Context, chargeID string) (*gateway.Pi
 	return result, nil
 }
 
-// parseDateTime reads "2026-10-18 23:59:59" (Brazil's time, as Asaas sends it) or RFC 3339.
 func parseDateTime(value string) (time.Time, bool) {
 	if t, err := time.ParseInLocation(time.DateTime, value, brazilTime); err == nil {
 		return t.UTC(), true
@@ -342,10 +330,6 @@ func (c *Client) CancelCharge(ctx context.Context, id string) error {
 	return nil
 }
 
-// Refund refunds the whole charge. Before a failed attempt is repeated, the charge is read back: a
-// refund already requested is the result, so the money is never returned twice. A boleto is refunded
-// through POST /payments/{id}/bankSlip/refund, which only opens the request: Asaas answers with the
-// page where the payer gives a bank account, and the charge is refunded once they do.
 func (c *Client) Refund(ctx context.Context, id string, method gateway.Method) (*gateway.Charge, error) {
 	path := "/payments/" + url.PathEscape(id) + "/refund"
 	if method == gateway.MethodBoleto {
@@ -371,7 +355,6 @@ func (c *Client) Refund(ctx context.Context, id string, method gateway.Method) (
 		charge.RefundURL = answer.RequestURL
 		return charge, nil
 	}
-	// The boleto's answer, or a repeated attempt, has no charge in it.
 	charge, err := c.GetCharge(ctx, id)
 	if err != nil {
 		return nil, err
@@ -383,11 +366,6 @@ func (c *Client) Refund(ctx context.Context, id string, method gateway.Method) (
 	return charge, nil
 }
 
-// do sends a request, retrying network errors and 5xx answers up to maxAttempts with exponential
-// backoff (RNF-013); 4xx answers are returned at once as *APIError. Before a POST is repeated,
-// lookup is called to find what the failed attempt may have created; if it finds it, that is the
-// result. Every failed attempt is logged with the reference (our payment id or the charge id). After
-// the last attempt, the error wraps gateway.ErrUnavailable (RNF-023).
 func (c *Client) do(ctx context.Context, method string, path string, body any, out any, reference string, lookup func(ctx context.Context) (bool, error)) error {
 	var payload []byte
 	if body != nil {
@@ -431,7 +409,6 @@ func (c *Client) do(ctx context.Context, method string, path string, body any, o
 	return fmt.Errorf("%w: %w", gateway.ErrUnavailable, lastErr)
 }
 
-// send makes one attempt and tells whether a failure can be retried.
 func (c *Client) send(ctx context.Context, method string, path string, payload []byte, out any) (bool, error) {
 	var body io.Reader
 	if payload != nil {
@@ -478,7 +455,6 @@ func (c *Client) send(ctx context.Context, method string, path string, payload [
 	return false, nil
 }
 
-// logPath drops the query, which may hold a CPF.
 func logPath(path string) string {
 	p, _, _ := strings.Cut(path, "?")
 	return p

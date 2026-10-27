@@ -35,6 +35,31 @@ func (r *postgresRepository) GetAdvertisement(ctx context.Context, id string) (*
 	return &ad, nil
 }
 
+func (r *postgresRepository) GetAdvertisementItem(ctx context.Context, id string) (*orders.CartItemEntity, error) {
+	item := orders.CartItemEntity{Quantity: 1}
+	err := r.pool.QueryRow(
+		ctx,
+		"SELECT a.id, a.seller_id, u.name, a.title, "+
+			"(SELECT ai.url FROM advertisement_images ai WHERE ai.advertisement_id = a.id ORDER BY ai.is_cover DESC, ai.position LIMIT 1), "+
+			"a.price::text, a.price::text, a.stock, a.status "+
+			"FROM advertisements a JOIN users u ON u.id = a.seller_id WHERE a.id = $1 AND a.removed_at IS NULL",
+		id,
+	).Scan(&item.AdvertisementID, &item.SellerID, &item.SellerName, &item.Title, &item.CoverImageURL,
+		&item.AddedPrice, &item.Price, &item.Stock, &item.AdStatus)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrAdvertisementNotFound
+		}
+		return nil, err
+	}
+	item.ShippingOptions = []orders.ShippingOptionEntity{}
+	items := []orders.CartItemEntity{item}
+	if err := r.loadShippingOptions(ctx, items); err != nil {
+		return nil, err
+	}
+	return &items[0], nil
+}
+
 func (r *postgresRepository) GetActiveCart(ctx context.Context, userID string) (*orders.CartEntity, error) {
 	cart := &orders.CartEntity{Items: []orders.CartItemEntity{}}
 	err := r.pool.QueryRow(ctx, "SELECT id FROM carts WHERE user_id = $1 AND status = 'active'", userID).Scan(&cart.ID)
@@ -122,8 +147,6 @@ func (r *postgresRepository) loadShippingOptions(ctx context.Context, items []or
 	return rows.Err()
 }
 
-// AddCartItem creates the active cart if needed and adds to the item's quantity.
-// The unit price is updated to the price the buyer just saw.
 func (r *postgresRepository) AddCartItem(ctx context.Context, userID string, advertisementID string, quantity int, unitPrice string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -175,7 +198,6 @@ func (r *postgresRepository) RemoveCartItem(ctx context.Context, userID string, 
 	)
 }
 
-// changeCartItem runs a statement on one item of the active cart that returns the cart's ID, then touches the cart.
 func (r *postgresRepository) changeCartItem(ctx context.Context, sql string, args ...any) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

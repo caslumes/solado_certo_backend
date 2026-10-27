@@ -48,8 +48,6 @@ type CancelOrderUseCase interface {
 	CancelOrder(ctx context.Context, userID string, id string) (*OrderDetail, error)
 }
 
-// Refunder returns the money of a cancelled order's payments. The payments service implements it; it
-// is set after both services are built, as payments depend on orders.
 type Refunder interface {
 	RefundOrder(ctx context.Context, orderID string) error
 }
@@ -57,6 +55,7 @@ type Refunder interface {
 type repository interface {
 	GetActiveCart(ctx context.Context, userID string) (*CartEntity, error)
 	GetAdvertisement(ctx context.Context, id string) (*AdvertisementEntity, error)
+	GetAdvertisementItem(ctx context.Context, id string) (*CartItemEntity, error)
 	AddCartItem(ctx context.Context, userID string, advertisementID string, quantity int, unitPrice string) error
 	SetCartItemQuantity(ctx context.Context, userID string, advertisementID string, quantity int) error
 	RemoveCartItem(ctx context.Context, userID string, advertisementID string) error
@@ -78,7 +77,7 @@ type repository interface {
 
 const (
 	MaxItemQuantity         = 99
-	maxIdempotencyKeyLength = 120
+	MaxIdempotencyKeyLength = 120
 	defaultOrdersPerPage    = 10
 	maxOrdersPerPage        = 100
 )
@@ -93,8 +92,6 @@ func NewService(r repository) *service {
 	return &service{r: r, now: time.Now}
 }
 
-// SetRefunder makes cancelling a paid order refund it right away; without one, the payments poller
-// refunds it on its next round.
 func (s *service) SetRefunder(refunder Refunder) {
 	s.refunder = refunder
 }
@@ -117,8 +114,6 @@ func (s *service) GetCart(ctx context.Context, userID string) (*CartEntity, erro
 	return cart, nil
 }
 
-// AddCartItem adds to the quantity already in the cart. Stock is only checked here as a hint;
-// checkout is what reserves it (RF-015).
 func (s *service) AddCartItem(ctx context.Context, userID string, advertisementID string, quantity int) (*CartEntity, error) {
 	if quantity < 1 || quantity > MaxItemQuantity {
 		return nil, fmt.Errorf("%w: quantity must be between 1 and %d", app.ErrInvalidInput, MaxItemQuantity)
@@ -153,8 +148,6 @@ func (s *service) AddCartItem(ctx context.Context, userID string, advertisementI
 	return s.GetCart(ctx, userID)
 }
 
-// ChangeCartItemQuantity sets the quantity; 0 removes the item. Lowering it is always allowed,
-// so the buyer can fix an item whose stock went down.
 func (s *service) ChangeCartItemQuantity(ctx context.Context, userID string, advertisementID string, quantity int) (*CartEntity, error) {
 	if quantity == 0 {
 		return s.RemoveCartItem(ctx, userID, advertisementID)
@@ -222,17 +215,13 @@ func (s *service) publishedAdvertisement(ctx context.Context, id string) (*Adver
 	return ad, nil
 }
 
-// PreviewCheckout shows the orders a checkout would create, without changing anything.
 func (s *service) PreviewCheckout(ctx context.Context, userID string, input CheckoutInput) (*CheckoutPlan, error) {
 	return s.plan(ctx, userID, input)
 }
 
-// Checkout creates one order per seller, awaiting payment, and reserves their stock (RF-014, RF-015, RF-019).
-// Repeating a key returns the orders it created (RNF-012). If a price changed since the item was added,
-// the cart takes the new prices and the buyer has to confirm again.
 func (s *service) Checkout(ctx context.Context, userID string, idempotencyKey string, input CheckoutInput) (*CheckoutEntity, bool, error) {
-	if idempotencyKey == "" || len(idempotencyKey) > maxIdempotencyKeyLength {
-		return nil, false, fmt.Errorf("%w: the Idempotency-Key header must have 1 to %d characters", app.ErrInvalidInput, maxIdempotencyKeyLength)
+	if idempotencyKey == "" || len(idempotencyKey) > MaxIdempotencyKeyLength {
+		return nil, false, fmt.Errorf("%w: the Idempotency-Key header must have 1 to %d characters", app.ErrInvalidInput, MaxIdempotencyKeyLength)
 	}
 
 	id, found, err := s.r.GetCheckoutID(ctx, userID, idempotencyKey)
@@ -311,7 +300,6 @@ func (s *service) checkout(ctx context.Context, id string) (*CheckoutEntity, err
 	return &CheckoutEntity{ID: id, Orders: orders}, nil
 }
 
-// ListOrders returns the buyer's orders, newest first (RF-025).
 func (s *service) ListOrders(ctx context.Context, userID string, filter HistoryFilter, page uint, limit uint) (*OrderPage, error) {
 	query, err := filter.query(buyerStatuses)
 	if err != nil {
@@ -348,9 +336,6 @@ func (s *service) GetOrder(ctx context.Context, userID string, id string) (*Orde
 	return s.detail(ctx, order)
 }
 
-// CancelOrder lets the buyer give up an order that is awaiting payment, or paid but not yet being
-// prepared by the seller; its units go back on sale. A paid order is refunded after the cancellation
-// is saved: if the gateway can't be reached, the payments poller refunds it later (RNF-013).
 func (s *service) CancelOrder(ctx context.Context, userID string, id string) (*OrderDetail, error) {
 	order, err := s.ownedOrder(ctx, userID, id)
 	if err != nil {
@@ -383,14 +368,12 @@ func (s *service) CancelOrder(ctx context.Context, userID string, id string) (*O
 	return s.GetOrder(ctx, userID, id)
 }
 
-// changeStatus is the single way an order changes status, so every change follows the status machine
-// and is recorded in the history and the audit log (RNF-010).
 func (s *service) changeStatus(ctx context.Context, change StatusChange) error {
 	if !change.From.CanBecome(change.To) {
 		return fmt.Errorf("%w: an order cannot go from %s to %s", app.ErrInvalidStatusTransition, change.From, change.To)
 	}
 	if err := s.r.ChangeOrderStatus(ctx, change); err != nil {
-		if !errors.Is(err, app.ErrInvalidStatusTransition) && !errors.Is(err, app.ErrPrescriptionRequired) {
+		if !isExpected(err, app.ErrInvalidStatusTransition, app.ErrPrescriptionRequired, app.ErrFittingReportRequired) {
 			slog.ErrorContext(ctx, "ChangeOrderStatus failed", "order_id", change.OrderID, "to", change.To, "error", err)
 		}
 		return err
@@ -398,7 +381,6 @@ func (s *service) changeStatus(ctx context.Context, change StatusChange) error {
 	return nil
 }
 
-// ownedOrder answers 404 for another buyer's order, so order IDs can't be probed.
 func (s *service) ownedOrder(ctx context.Context, userID string, id string) (*OrderEntity, error) {
 	if !helpers.IsUUID(id) {
 		return nil, app.ErrOrderNotFound

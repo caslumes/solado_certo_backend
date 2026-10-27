@@ -1,4 +1,3 @@
--- One checkout groups the orders (one per seller) created from a cart; the key makes it idempotent (RNF-012).
 CREATE TABLE IF NOT EXISTS checkouts (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     buyer_id uuid NOT NULL,
@@ -22,7 +21,6 @@ BEGIN
 END
 $$;
 
--- No orders existed before checkout was built, so every order has a checkout.
 ALTER TABLE orders ALTER COLUMN checkout_id SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_orders_checkout ON orders (checkout_id);

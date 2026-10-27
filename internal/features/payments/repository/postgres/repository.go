@@ -70,7 +70,6 @@ func (r *postgresRepository) GetBuyer(ctx context.Context, id string) (*payments
 	return &buyer, nil
 }
 
-// SetTaxID saves the CPF only if the user has none yet.
 func (r *postgresRepository) SetTaxID(ctx context.Context, userID string, taxID string) error {
 	_, err := r.pool.Exec(ctx, "UPDATE users SET tax_id = $2, updated_at = $3 WHERE id = $1 AND tax_id IS NULL", userID, taxID, time.Now().UTC())
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == uniqueViolation {
@@ -137,9 +136,6 @@ func scanPayment(row pgx.Row) (*payments.PaymentEntity, error) {
 	return &p, nil
 }
 
-// StartPayment records a pending attempt and sets the order's discount and total for its method,
-// with the order locked so it can't be paid or cancelled meanwhile. A key already used returns
-// that payment; another attempt still pending means a concurrent request (ErrPaymentInProgress).
 func (r *postgresRepository) StartPayment(ctx context.Context, payment payments.NewPayment) (*payments.PaymentEntity, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -229,10 +225,6 @@ func (r *postgresRepository) AttachCharge(ctx context.Context, paymentID string,
 	return err
 }
 
-// ChangePaymentStatus applies a status in one transaction (RNF-011): the payment, its audit row,
-// for a capture the order (paid, with history) and for a refund the buyer's notification. The order is locked before the payment, as
-// StartPayment does, so the two can't deadlock. A change the status machine doesn't allow, or to the
-// status the payment already has, changes nothing and returns false (RNF-012).
 func (r *postgresRepository) ChangePaymentStatus(ctx context.Context, change payments.StatusChange) (bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -302,9 +294,6 @@ func (r *postgresRepository) ChangePaymentStatus(ctx context.Context, change pay
 	return true, tx.Commit(ctx)
 }
 
-// markPaid moves the order to paid and notifies each of its sellers (RF-020). An order no longer awaiting payment (cancelled because it
-// expired, or already paid by another attempt) keeps its status, and the capture is audited so the
-// money can be refunded.
 func markPaid(ctx context.Context, tx pgx.Tx, orderID string, status orders.OrderStatus, paymentID string, now time.Time) error {
 	if !status.CanBecome(orders.OrderStatusPaid) {
 		return audit(ctx, tx, "order", orderID, "order.payment_captured_after_close", map[string]any{
@@ -339,7 +328,6 @@ func markPaid(ctx context.Context, tx pgx.Tx, orderID string, status orders.Orde
 	return nil
 }
 
-// audit records a change made by the system (a webhook, the poller or the gateway's answer).
 func audit(ctx context.Context, tx pgx.Tx, entity string, entityID string, action string, details map[string]any, now time.Time) error {
 	return auditBy(ctx, tx, "", entity, entityID, action, details, now)
 }
@@ -361,9 +349,6 @@ func auditBy(ctx context.Context, tx pgx.Tx, userID string, entity string, entit
 	return err
 }
 
-// RecordRefund stores a refund that is not final, with its audit row: requested (payment.refund_requested)
-// or refused by the gateway (payment.refund_refused, with the attempt and whether it was the last one).
-// The payment stays captured.
 func (r *postgresRepository) RecordRefund(ctx context.Context, record payments.RefundRecord) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

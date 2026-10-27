@@ -62,20 +62,13 @@ func (r *postgresRepository) CreateCheckout(ctx context.Context, buyerID string,
 
 	now := time.Now().UTC()
 
-	// A concurrent request with the same key waits here until the first one commits, then sees its row.
-	var checkoutID string
-	err = tx.QueryRow(
-		ctx,
-		"INSERT INTO checkouts (buyer_id, idempotency_key, created_at) VALUES ($1, $2, $3) "+
-			"ON CONFLICT (buyer_id, idempotency_key) DO NOTHING RETURNING id",
-		buyerID, idempotencyKey, now,
-	).Scan(&checkoutID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		id, _, err := r.GetCheckoutID(ctx, buyerID, idempotencyKey)
-		return id, false, err
-	}
+	checkoutID, created, err := InsertCheckout(ctx, tx, buyerID, idempotencyKey, now)
 	if err != nil {
 		return "", false, err
+	}
+	if !created {
+		id, _, err := r.GetCheckoutID(ctx, buyerID, idempotencyKey)
+		return id, false, err
 	}
 
 	if err := lockCart(ctx, tx, buyerID, plan); err != nil {
@@ -84,12 +77,12 @@ func (r *postgresRepository) CreateCheckout(ctx context.Context, buyerID string,
 	if err := lockAndCheckAdvertisements(ctx, tx, plan); err != nil {
 		return "", false, err
 	}
-	if err := checkShippingOptions(ctx, tx, plan); err != nil {
+	if err := CheckShippingOptions(ctx, tx, plan); err != nil {
 		return "", false, err
 	}
 
 	for _, order := range plan.Orders {
-		if err := insertOrder(ctx, tx, buyerID, checkoutID, plan, order, now); err != nil {
+		if _, err := InsertOrder(ctx, tx, buyerID, checkoutID, plan, order, now); err != nil {
 			return "", false, err
 		}
 	}
@@ -100,7 +93,22 @@ func (r *postgresRepository) CreateCheckout(ctx context.Context, buyerID string,
 	return checkoutID, true, tx.Commit(ctx)
 }
 
-// lockCart blocks cart changes until the checkout ends and checks the cart still holds what was planned.
+func InsertCheckout(ctx context.Context, tx pgx.Tx, buyerID string, idempotencyKey string, now time.Time) (id string, created bool, err error) {
+	err = tx.QueryRow(
+		ctx,
+		"INSERT INTO checkouts (buyer_id, idempotency_key, created_at) VALUES ($1, $2, $3) "+
+			"ON CONFLICT (buyer_id, idempotency_key) DO NOTHING RETURNING id",
+		buyerID, idempotencyKey, now,
+	).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return id, true, nil
+}
+
 func lockCart(ctx context.Context, tx pgx.Tx, buyerID string, plan *orders.CheckoutPlan) error {
 	var locked string
 	err := tx.QueryRow(ctx, "SELECT id FROM carts WHERE id = $1 AND user_id = $2 AND status = 'active' FOR UPDATE", plan.CartID, buyerID).Scan(&locked)
@@ -142,8 +150,6 @@ func lockCart(ctx context.Context, tx pgx.Tx, buyerID string, plan *orders.Check
 	return nil
 }
 
-// lockAndCheckAdvertisements locks the ads in ID order, so concurrent checkouts can't deadlock,
-// then checks stock and prices (RF-015) and takes the units.
 func lockAndCheckAdvertisements(ctx context.Context, tx pgx.Tx, plan *orders.CheckoutPlan) error {
 	items := map[string]orders.PlannedItem{}
 	for _, order := range plan.Orders {
@@ -200,8 +206,7 @@ func lockAndCheckAdvertisements(ctx context.Context, tx pgx.Tx, plan *orders.Che
 	return nil
 }
 
-// checkShippingOptions makes sure the chosen options are still offered at the planned price.
-func checkShippingOptions(ctx context.Context, tx pgx.Tx, plan *orders.CheckoutPlan) error {
+func CheckShippingOptions(ctx context.Context, tx pgx.Tx, plan *orders.CheckoutPlan) error {
 	planned := map[string]orders.PlannedItem{}
 	ids := []string{}
 	for _, order := range plan.Orders {
@@ -250,10 +255,10 @@ func checkShippingOptions(ctx context.Context, tx pgx.Tx, plan *orders.CheckoutP
 	return nil
 }
 
-func insertOrder(ctx context.Context, tx pgx.Tx, buyerID string, checkoutID string, plan *orders.CheckoutPlan, order orders.PlannedOrder, now time.Time) error {
+func InsertOrder(ctx context.Context, tx pgx.Tx, buyerID string, checkoutID string, plan *orders.CheckoutPlan, order orders.PlannedOrder, now time.Time) (string, error) {
 	address, err := json.Marshal(plan.Address)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	var orderID string
@@ -267,7 +272,7 @@ func insertOrder(ctx context.Context, tx pgx.Tx, buyerID string, checkoutID stri
 		order.Subtotal.String(), order.ShippingTotal.String(), order.DiscountTotal.String(), order.Total().String(), now,
 	).Scan(&orderID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	for _, item := range order.Items {
@@ -278,28 +283,28 @@ func insertOrder(ctx context.Context, tx pgx.Tx, buyerID string, checkoutID stri
 			ShippingOption: item.ShippingOption.ToOutput(),
 		})
 		if err != nil {
-			return err
+			return "", err
 		}
 		_, err = tx.Exec(
 			ctx,
-			"INSERT INTO order_items (order_id, advertisement_id, seller_id, shipping_option_id, quantity, unit_price, subtotal, product_snapshot, prescription_required, created_at) "+
-				"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT prescription_required FROM advertisements WHERE id = $2), $9)",
-			orderID, item.AdvertisementID, item.SellerID, item.ShippingOption.ID, item.Quantity, item.Price, item.Subtotal().String(), snapshot, now,
+			"INSERT INTO order_items (order_id, advertisement_id, seller_id, shipping_option_id, quantity, unit_price, subtotal, product_snapshot, "+
+				"prescription_required, custom_order_request_id, created_at) "+
+				"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT prescription_required FROM advertisements WHERE id = $2), $9, $10)",
+			orderID, item.AdvertisementID, item.SellerID, item.ShippingOption.ID, item.Quantity, item.Price, item.Subtotal().String(), snapshot,
+			item.CustomOrderRequestID, now,
 		)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 
-	return RecordStatusChange(ctx, tx, orderID, buyerID, nil, orders.OrderStatusAwaitingPayment, "checkout", map[string]any{
+	err = RecordStatusChange(ctx, tx, orderID, buyerID, nil, orders.OrderStatusAwaitingPayment, "checkout", map[string]any{
 		"checkout_id": checkoutID,
 		"number":      number,
 	}, now)
+	return orderID, err
 }
 
-// RecordStatusChange writes the order's history and the audit log (RNF-010). Every status change goes through it,
-// including the ones made by the payments feature.
-// An empty userID records a change made by the system.
 func RecordStatusChange(ctx context.Context, tx pgx.Tx, orderID string, userID string, from *orders.OrderStatus, to orders.OrderStatus, reason string, auditContext map[string]any, now time.Time) error {
 	var changedBy *string
 	if userID != "" {
@@ -325,14 +330,16 @@ func RecordStatusChange(ctx context.Context, tx pgx.Tx, orderID string, userID s
 		"INSERT INTO audit_logs (user_id, entity, entity_id, action, context, created_at) VALUES ($1, 'order', $2, 'order.status_changed', $3, $4)",
 		changedBy, orderID, auditJSON, now,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return syncCustomOrder(ctx, tx, orderID, changedBy, from, to, now)
 }
 
 func (r *postgresRepository) GetOrdersByCheckout(ctx context.Context, checkoutID string) ([]*orders.OrderEntity, error) {
 	return r.getOrders(ctx, "o.checkout_id = $1 ORDER BY o.created_at, seller_name, o.id", checkoutID)
 }
 
-// getOrders reads orders with their items; the seller comes from the items, since an order has one seller.
 func (r *postgresRepository) getOrders(ctx context.Context, where string, args ...any) ([]*orders.OrderEntity, error) {
 	rows, err := r.pool.Query(
 		ctx,
@@ -374,9 +381,11 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 		ctx,
 		"SELECT oi.order_id, oi.id, oi.advertisement_id, oi.quantity, oi.unit_price::text, oi.subtotal::text, oi.product_snapshot, "+
 			"rv.product_rating, rv.seller_rating, rv.comfort_rating, rv.comment, rv.adaptation_feedback, rv.created_at, "+
-			"oi.prescription_required, pd.id, pd.validation_status, pd.rejection_reason, pd.created_at "+
+			"oi.prescription_required, pd.id, pd.validation_status, pd.rejection_reason, pd.created_at, "+
+			"oi.custom_order_request_id, COALESCE(cr.status = 'completed', false) "+
 			"FROM order_items oi LEFT JOIN reviews rv ON rv.order_item_id = oi.id "+
 			"LEFT JOIN LATERAL ("+LatestPrescription+") pd ON true "+
+			"LEFT JOIN custom_order_requests cr ON cr.id = oi.custom_order_request_id "+
 			"WHERE oi.order_id = ANY($1::uuid[]) ORDER BY oi.created_at, oi.product_snapshot->>'title', oi.id",
 		ids,
 	)
@@ -396,7 +405,8 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 		var prescribedAt *time.Time
 		err := rows.Scan(&orderID, &item.ID, &item.AdvertisementID, &item.Quantity, &item.UnitPrice, &item.Subtotal, &item.Snapshot,
 			&productRating, &sellerRating, &review.ComfortRating, &review.Comment, &review.AdaptationFeedback, &reviewedAt,
-			&item.PrescriptionRequired, &prescriptionID, &prescriptionStatus, &prescription.RejectionReason, &prescribedAt)
+			&item.PrescriptionRequired, &prescriptionID, &prescriptionStatus, &prescription.RejectionReason, &prescribedAt,
+			&item.CustomOrderRequestID, &item.FittingReportSent)
 		if err != nil {
 			return nil, err
 		}
@@ -413,16 +423,13 @@ func (r *postgresRepository) getOrders(ctx context.Context, where string, args .
 	return result, rows.Err()
 }
 
-// LatestPrescription selects the newest prescription sent for the order item oi; older ones no longer count.
 const LatestPrescription = "SELECT d.id, d.validation_status, d.rejection_reason, d.created_at FROM order_documents d " +
 	"WHERE d.order_item_id = oi.id AND d.document_type = 'prescription' ORDER BY d.created_at DESC, d.id DESC LIMIT 1"
 
-// Querier is a pool or a transaction.
 type Querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
-// MissingPrescriptions returns the order's items that need a prescription and have no approved one.
 func MissingPrescriptions(ctx context.Context, db Querier, orderID string) ([]string, error) {
 	rows, err := db.Query(
 		ctx,

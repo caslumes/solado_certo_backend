@@ -194,24 +194,24 @@ func (ap *AdvertisementPage) ToOutput() *AdvertisementPageOutput {
 }
 
 type CategoryEntity struct {
-	ID               string
-	ParentCategoryID *string
-	Children         []*CategoryEntity
-	Name             string
-	Slug             string
-	Active           bool
+	ID                 string
+	ParentCategoryID   *string
+	Children           []*CategoryEntity
+	Name               string
+	Slug               string
+	Active             bool
 	RequiredAttributes []string
 }
 
 func (c *CategoryEntity) ToOutput() *CategoryOutput {
 	children := CategoriesEntity{Categories: c.Children}
 	return &CategoryOutput{
-		ID:               c.ID,
-		ParentCategoryID: c.ParentCategoryID,
-		Children:         children.ToOutput().Categories,
-		Name:             c.Name,
-		Slug:             c.Slug,
-		Active:           c.Active,
+		ID:                 c.ID,
+		ParentCategoryID:   c.ParentCategoryID,
+		Children:           children.ToOutput().Categories,
+		Name:               c.Name,
+		Slug:               c.Slug,
+		Active:             c.Active,
 		RequiredAttributes: append([]string{}, c.RequiredAttributes...),
 	}
 }

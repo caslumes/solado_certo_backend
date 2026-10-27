@@ -53,13 +53,11 @@ type AdvertisementEntity struct {
 	ConditionIDs         []string
 	ShippingOptions      []ShippingOptionEntity
 	Images               []ImageEntity
-	// RequiredAttributes comes from the category (categories.required_attributes).
-	RequiredAttributes []string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	RequiredAttributes   []string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
-// SoldOut is not stored: a published ad with no stock shows as "Esgotado" (RF-007).
 func (a *AdvertisementEntity) SoldOut() bool {
 	return a.Status == AdvertisementStatusPublished && a.Stock == 0
 }
@@ -80,8 +78,6 @@ func (a *AdvertisementEntity) attribute(name string) *string {
 	return nil
 }
 
-// MissingForPublishing returns the JSON names of the fields that block publishing (UC-003),
-// in the order the app's form shows them.
 func (a *AdvertisementEntity) MissingForPublishing() []string {
 	missing := []string{}
 	if strings.TrimSpace(a.Title) == "" {
@@ -104,7 +100,6 @@ func (a *AdvertisementEntity) MissingForPublishing() []string {
 			missing = append(missing, name)
 		}
 	}
-	// Same rule as the catalog's safety_info_complete (RF-034).
 	if a.PrescriptionRequired || len(a.ConditionIDs) > 0 {
 		if !isFilled(a.SafetyAlerts) {
 			missing = append(missing, "safety_alerts")

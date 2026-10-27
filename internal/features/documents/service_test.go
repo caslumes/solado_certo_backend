@@ -38,7 +38,6 @@ func testPNG(t *testing.T, side int) []byte {
 	return buffer.Bytes()
 }
 
-// hugePNG is a small file whose header claims more pixels than maxImagePixels.
 func hugePNG(t *testing.T) []byte {
 	t.Helper()
 	var buffer bytes.Buffer
@@ -126,8 +125,6 @@ type setup struct {
 	s        *service
 }
 
-// newSetup has an unpaid order of testBuyerID whose item testItemID needs a prescription, and a
-// prescription consent from the buyer.
 func newSetup() *setup {
 	r := &fakeRepository{
 		item: &PrescriptionItem{
@@ -257,7 +254,6 @@ func TestUploadPrescriptionDeletesTheFileWhenNotStored(t *testing.T) {
 	}
 }
 
-// storedSetup has a prescription of testBuyerID saved for a paid order of testSellerID.
 func storedSetup(t *testing.T) *setup {
 	s := newSetup()
 	key, err := s.files.Save(context.Background(), storage.AreaPrivate, prescriptionsFolder, ".pdf", bytes.NewReader(testPDF))

@@ -31,8 +31,6 @@ type ConfirmDeliveryUseCase interface {
 	ConfirmDelivery(ctx context.Context, buyerID string, id string) (*OrderDetail, error)
 }
 
-// ListSellerOrders returns the seller's paid orders, most recently paid first (RF-020, RF-025).
-// Orders not paid yet are left out: there is nothing to do with them.
 func (s *service) ListSellerOrders(ctx context.Context, sellerID string, filter HistoryFilter, page uint, limit uint) (*OrderPage, error) {
 	query, err := filter.query(sellerStatuses)
 	if err != nil {
@@ -69,8 +67,6 @@ func (s *service) GetSellerOrder(ctx context.Context, sellerID string, id string
 	return s.detail(ctx, order)
 }
 
-// StartProcessing is the seller acknowledging a paid order; from then on the buyer can no longer
-// cancel it.
 func (s *service) StartProcessing(ctx context.Context, sellerID string, id string) (*OrderDetail, error) {
 	order, err := s.sellerOrder(ctx, sellerID, id)
 	if err != nil {
@@ -91,8 +87,6 @@ func (s *service) StartProcessing(ctx context.Context, sellerID string, id strin
 	return s.GetSellerOrder(ctx, sellerID, id)
 }
 
-// ShipOrder records the carrier and tracking code of an order being prepared (RF-021, UC-009). An
-// item whose prescription the seller rejected holds the order back until the buyer sends a new one.
 func (s *service) ShipOrder(ctx context.Context, sellerID string, id string, input ShipmentInput) (*OrderDetail, error) {
 	shipment, err := ValidateShipment(input)
 	if err != nil {
@@ -104,6 +98,9 @@ func (s *service) ShipOrder(ctx context.Context, sellerID string, id string, inp
 	}
 	if missing := order.MissingPrescriptions(); len(missing) > 0 {
 		return nil, &app.PrescriptionRequiredError{ItemIDs: missing}
+	}
+	if pending := order.PendingFittingReports(); len(pending) > 0 {
+		return nil, &app.FittingReportRequiredError{ItemIDs: pending}
 	}
 	notification := notifications.OrderShipped(order.BuyerID, order.ID, order.Number, shipment.Carrier, shipment.TrackingCode)
 	err = s.changeStatus(ctx, StatusChange{
@@ -121,7 +118,6 @@ func (s *service) ShipOrder(ctx context.Context, sellerID string, id string, inp
 	return s.GetSellerOrder(ctx, sellerID, id)
 }
 
-// ConfirmDelivery is the buyer saying the order arrived (RF-023); it can then be reviewed.
 func (s *service) ConfirmDelivery(ctx context.Context, buyerID string, id string) (*OrderDetail, error) {
 	order, err := s.ownedOrder(ctx, buyerID, id)
 	if err != nil {
@@ -142,7 +138,6 @@ func (s *service) ConfirmDelivery(ctx context.Context, buyerID string, id string
 	return s.GetOrder(ctx, buyerID, id)
 }
 
-// sellerOrder answers 404 for another seller's order, and for one not paid yet.
 func (s *service) sellerOrder(ctx context.Context, sellerID string, id string) (*OrderEntity, error) {
 	if !helpers.IsUUID(id) {
 		return nil, app.ErrOrderNotFound

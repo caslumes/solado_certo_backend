@@ -12,26 +12,17 @@ type CheckPaymentsUseCase interface {
 }
 
 const (
-	// PollInterval is how often the poller runs, as the fallback for webhooks that don't arrive.
 	PollInterval = 2 * time.Minute
 
-	// abandonedAttempt is how old an attempt without a charge must be before the poller closes it;
-	// a younger one may still be waiting for the gateway's answer.
 	abandonedAttempt = 5 * time.Minute
 )
 
-// CheckPayments is one round of the poller. It applies the gateway's status to pending charges,
-// cancels the orders whose payment window is over (their units go back on sale), and cancels the
-// charges left on closed orders, so an expired or cancelled order can't be paid, and refunds what must
-// not be kept. Failures of a single payment or order are logged and retried in the next round.
 func (s *service) CheckPayments(ctx context.Context) error {
 	pending, err := s.r.GetPendingPayments(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "GetPendingPayments failed", "error", err)
 		return err
 	}
-	// Pending charges come first, so a payment made just before the deadline is applied before
-	// its order expires.
 	for _, payment := range pending {
 		_, _ = s.sync(ctx, payment, SourcePoll)
 	}
@@ -73,12 +64,10 @@ func (s *service) expireOrders(ctx context.Context) error {
 	return nil
 }
 
-// RunPoller runs CheckPayments now and then every interval, until ctx is done.
 func RunPoller(ctx context.Context, checker CheckPaymentsUseCase, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		// Errors are logged where they happen; the next round tries again.
 		_ = checker.CheckPayments(ctx)
 		select {
 		case <-ctx.Done():

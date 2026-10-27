@@ -30,7 +30,6 @@ type transition struct {
 	To   AdvertisementStatus
 }
 
-// Removing is not an action here: any status except removed can be removed (RemoveAdvertisement).
 var transitions = map[StatusAction]transition{
 	StatusActionPublish:    {From: AdvertisementStatusDraft, To: AdvertisementStatusPublished},
 	StatusActionPause:      {From: AdvertisementStatusPublished, To: AdvertisementStatusPaused},

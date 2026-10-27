@@ -11,7 +11,6 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 )
 
-// placeOrders checks out the setup's cart and returns the insoles order (2 units) and the socks order (3 units).
 func (s checkoutSetup) placeOrders(t *testing.T) (*orders.OrderEntity, *orders.OrderEntity) {
 	t.Helper()
 	id, _, err := s.r.CreateCheckout(context.Background(), s.buyer.ID, "key-"+s.buyer.ID, s.planFor(t, s.buyer.ID, s.addressID))

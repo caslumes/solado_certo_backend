@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"slices"
 	"strings"
@@ -11,7 +12,9 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
+	"github.com/caslumes/solado_certo_backend/internal/features/orders"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
 type CreateRequestUseCase interface {
@@ -40,9 +43,26 @@ type SellerActionsUseCase interface {
 	RequestInfo(ctx context.Context, sellerID string, id string, input ReasonInput) (*RequestDetailEntity, error)
 }
 
-// ConsentChecker is the me service, which knows the current terms of each consent.
+type CheckoutUseCase interface {
+	Checkout(ctx context.Context, buyerID string, id string, idempotencyKey string, input CheckoutInput) (request *RequestDetailEntity, created bool, err error)
+}
+
+type ReportUseCase interface {
+	ReportRequest(ctx context.Context, sellerID string, id string, instructions string, content io.Reader) (*RequestDetailEntity, error)
+}
+
+type FootPhotoUseCase interface {
+	SendPhoto(ctx context.Context, buyerID string, id string, content io.Reader) (*RequestDetailEntity, error)
+	OpenPhoto(ctx context.Context, buyerID string, id string) (*PhotoFile, error)
+	OpenSellerPhoto(ctx context.Context, sellerID string, id string) (*PhotoFile, error)
+}
+
 type ConsentChecker interface {
 	RequireConsent(ctx context.Context, userID string, purpose me.ConsentPurpose) error
+}
+
+type OrderPlanner interface {
+	orders.PlanCustomOrderUseCase
 }
 
 type repository interface {
@@ -52,25 +72,33 @@ type repository interface {
 	CountRequests(ctx context.Context, filter Filter) (uint, error)
 	GetRequests(ctx context.Context, filter Filter, limit uint, offset uint) ([]*RequestEntity, error)
 	ChangeStatus(ctx context.Context, change StatusChange) error
+	CheckoutExists(ctx context.Context, buyerID string, idempotencyKey string) (bool, error)
+	Checkout(ctx context.Context, checkout Checkout) (created bool, err error)
+	SetFootPhoto(ctx context.Context, change PhotoChange) (previousKey *string, err error)
+	RecordPhotoView(ctx context.Context, requestID string, userID string) error
 }
 
 const (
 	defaultRequestsPerPage = 10
 	maxRequestsPerPage     = 100
+
+	reportsFolder = "fitting-reports"
+	photosFolder  = "foot-photos"
 )
+
+var photoTypes = storage.AllowedTypes{"image/jpeg": ".jpg", "image/png": ".png"}
 
 type service struct {
 	r        repository
 	consents ConsentChecker
+	orders   OrderPlanner
+	files    storage.Storage
 }
 
-func NewService(r repository, consents ConsentChecker) *service {
-	return &service{r: r, consents: consents}
+func NewService(r repository, consents ConsentChecker, orders OrderPlanner, files storage.Storage) *service {
+	return &service{r: r, consents: consents, orders: orders, files: files}
 }
 
-// CreateRequest asks the seller of an ad that takes custom orders to make the item from the buyer's
-// measurements (RF-037, UC-008). The measurements are shared with the seller, so they need the buyer's
-// consent (LGPD art. 11, I).
 func (s *service) CreateRequest(ctx context.Context, buyerID string, input RequestInput) (*RequestDetailEntity, error) {
 	if input.AdvertisementID == "" || input.Measurements == nil {
 		var missing []string
@@ -141,7 +169,6 @@ func (s *service) ListSellerRequests(ctx context.Context, sellerID string, statu
 	return s.list(ctx, Filter{SellerID: sellerID, Status: status}, page, limit)
 }
 
-// list returns a party's requests, the most recently changed first.
 func (s *service) list(ctx context.Context, filter Filter, page uint, limit uint) (*RequestPage, error) {
 	if filter.Status != "" && !slices.Contains(statuses, filter.Status) {
 		names := make([]string, len(statuses))
@@ -199,7 +226,6 @@ func (s *service) GetSellerRequest(ctx context.Context, sellerID string, id stri
 	return request, nil
 }
 
-// ComplementRequest answers what the seller asked (UC-008 alt. flow); the request goes back to review.
 func (s *service) ComplementRequest(ctx context.Context, buyerID string, id string, input ComplementInput) (*RequestDetailEntity, error) {
 	message, err := requiredText("message", input.Message, maxMessageLength)
 	if err != nil {
@@ -236,7 +262,6 @@ func (s *service) ComplementRequest(ctx context.Context, buyerID string, id stri
 	})
 }
 
-// CancelRequest is the buyer giving up a request before paying for it.
 func (s *service) CancelRequest(ctx context.Context, buyerID string, id string, input CancelInput) (*RequestDetailEntity, error) {
 	reason, err := text("reason", input.Reason, maxMessageLength)
 	if err != nil {
@@ -257,7 +282,6 @@ func (s *service) CancelRequest(ctx context.Context, buyerID string, id string, 
 	})
 }
 
-// ReviewRequest tells the buyer that the seller is looking at the request.
 func (s *service) ReviewRequest(ctx context.Context, sellerID string, id string) (*RequestDetailEntity, error) {
 	request, err := s.GetSellerRequest(ctx, sellerID, id)
 	if err != nil {
@@ -269,8 +293,6 @@ func (s *service) ReviewRequest(ctx context.Context, sellerID string, id string)
 	})
 }
 
-// AcceptRequest is the seller agreeing to make the item for the quoted price (RF-038), which the buyer
-// confirms by paying.
 func (s *service) AcceptRequest(ctx context.Context, sellerID string, id string, input AcceptInput) (*RequestDetailEntity, error) {
 	if strings.TrimSpace(input.QuotedPrice) == "" {
 		return nil, &app.MissingFieldsError{Fields: []string{"quoted_price"}}
@@ -293,7 +315,6 @@ func (s *service) AcceptRequest(ctx context.Context, sellerID string, id string,
 	})
 }
 
-// RejectRequest closes the request with the reason, which the buyer sees (RF-038).
 func (s *service) RejectRequest(ctx context.Context, sellerID string, id string, input ReasonInput) (*RequestDetailEntity, error) {
 	reason, err := requiredText("reason", input.Reason, maxMessageLength)
 	if err != nil {
@@ -312,7 +333,6 @@ func (s *service) RejectRequest(ctx context.Context, sellerID string, id string,
 	})
 }
 
-// RequestInfo asks the buyer for what is missing to decide (RF-038); the question is the reason.
 func (s *service) RequestInfo(ctx context.Context, sellerID string, id string, input ReasonInput) (*RequestDetailEntity, error) {
 	question, err := requiredText("reason", input.Reason, maxMessageLength)
 	if err != nil {
@@ -330,9 +350,8 @@ func (s *service) RequestInfo(ctx context.Context, sellerID string, id string, i
 	})
 }
 
-// change applies an action to the request, if its status allows it, and returns the request as it is now.
 func (s *service) change(ctx context.Context, request *RequestDetailEntity, action Action, userID string, change StatusChange) (*RequestDetailEntity, error) {
-	if !request.Status.Allows(action) {
+	if !request.can(action) {
 		return nil, fmt.Errorf("%w: a request that is %s can't be changed by %s", app.ErrInvalidStatusTransition, request.Status, action)
 	}
 	change.RequestID = request.ID

@@ -56,7 +56,6 @@ func (r *postgresRepository) GetPrescriptionItem(ctx context.Context, orderID st
 	return &item, nil
 }
 
-// CreateDocument stores the document with its audit row, and its notification if there is one.
 func (r *postgresRepository) CreateDocument(ctx context.Context, document documents.NewDocument) (*documents.DocumentEntity, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -141,8 +140,6 @@ func (r *postgresRepository) RecordView(ctx context.Context, documentID string, 
 	return tx.Commit(ctx)
 }
 
-// RejectPrescription locks the order, so the prescription can't be rejected while the order is being
-// shipped, and checks that the document is still the item's latest, approved one.
 func (r *postgresRepository) RejectPrescription(ctx context.Context, rejection documents.Rejection) (*documents.DocumentEntity, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

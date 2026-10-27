@@ -1,11 +1,3 @@
-// Package fake is a payment gateway that runs in memory, for tests and offline development
-// (PAYMENT_GATEWAY=fake). Cards are approved, except RefusedCardNumber; Pix and boleto stay pending
-// until Confirm is called or, when ConfirmAfter is set, until that much time has passed. Boleto
-// refunds wait for CompleteRefund, or ConfirmAfter, in the same way.
-//
-// Its customers and charges are lost when the server restarts, while the database keeps their ids:
-// any customer id is accepted, and a charge it doesn't know is reported deleted, so the payment is
-// closed and the buyer can pay again.
 package fake
 
 import (
@@ -23,10 +15,9 @@ const RefusedCardNumber = "4000000000000002"
 
 type charge struct {
 	gateway.Charge
-	method    gateway.Method
-	dueDate   time.Time
-	createdAt time.Time
-	// refundRequestedAt is when a boleto's refund was asked for.
+	method            gateway.Method
+	dueDate           time.Time
+	createdAt         time.Time
 	refundRequestedAt time.Time
 }
 
@@ -37,17 +28,13 @@ func (c *charge) refund() {
 }
 
 type Gateway struct {
-	mu        sync.Mutex
-	charges   map[string]*charge
-	customers map[string]gateway.Customer
-	sequence  int
-	// run makes ids unique across restarts, as they are stored in the database.
-	run string
-	// ConfirmAfter confirms Pix and boleto charges this long after they are created (0 never does).
-	ConfirmAfter time.Duration
-	// Unavailable makes every call fail as if the gateway were down.
-	Unavailable bool
-	// RefuseRefunds makes Refund answer as a gateway that won't refund (no balance, for example).
+	mu            sync.Mutex
+	charges       map[string]*charge
+	customers     map[string]gateway.Customer
+	sequence      int
+	run           string
+	ConfirmAfter  time.Duration
+	Unavailable   bool
 	RefuseRefunds bool
 	Now           func() time.Time
 	Requests      []gateway.ChargeRequest
@@ -92,7 +79,6 @@ func (g *Gateway) CreateCharge(_ context.Context, request gateway.ChargeRequest)
 	if request.CustomerID == "" {
 		return nil, fmt.Errorf("fake gateway: missing customer")
 	}
-	// The card is not kept, as a real gateway client wouldn't.
 	recorded := request
 	recorded.Card = nil
 	g.Requests = append(g.Requests, recorded)
@@ -150,7 +136,6 @@ func (g *Gateway) GetPixQRCode(_ context.Context, chargeID string) (*gateway.Pix
 	if c.method != gateway.MethodPix {
 		return nil, fmt.Errorf("fake gateway: charge %q is not a Pix charge", chargeID)
 	}
-	// The code is valid until the end of the due date.
 	expires := c.dueDate.Add(24 * time.Hour)
 	return &gateway.PixQRCode{Payload: "00020101021226800014br.gov.bcb.pix" + c.ID + "5204000053039865802BR6304FAKE", ExpiresAt: &expires}, nil
 }
@@ -173,9 +158,6 @@ func (g *Gateway) CancelCharge(_ context.Context, id string) error {
 	return nil
 }
 
-// Refund returns a Pix or card charge at once. A boleto's refund waits for the payer's bank account,
-// given at its RefundURL: CompleteRefund stands for that, or ConfirmAfter when set. A charge lost in
-// a restart is reported refunded, so offline development can go on.
 func (g *Gateway) Refund(_ context.Context, id string, method gateway.Method) (*gateway.Charge, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -204,7 +186,6 @@ func (g *Gateway) Refund(_ context.Context, id string, method gateway.Method) (*
 	return &copied, nil
 }
 
-// CompleteRefund refunds a boleto whose refund was requested, as the payer giving a bank account.
 func (g *Gateway) CompleteRefund(id string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -213,12 +194,10 @@ func (g *Gateway) CompleteRefund(id string) {
 	}
 }
 
-// Confirm pays a pending charge, as the buyer paying the Pix or the boleto.
 func (g *Gateway) Confirm(id string) {
 	g.set(id, gateway.StatusCaptured, "RECEIVED")
 }
 
-// Expire makes a pending charge overdue.
 func (g *Gateway) Expire(id string) {
 	g.set(id, gateway.StatusFailed, "OVERDUE")
 }

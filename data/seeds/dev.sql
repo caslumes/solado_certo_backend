@@ -1,7 +1,3 @@
--- Development seed data. Run with `make seed` after the database is created.
--- Every user's password is: senha12345
--- Safe to run more than once.
-
 BEGIN;
 
 INSERT INTO users (id, name, email, phone, password_hash, status, created_at, updated_at) VALUES
@@ -17,7 +13,6 @@ INSERT INTO user_roles (user_id, role_id) VALUES
 ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000103')
 ON CONFLICT DO NOTHING;
 
--- The seller and the admin skip onboarding; Maria goes through it on first login.
 INSERT INTO onboardings (user_id, status, current_step_id, completed_at)
 SELECT u.id, 'completed', s.id, NOW()
 FROM users u, onboarding_steps s
@@ -66,7 +61,6 @@ INSERT INTO pain_points (id, name, description) VALUES
 ('00000000-0000-0000-0000-000000000706', 'Lateral do pé', 'Dor na borda externa do pé')
 ON CONFLICT (name) DO NOTHING;
 
--- Conditions each pain region suggests, for the "Para você" section. Clinical content: review with a podiatrist.
 INSERT INTO pain_point_conditions (pain_point_id, condition_id) VALUES
 ('00000000-0000-0000-0000-000000000701', '00000000-0000-0000-0000-000000000501'),
 ('00000000-0000-0000-0000-000000000701', '00000000-0000-0000-0000-000000000502'),

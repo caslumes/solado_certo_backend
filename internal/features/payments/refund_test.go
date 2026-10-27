@@ -45,7 +45,6 @@ type refunder interface {
 	RefundOrder(ctx context.Context, orderID string) error
 }
 
-// paidThenCancelled pays the order with method and cancels it, as the buyer cancelling a paid order.
 func (s setup) paidThenCancelled(t *testing.T, input payments.CreatePaymentInput) *payments.PaymentEntity {
 	t.Helper()
 	payment := s.pay(t, "key-1", input)
@@ -85,13 +84,11 @@ func TestRefundOrderPaidByCard(t *testing.T) {
 		t.Error("the gateway didn't refund the charge")
 	}
 
-	// Asking again changes nothing and doesn't refund twice.
 	if err := s.refundOrder(orderID); err != nil {
 		t.Errorf("RefundOrder again: %v", err)
 	}
 }
 
-// A boleto's refund waits for the buyer's bank account; the poller sees it end.
 func TestRefundOrderPaidByBoleto(t *testing.T) {
 	s := newSetup(t)
 	payment := s.paidThenCancelled(t, payments.CreatePaymentInput{Method: payments.MethodBoleto})
@@ -150,8 +147,6 @@ func TestRefundOrderWhenTheGatewayIsDown(t *testing.T) {
 	}
 }
 
-// Asaas refuses to refund a card right after its capture; the poller asks again and the refund goes
-// through on a later round.
 func TestRefundRefusedThenAccepted(t *testing.T) {
 	s := newSetup(t)
 	s.paidThenCancelled(t, payments.CreatePaymentInput{Method: payments.MethodCreditCard, Card: card(visaNumber)})
@@ -173,7 +168,6 @@ func TestRefundRefusedThenAccepted(t *testing.T) {
 	}
 }
 
-// A refund refused MaxRefundAttempts times is left to support; the poller stops asking.
 func TestRefundRefusedUntilTheLimit(t *testing.T) {
 	s := newSetup(t)
 	s.paidThenCancelled(t, payments.CreatePaymentInput{Method: payments.MethodPix})
@@ -197,8 +191,6 @@ func TestRefundRefusedUntilTheLimit(t *testing.T) {
 	}
 }
 
-// A refund already made in the gateway (its answer was lost, or it was made in the dashboard) is
-// applied without asking again.
 func TestRefundAlreadyMadeInTheGateway(t *testing.T) {
 	s := newSetup(t)
 	payment := s.paidThenCancelled(t, payments.CreatePaymentInput{Method: payments.MethodPix})
@@ -234,7 +226,6 @@ func TestRefundOrderLeavesOrdersNotCancelled(t *testing.T) {
 	}
 }
 
-// A charge paid after its order expired is refunded by the poller.
 func TestCheckPaymentsRefundsCaptureAfterClose(t *testing.T) {
 	s := newSetup(t)
 	pix := s.pay(t, "key-1", payments.CreatePaymentInput{Method: payments.MethodPix})
@@ -252,7 +243,6 @@ func TestCheckPaymentsRefundsCaptureAfterClose(t *testing.T) {
 	}
 }
 
-// A second attempt captured after the first one paid the order is refunded; the first is kept.
 func TestCheckPaymentsRefundsSecondCapture(t *testing.T) {
 	s := newSetup(t)
 	first := s.pay(t, "key-1", payments.CreatePaymentInput{Method: payments.MethodBoleto})

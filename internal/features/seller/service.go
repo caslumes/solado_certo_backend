@@ -66,7 +66,6 @@ const (
 	maxDeliveryDays          = 90
 )
 
-// numeric(10,2): up to 8 digits before the point and 2 after.
 var pricePattern = regexp.MustCompile(`^\d{1,8}(\.\d{1,2})?$`)
 
 type service struct {
@@ -138,7 +137,6 @@ func (s *service) EditAdvertisement(ctx context.Context, sellerID string, id str
 	if err := requireDraftFields(ad); err != nil {
 		return nil, err
 	}
-	// A published ad must stay complete; drafts and paused ads are checked when they are (re)published.
 	if ad.Status == AdvertisementStatusPublished {
 		if missing := ad.MissingForPublishing(); len(missing) > 0 {
 			return nil, &app.MissingFieldsError{Fields: missing}
@@ -214,7 +212,6 @@ func (s *service) ownedAdvertisement(ctx context.Context, sellerID string, id st
 	return ad, nil
 }
 
-// A draft needs only what the database requires: a title and a category.
 func requireDraftFields(ad *AdvertisementEntity) error {
 	missing := []string{}
 	if ad.Title == "" {
@@ -233,8 +230,6 @@ func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: "+format, append([]any{app.ErrInvalidInput}, args...)...)
 }
 
-// apply validates the input and copies it onto ad. Format errors are app.ErrInvalidInput;
-// missing fields are checked afterwards, since a draft may be incomplete.
 func (s *service) apply(ctx context.Context, ad *AdvertisementEntity, input AdvertisementInput) error {
 	if input.CategoryID != nil {
 		categoryID := strings.TrimSpace(*input.CategoryID)
@@ -418,7 +413,6 @@ func validateShippingOptions(inputs []ShippingOptionInput, current []ShippingOpt
 	return options, nil
 }
 
-// normalizePrice turns "89.9" into "89.90". Only a point is accepted as the decimal separator.
 func normalizePrice(price string) (string, error) {
 	price = strings.TrimSpace(price)
 	if !pricePattern.MatchString(price) {

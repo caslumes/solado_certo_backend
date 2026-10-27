@@ -35,14 +35,14 @@ type CheckoutInput struct {
 
 type PlannedItem struct {
 	CartItemEntity
-	ShippingOption ShippingOptionEntity
+	ShippingOption       ShippingOptionEntity
+	CustomOrderRequestID *string
 }
 
 func (i *PlannedItem) Subtotal() helpers.Cents {
 	return i.CartItemEntity.Subtotal()
 }
 
-// PlannedOrder is one order a checkout would create: the cart items of one seller.
 type PlannedOrder struct {
 	SellerID      string
 	SellerName    string
@@ -63,9 +63,6 @@ type CheckoutPlan struct {
 	Orders    []PlannedOrder
 }
 
-// PlanOrders splits the cart into one order per seller (RF-013, RF-014). Shipping is charged once per order:
-// the most expensive option chosen among its items, since a seller sends everything in one package.
-// Discounts come with payment (Slice 6), so they are zero here.
 func PlanOrders(cart *CartEntity, shipping []ShippingSelection) ([]PlannedOrder, error) {
 	if len(cart.Items) == 0 {
 		return nil, app.ErrCartEmpty
@@ -122,13 +119,10 @@ func PlanOrders(cart *CartEntity, shipping []ShippingSelection) ([]PlannedOrder,
 	return orders, nil
 }
 
-// Crockford's base32 alphabet: no I, L, O or U, so a number read aloud is not mistaken.
 const orderNumberAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-// Brazil has had no daylight saving time since 2019, so the order date can use a fixed offset.
 var brasilia = time.FixedZone("BRT", -3*60*60)
 
-// NewOrderNumber returns SC-YYYYMMDD-XXXXXX with the date in Brasília; orders.number is unique, so a repeat fails the insert.
 func NewOrderNumber(now time.Time) string {
 	random := make([]byte, 6)
 	_, _ = rand.Read(random)

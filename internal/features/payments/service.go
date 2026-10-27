@@ -71,10 +71,6 @@ func NewService(r repository, provider gateway.PaymentGateway) *service {
 	return &service{r: r, provider: provider, now: time.Now}
 }
 
-// CreatePayment charges an order awaiting payment (RF-016). Repeating a key returns the payment it
-// created (RNF-012). A pending charge of another attempt is cancelled first, so only one can be paid.
-// A refused card is not an error: the payment comes back failed and the buyer can try again
-// (UC-006 alternative flow).
 func (s *service) CreatePayment(ctx context.Context, userID string, orderID string, idempotencyKey string, input CreatePaymentInput) (*PaymentEntity, bool, error) {
 	if idempotencyKey == "" || len(idempotencyKey) > maxIdempotencyKeyLength {
 		return nil, false, fmt.Errorf("%w: the Idempotency-Key header must have 1 to %d characters", app.ErrInvalidInput, maxIdempotencyKeyLength)
@@ -168,7 +164,6 @@ func (s *service) CreatePayment(ctx context.Context, userID string, orderID stri
 	return charged, true, nil
 }
 
-// validateMethod checks the method and returns the card to charge, if any.
 func validateMethod(input CreatePaymentInput) (*gateway.Card, error) {
 	if !input.Method.Valid() {
 		return nil, fmt.Errorf("%w: method must be pix, boleto or credit_card", app.ErrInvalidInput)
@@ -225,7 +220,6 @@ func (s *service) payable(order *OrderEntity) error {
 	return nil
 }
 
-// buyerWithTaxID returns the buyer with a CPF: the one saved, or the one sent, which is then saved.
 func (s *service) buyerWithTaxID(ctx context.Context, userID string, taxID string) (*BuyerEntity, error) {
 	buyer, err := s.r.GetBuyer(ctx, userID)
 	if err != nil {
@@ -252,8 +246,6 @@ func (s *service) buyerWithTaxID(ctx context.Context, userID string, taxID strin
 	return buyer, nil
 }
 
-// replacePending cancels the order's pending charges before a new one is made. If one of them was
-// paid in the meantime, the order is now paid and no new charge is made.
 func (s *service) replacePending(ctx context.Context, orderID string) error {
 	payments, err := s.r.GetPayments(ctx, orderID)
 	if err != nil {
@@ -265,7 +257,6 @@ func (s *service) replacePending(ctx context.Context, orderID string) error {
 			continue
 		}
 		if payment.TransactionID == nil {
-			// The gateway call of this attempt never returned; it has no charge to cancel.
 			if err := s.changeStatus(ctx, StatusChange{PaymentID: payment.ID, To: StatusFailed, FailureReason: FailureGatewayUnavailable, Source: SourceReplaced}); err != nil {
 				return err
 			}
@@ -283,8 +274,6 @@ func (s *service) replacePending(ctx context.Context, orderID string) error {
 	return nil
 }
 
-// cancelCharge cancels a payment's pending charge, unless the gateway says it was paid or closed
-// meanwhile, and returns the payment's status afterwards.
 func (s *service) cancelCharge(ctx context.Context, payment *PaymentEntity, source string) (Status, error) {
 	status, err := s.sync(ctx, payment, source)
 	if err != nil || status != StatusPending {
@@ -323,7 +312,6 @@ func (s *service) customerID(ctx context.Context, buyer *BuyerEntity) (string, e
 	return id, nil
 }
 
-// charge creates the gateway charge of a started payment and records the outcome.
 func (s *service) charge(ctx context.Context, payment *PaymentEntity, request gateway.ChargeRequest) error {
 	charge, err := s.provider.CreateCharge(ctx, request)
 	if err != nil {
@@ -352,7 +340,6 @@ func (s *service) charge(ctx context.Context, payment *PaymentEntity, request ga
 	if request.Method == gateway.MethodPix {
 		qrCode, err := s.provider.GetPixQRCode(ctx, charge.ID)
 		if err != nil {
-			// The charge exists; the QR code is fetched again when the payment is listed.
 			slog.WarnContext(ctx, "GetPixQRCode failed", "payment_id", payment.ID, "error", err)
 		} else {
 			details.PixPayload = qrCode.Payload
@@ -369,8 +356,6 @@ func (s *service) charge(ctx context.Context, payment *PaymentEntity, request ga
 	return nil
 }
 
-// pixExpiry is when the Pix code stops being payable: the gateway's expiry, but no later than the
-// end of the due date, when the order expires (Asaas keeps its codes valid for a year).
 func pixExpiry(qrCode *gateway.PixQRCode, dueDate time.Time) *time.Time {
 	end := EndOfDay(dueDate)
 	if qrCode.ExpiresAt != nil && qrCode.ExpiresAt.Before(end) {
@@ -396,8 +381,6 @@ func last4(card *gateway.Card) string {
 	return card.Number[len(card.Number)-4:]
 }
 
-// ListPayments returns the order's payment attempts, newest first. Pending ones are checked with
-// the gateway first, so the app sees a payment as soon as it is confirmed, even without a webhook.
 func (s *service) ListPayments(ctx context.Context, userID string, orderID string) ([]*PaymentEntity, error) {
 	order, err := s.ownedOrder(ctx, userID, orderID)
 	if err != nil {
@@ -416,7 +399,6 @@ func (s *service) ListPayments(ctx context.Context, userID string, orderID strin
 		}
 		status, err := s.sync(ctx, payment, SourcePoll)
 		if err != nil {
-			// The stored status is still right, only not the newest; the poller tries again.
 			slog.WarnContext(ctx, "payment status check failed", "payment_id", payment.ID, "error", err)
 			continue
 		}
@@ -435,9 +417,6 @@ func (s *service) ListPayments(ctx context.Context, userID string, orderID strin
 	return payments, nil
 }
 
-// ApplyPaymentStatus reads a charge from the gateway and applies its status. Webhooks and the poller
-// call it; the payload of a webhook is not trusted, only the gateway's answer. Applying the same
-// status twice changes nothing (RNF-012).
 func (s *service) ApplyPaymentStatus(ctx context.Context, transactionID string, source string) error {
 	payment, err := s.r.GetPaymentByTransaction(ctx, s.provider.Name(), transactionID)
 	if err != nil {
@@ -450,8 +429,6 @@ func (s *service) ApplyPaymentStatus(ctx context.Context, transactionID string, 
 	return err
 }
 
-// sync asks the gateway for the payment's charge and applies its status, returning the status the
-// payment has afterwards.
 func (s *service) sync(ctx context.Context, payment *PaymentEntity, source string) (Status, error) {
 	charge, err := s.provider.GetCharge(ctx, *payment.TransactionID)
 	if err != nil {
@@ -485,8 +462,6 @@ func (s *service) sync(ctx context.Context, payment *PaymentEntity, source strin
 	return status, nil
 }
 
-// changeStatus is the single way a payment changes status, so each change is audited (RNF-010) and
-// a capture marks the order as paid in the same transaction (RNF-011).
 func (s *service) changeStatus(ctx context.Context, change StatusChange) error {
 	if _, err := s.r.ChangePaymentStatus(ctx, change); err != nil {
 		slog.ErrorContext(ctx, "ChangePaymentStatus failed", "payment_id", change.PaymentID, "to", change.To, "error", err)
@@ -495,7 +470,6 @@ func (s *service) changeStatus(ctx context.Context, change StatusChange) error {
 	return nil
 }
 
-// ownedOrder answers 404 for another buyer's order, so order IDs can't be probed.
 func (s *service) ownedOrder(ctx context.Context, userID string, id string) (*OrderEntity, error) {
 	if !helpers.IsUUID(id) {
 		return nil, app.ErrOrderNotFound

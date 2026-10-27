@@ -84,7 +84,6 @@ func (s *service) RemoveImage(ctx context.Context, sellerID string, id string, i
 	if index < 0 {
 		return nil, app.ErrImageNotFound
 	}
-	// A published ad must keep at least one photo (UC-003).
 	if ad.Status == AdvertisementStatusPublished && len(ad.Images) == 1 {
 		return nil, &app.MissingFieldsError{Fields: []string{"images"}}
 	}
@@ -139,7 +138,6 @@ func (s *service) ReorderImages(ctx context.Context, sellerID string, id string,
 	return s.r.GetAdvertisementByID(ctx, id)
 }
 
-// deleteFile only logs a failure: the row is already gone, and an orphan file is harmless.
 func (s *service) deleteFile(ctx context.Context, key string) {
 	if err := s.files.Delete(ctx, storage.AreaPublic, key); err != nil {
 		slog.ErrorContext(ctx, "could not delete file", "key", key, "error", err)

@@ -34,7 +34,6 @@ func newFixture(t *testing.T) fixture {
 	return f
 }
 
-// insertOrder adds a delivered order of the buyer with one item of the fixture's ad.
 func (f fixture) insertOrder(t *testing.T, buyerID string, number string) (orderID string, itemID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -73,7 +72,6 @@ func TestGetOrderItem(t *testing.T) {
 		t.Errorf("GetOrderItem = %+v, %v", item, err)
 	}
 
-	// An item of another order is not found in this one, but the order still is.
 	_, otherItem := f.insertOrder(t, f.buyer.ID, "SC-20261020-BBBBBB")
 	item, err = f.r.GetOrderItem(ctx, f.order, otherItem)
 	if err != nil || item.ID != "" || item.BuyerID != f.buyer.ID {
@@ -126,7 +124,6 @@ func TestListReviews(t *testing.T) {
 	if err != nil || listErr != nil || total != 2 || len(list) != 2 {
 		t.Fatalf("reviews = %d, %+v, %v, %v", total, list, err, listErr)
 	}
-	// Newest first, with the reviewer's first name only.
 	if list[0].ProductRating != 3 || list[0].ReviewerName != "Usuário" || list[1].ProductRating != 5 {
 		t.Errorf("list = %+v, %+v", list[0], list[1])
 	}

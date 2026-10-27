@@ -39,8 +39,6 @@ func NewService(r repository) *service {
 	return &service{r: r}
 }
 
-// CreateReview records the buyer's rating of a delivered item, with the adaptation feedback
-// (RF-024, RF-040). Each item is reviewed once.
 func (s *service) CreateReview(ctx context.Context, buyerID string, orderID string, itemID string, input ReviewInput) (*ReviewEntity, error) {
 	review, err := newReview(itemID, buyerID, input)
 	if err != nil {
@@ -60,7 +58,6 @@ func (s *service) CreateReview(ctx context.Context, buyerID string, orderID stri
 		}
 		return nil, err
 	}
-	// Another buyer's order answers 404, so order IDs can't be probed.
 	if item.BuyerID != buyerID {
 		return nil, app.ErrOrderNotFound
 	}
@@ -81,7 +78,6 @@ func (s *service) CreateReview(ctx context.Context, buyerID string, orderID stri
 	return created, nil
 }
 
-// ListReviews returns an ad's reviews, newest first.
 func (s *service) ListReviews(ctx context.Context, advertisementID string, page uint, limit uint) (*ReviewPage, error) {
 	if !helpers.IsUUID(advertisementID) {
 		return nil, app.ErrAdvertisementNotFound

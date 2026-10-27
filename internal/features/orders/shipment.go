@@ -12,7 +12,6 @@ import (
 const maxCarrierLength = 80
 
 var (
-	// correiosPattern is a Correios object code: two letters, nine digits and BR (UC-009).
 	correiosPattern = regexp.MustCompile(`^[A-Z]{2}\d{9}BR$`)
 	trackingPattern = regexp.MustCompile(`^[A-Z0-9-]{8,40}$`)
 )
@@ -44,14 +43,11 @@ type ShipmentInput struct {
 	TrackingCode string `json:"tracking_code"`
 }
 
-// NewShipment is a shipment recorded together with the order becoming shipped.
 type NewShipment struct {
 	Carrier      string
 	TrackingCode string
 }
 
-// ValidateShipment trims the carrier and normalizes the code (upper case, no spaces). A Correios
-// code must have the AA123456789BR format; other carriers' codes 8 to 40 letters, digits or hyphens.
 func ValidateShipment(input ShipmentInput) (NewShipment, error) {
 	carrier := strings.TrimSpace(input.Carrier)
 	code := strings.ToUpper(strings.Join(strings.Fields(input.TrackingCode), ""))

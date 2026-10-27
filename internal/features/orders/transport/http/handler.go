@@ -47,11 +47,11 @@ func writeError(c *gin.Context, err error, fallback string) {
 	writeErrorWith(c, err, fallback, gin.H{})
 }
 
-// writeErrorWith adds extra to the body of conflicts, so checkout can send the updated cart along.
 func writeErrorWith(c *gin.Context, err error, fallback string, extra gin.H) {
 	var outOfStock *app.OutOfStockError
 	var shippingRequired *app.ShippingRequiredError
 	var prescriptionRequired *app.PrescriptionRequiredError
+	var fittingReportRequired *app.FittingReportRequiredError
 	switch {
 	case errors.As(err, &outOfStock):
 		extra["error"] = app.ErrOutOfStock.Error()
@@ -64,6 +64,8 @@ func writeErrorWith(c *gin.Context, err error, fallback string, extra gin.H) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": app.ErrShippingRequired.Error(), "advertisement_ids": shippingRequired.AdvertisementIDs})
 	case errors.As(err, &prescriptionRequired):
 		c.JSON(http.StatusConflict, gin.H{"error": app.ErrPrescriptionRequired.Error(), "item_ids": prescriptionRequired.ItemIDs})
+	case errors.As(err, &fittingReportRequired):
+		c.JSON(http.StatusConflict, gin.H{"error": app.ErrFittingReportRequired.Error(), "item_ids": fittingReportRequired.ItemIDs})
 	case errors.Is(err, app.ErrCartEmpty):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 	case errors.Is(err, app.ErrOrderNotFound):
@@ -204,7 +206,6 @@ func (h *Handler) PreviewCheckout(c *gin.Context) {
 	c.JSON(http.StatusOK, plan.ToOutput())
 }
 
-// Checkout answers 201 with the new orders, or 200 with the same orders when the Idempotency-Key was already used.
 func (h *Handler) Checkout(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {
@@ -229,7 +230,6 @@ func (h *Handler) Checkout(c *gin.Context) {
 	c.JSON(status, checkout.ToOutput())
 }
 
-// writeCheckoutError sends the current cart with stock, price and cart conflicts (UC-006 alternative flow).
 func (h *Handler) writeCheckoutError(c *gin.Context, userID string, err error, fallback string) {
 	extra := gin.H{}
 	if errors.Is(err, app.ErrOutOfStock) || errors.Is(err, app.ErrPricesChanged) || errors.Is(err, app.ErrCartChanged) {

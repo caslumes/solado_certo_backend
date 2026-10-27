@@ -16,22 +16,30 @@ type RequestSummaryOutput struct {
 }
 
 type HistoryOutput struct {
-	PreviousStatus *string `json:"previous_status"`
-	Status         string  `json:"status"`
-	ChangedBy string    `json:"changed_by"`
-	Reason    *string   `json:"reason"`
+	PreviousStatus *string   `json:"previous_status"`
+	Status         string    `json:"status"`
+	ChangedBy      string    `json:"changed_by"`
+	Reason         *string   `json:"reason"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type FittingReportOutput struct {
+	ID        string    `json:"id"`
+	URL       string    `json:"url"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type RequestDetailOutput struct {
 	RequestSummaryOutput
-	OrderID                *string         `json:"order_id"`
-	Measurements           Measurements    `json:"measurements"`
-	TechnicalNotes         *string         `json:"technical_notes"`
-	RejectionReason        *string         `json:"rejection_reason"`
-	AdaptationInstructions *string         `json:"adaptation_instructions"`
-	History                []HistoryOutput `json:"history"`
-	Actions []string `json:"actions"`
+	OrderID                *string              `json:"order_id"`
+	Measurements           Measurements         `json:"measurements"`
+	TechnicalNotes         *string              `json:"technical_notes"`
+	RejectionReason        *string              `json:"rejection_reason"`
+	AdaptationInstructions *string              `json:"adaptation_instructions"`
+	FootPhotoURL           *string              `json:"foot_photo_url"`
+	FittingReport          *FittingReportOutput `json:"fitting_report"`
+	History                []HistoryOutput      `json:"history"`
+	Actions                []string             `json:"actions"`
 }
 
 type RequestPageOutput struct {
@@ -42,4 +50,3 @@ type RequestPageOutput struct {
 	HasNext     bool                   `json:"has_next"`
 	HasPrevious bool                   `json:"has_previous"`
 }
-	

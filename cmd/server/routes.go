@@ -89,6 +89,8 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		sellerGroup.POST("/custom-orders/:requestID/accept", a.CustomOrdersHandler.AcceptRequest)
 		sellerGroup.POST("/custom-orders/:requestID/reject", a.CustomOrdersHandler.RejectRequest)
 		sellerGroup.POST("/custom-orders/:requestID/request-info", a.CustomOrdersHandler.RequestInfo)
+		sellerGroup.POST("/custom-orders/:requestID/report", a.CustomOrdersHandler.ReportRequest)
+		sellerGroup.GET("/custom-orders/:requestID/photo", a.CustomOrdersHandler.OpenSellerPhoto)
 	}
 
 	cartGroup := r.Group("/cart", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleBuyer))
@@ -124,6 +126,9 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		customOrdersGroup.GET("/:requestID", a.CustomOrdersHandler.GetRequest)
 		customOrdersGroup.POST("/:requestID/complement", a.CustomOrdersHandler.ComplementRequest)
 		customOrdersGroup.POST("/:requestID/cancel", a.CustomOrdersHandler.CancelRequest)
+		customOrdersGroup.POST("/:requestID/checkout", a.CustomOrdersHandler.Checkout)
+		customOrdersGroup.PUT("/:requestID/photo", a.CustomOrdersHandler.SendPhoto)
+		customOrdersGroup.GET("/:requestID/photo", a.CustomOrdersHandler.OpenPhoto)
 	}
 
 	notificationsGroup := r.Group("/notifications", a.AuthMiddleware.Middleware())
@@ -133,10 +138,8 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		notificationsGroup.POST("/:notificationID/read", a.NotificationsHandler.MarkRead)
 	}
 
-	// Called by Asaas, authenticated by the asaas-access-token header.
 	r.POST("/webhooks/asaas", a.PaymentsHandler.AsaasWebhook)
 
-	// Buyers, sellers and admins read documents; the service decides who may read which.
 	r.GET("/documents/:documentID", a.AuthMiddleware.Middleware(), a.DocumentsHandler.OpenDocument)
 
 	r.GET("/files/public/*path", a.FilesHandler.ServePublic)

@@ -11,6 +11,8 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/me"
 	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
+	"github.com/caslumes/solado_certo_backend/internal/features/orders"
+	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
 const (
@@ -19,18 +21,23 @@ const (
 	testOtherID   = "other-1"
 	testAdID      = "00000000-0000-0000-0000-000000000601"
 	testRequestID = "00000000-0000-0000-0000-000000000901"
+	testOrderID   = "00000000-0000-0000-0000-000000000801"
 )
 
 type fakeRepository struct {
-	ad       *CustomizableAd
-	requests map[string]*RequestDetailEntity
-	created  []NewRequest
-	changes  []StatusChange
-	notified []notifications.NewNotification
-	filter   Filter
-	total    uint
-	// changeErr is returned by ChangeStatus, as when another change got there first.
-	changeErr error
+	ad          *CustomizableAd
+	requests    map[string]*RequestDetailEntity
+	created     []NewRequest
+	changes     []StatusChange
+	notified    []notifications.NewNotification
+	filter      Filter
+	total       uint
+	changeErr   error
+	checkouts   []Checkout
+	usedKeys    map[string]bool
+	checkoutErr error
+	photos      []PhotoChange
+	photoViews  []string
 }
 
 func (f *fakeRepository) GetAdvertisement(_ context.Context, id string) (*CustomizableAd, error) {
@@ -100,8 +107,57 @@ func (f *fakeRepository) ChangeStatus(_ context.Context, change StatusChange) er
 	if change.TechnicalNotes != nil {
 		request.TechnicalNotes = change.TechnicalNotes
 	}
+	if change.AdaptationInstructions != nil {
+		request.AdaptationInstructions = change.AdaptationInstructions
+	}
+	if change.ReportKey != nil {
+		request.FittingReport = &FittingReportEntity{ID: "report-1", CreatedAt: time.Now()}
+	}
 	request.History = append(request.History, HistoryEntity{PreviousStatus: &from, Status: change.To, ChangedBy: &change.ChangedBy, Reason: change.Reason, CreatedAt: time.Now()})
 	return nil
+}
+
+func (f *fakeRepository) CheckoutExists(_ context.Context, buyerID string, key string) (bool, error) {
+	return f.usedKeys[buyerID+"/"+key], nil
+}
+
+func (f *fakeRepository) Checkout(_ context.Context, checkout Checkout) (bool, error) {
+	if f.checkoutErr != nil {
+		return false, f.checkoutErr
+	}
+	f.checkouts = append(f.checkouts, checkout)
+	f.usedKeys[checkout.BuyerID+"/"+checkout.IdempotencyKey] = true
+	f.requests[checkout.RequestID].OrderID = ptr(testOrderID)
+	return true, nil
+}
+
+func (f *fakeRepository) SetFootPhoto(_ context.Context, change PhotoChange) (*string, error) {
+	request := f.requests[change.RequestID]
+	if !request.Status.TakesPhoto() {
+		return nil, app.ErrInvalidStatusTransition
+	}
+	f.photos = append(f.photos, change)
+	previous := request.FootPhotoKey
+	request.FootPhotoKey = &change.Key
+	return previous, nil
+}
+
+func (f *fakeRepository) RecordPhotoView(_ context.Context, _ string, userID string) error {
+	f.photoViews = append(f.photoViews, userID)
+	return nil
+}
+
+type fakePlanner struct {
+	items []orders.CustomItem
+	err   error
+}
+
+func (f *fakePlanner) PlanCustomOrder(_ context.Context, _ string, item orders.CustomItem) (*orders.CheckoutPlan, error) {
+	f.items = append(f.items, item)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &orders.CheckoutPlan{AddressID: item.AddressID, Orders: []orders.PlannedOrder{{SellerID: testSellerID}}}, nil
 }
 
 type fakeConsents struct {
@@ -118,6 +174,8 @@ func (f *fakeConsents) RequireConsent(_ context.Context, userID string, purpose 
 type setup struct {
 	r        *fakeRepository
 	consents *fakeConsents
+	planner  *fakePlanner
+	files    *storage.MemoryStorage
 	s        *service
 }
 
@@ -125,12 +183,14 @@ func newSetup() setup {
 	r := &fakeRepository{
 		ad:       &CustomizableAd{ID: testAdID, SellerID: testSellerID, Title: "Palmilha sob medida", Published: true, CustomMadeAllowed: true},
 		requests: map[string]*RequestDetailEntity{},
+		usedKeys: map[string]bool{},
 	}
 	consents := &fakeConsents{granted: map[string]bool{testBuyerID: true}}
-	return setup{r: r, consents: consents, s: NewService(r, consents)}
+	planner := &fakePlanner{}
+	files := storage.NewMemoryStorage()
+	return setup{r: r, consents: consents, planner: planner, files: files, s: NewService(r, consents, planner, files)}
 }
 
-// withRequest has a request of testBuyerID in status.
 func (st setup) withRequest(status Status) setup {
 	st.r.requests[testRequestID] = &RequestDetailEntity{RequestEntity: RequestEntity{
 		ID: testRequestID, BuyerID: testBuyerID, SellerID: testSellerID, AdvertisementID: testAdID,
@@ -174,7 +234,7 @@ func TestCreateRequest(t *testing.T) {
 	if notification.UserID != testSellerID || notification.Type != notifications.TypeCustomOrderRequested || notification.Data["custom_order_id"] != testRequestID {
 		t.Errorf("notification = %+v", notification)
 	}
-	if output := request.ToOutput(testBuyerID); !slices.Equal(output.Actions, []string{"cancel"}) {
+	if output := request.ToOutput(testBuyerID); !slices.Equal(output.Actions, []string{"cancel", "send_photo"}) {
 		t.Errorf("buyer actions = %v", output.Actions)
 	}
 }
@@ -245,8 +305,6 @@ func TestCreateRequestChecksTheAdAndConsent(t *testing.T) {
 	}
 }
 
-// TestRequestGoesThroughNeedsInfoToAccepted walks UC-008's alternative flow: the seller asks for more
-// information, the buyer complements, and the seller accepts with a price.
 func TestRequestGoesThroughNeedsInfoToAccepted(t *testing.T) {
 	st := newSetup().withRequest(StatusRequested)
 	ctx := context.Background()
@@ -259,7 +317,7 @@ func TestRequestGoesThroughNeedsInfoToAccepted(t *testing.T) {
 	if err != nil || request.Status != StatusNeedsInfo {
 		t.Fatalf("RequestInfo: %v, %+v", err, request)
 	}
-	if output := request.ToOutput(testBuyerID); !slices.Equal(output.Actions, []string{"complement", "cancel"}) {
+	if output := request.ToOutput(testBuyerID); !slices.Equal(output.Actions, []string{"complement", "cancel", "send_photo"}) {
 		t.Errorf("buyer actions = %v", output.Actions)
 	}
 	if output := request.ToOutput(testSellerID); !slices.Equal(output.Actions, []string{"reject"}) {

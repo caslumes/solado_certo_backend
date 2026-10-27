@@ -46,8 +46,6 @@ import (
 	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
-// fakeConfirmAfter makes the fake gateway confirm Pix and boleto by itself, so the whole flow runs
-// offline (PAYMENT_GATEWAY=fake). Its charges live in memory and are lost when the server restarts.
 const fakeConfirmAfter = 30 * time.Second
 
 type App struct {
@@ -97,7 +95,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	notificationsService := notifications.NewService(notificationsRepository.NewPostgresRepository(dbPool))
 	reviewsService := reviews.NewService(reviewsRepository.NewPostgresRepository(dbPool))
 	documentsService := documents.NewService(documentsRepository.NewPostgresRepository(dbPool), fileStorage, meService)
-	customOrdersService := customorders.NewService(customordersRepository.NewPostgresRepository(dbPool), meService)
+	customOrdersService := customorders.NewService(customordersRepository.NewPostgresRepository(dbPool), meService, ordersService, fileStorage)
 
 	return &App{
 		Envs:           envs,

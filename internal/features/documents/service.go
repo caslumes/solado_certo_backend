@@ -29,7 +29,6 @@ type RejectPrescriptionUseCase interface {
 	RejectPrescription(ctx context.Context, sellerID string, orderID string, id string, input RejectionInput) (*DocumentEntity, error)
 }
 
-// ConsentChecker is the me service, which knows the current terms of each consent.
 type ConsentChecker interface {
 	RequireConsent(ctx context.Context, userID string, purpose me.ConsentPurpose) error
 }
@@ -53,9 +52,6 @@ func NewService(r repository, files storage.Storage, consents ConsentChecker) *s
 	return &service{r: r, files: files, consents: consents}
 }
 
-// UploadPrescription attaches a prescription to an order item that needs one (RF-035, UC-007). It is
-// checked on arrival: a file that can't be opened is refused with the reason, and one that can is
-// approved. A prescription is health data, so it needs the buyer's consent (LGPD art. 11).
 func (s *service) UploadPrescription(ctx context.Context, buyerID string, orderID string, itemID string, content io.Reader) (*DocumentEntity, error) {
 	if !helpers.IsUUID(orderID) {
 		return nil, app.ErrOrderNotFound
@@ -87,11 +83,11 @@ func (s *service) UploadPrescription(ctx context.Context, buyerID string, orderI
 		return nil, err
 	}
 
-	upload, err := storage.ReadUpload(content, app.MaxUploadSize, prescriptionTypes)
+	upload, err := storage.ReadUpload(content, app.MaxUploadSize, FileTypes)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkReadable(upload); err != nil {
+	if err := CheckReadable(upload); err != nil {
 		return nil, err
 	}
 
@@ -124,9 +120,6 @@ func (s *service) UploadPrescription(ctx context.Context, buyerID string, orderI
 	return created, nil
 }
 
-// OpenDocument gives the file of a document to the buyer who sent it, to the seller of a paid order,
-// and to admins. Anyone else gets 404, so document IDs can't be probed. Every read by someone other
-// than the uploader is written to the audit log (RNF-010).
 func (s *service) OpenDocument(ctx context.Context, userID string, id string) (*DocumentFile, error) {
 	document, err := s.document(ctx, id)
 	if err != nil {
@@ -165,8 +158,6 @@ func (s *service) OpenDocument(ctx context.Context, userID string, id string) (*
 	}, nil
 }
 
-// RejectPrescription is the seller refusing a prescription before shipping, with the reason, which the
-// buyer is told (UC-007). The order can't be shipped until the buyer sends a new one.
 func (s *service) RejectPrescription(ctx context.Context, sellerID string, orderID string, id string, input RejectionInput) (*DocumentEntity, error) {
 	reason := strings.TrimSpace(input.Reason)
 	if reason == "" {

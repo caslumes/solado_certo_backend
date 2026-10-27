@@ -11,11 +11,8 @@ import (
 
 var ErrMissingFormFile = errors.New("missing form file")
 
-// multipartOverhead leaves room for the form fields around the file.
 const multipartOverhead = 1 << 20
 
-// FormFile opens a multipart file field. The request body is capped a little above maxSize,
-// so a huge upload is cut off before it is read into memory or disk (storage.ErrTooLarge).
 func FormFile(c *gin.Context, field string, maxSize int64) (multipart.File, error) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSize+multipartOverhead)
 

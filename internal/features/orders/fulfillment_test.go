@@ -11,8 +11,6 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/notifications"
 )
 
-// fulfillmentFixture has a paid order of testSellerID (testOrderID), an unpaid one of the same seller
-// (otherOrderID) and a paid one of another seller.
 func fulfillmentFixture() (*fakeRepository, *service) {
 	paidAt := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	r := newFakeRepository()
@@ -24,7 +22,6 @@ func fulfillmentFixture() (*fakeRepository, *service) {
 	return r, NewService(r)
 }
 
-// notified returns the change's single notification, or nil when it has none or several.
 func notified(change StatusChange) *notifications.NewNotification {
 	if len(change.Notifications) != 1 {
 		return nil
@@ -140,7 +137,6 @@ func TestStartProcessing(t *testing.T) {
 		t.Errorf("notification = %+v, want the buyer's", n)
 	}
 
-	// Again: the order is no longer paid.
 	if _, err := s.StartProcessing(context.Background(), testSellerID, testOrderID); !errors.Is(err, app.ErrInvalidStatusTransition) {
 		t.Errorf("again: error = %v, want ErrInvalidStatusTransition", err)
 	}
@@ -153,7 +149,6 @@ func TestShipOrder(t *testing.T) {
 	r, s := fulfillmentFixture()
 	input := ShipmentInput{Carrier: "Correios", TrackingCode: "aa123456789br"}
 
-	// It must be in preparation first.
 	if _, err := s.ShipOrder(context.Background(), testSellerID, testOrderID, input); !errors.Is(err, app.ErrInvalidStatusTransition) {
 		t.Fatalf("paid order: error = %v, want ErrInvalidStatusTransition", err)
 	}
@@ -228,7 +223,6 @@ func TestCancelPaidOrderNotifiesTheSeller(t *testing.T) {
 		t.Errorf("notification = %+v, want the seller's", n)
 	}
 
-	// An unpaid order was never shown to the seller.
 	if _, err := s.CancelOrder(context.Background(), testBuyerID, otherOrderID); err != nil {
 		t.Fatalf("CancelOrder: %v", err)
 	}

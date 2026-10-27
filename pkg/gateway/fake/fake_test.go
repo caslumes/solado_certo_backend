@@ -109,7 +109,6 @@ func TestRefundBoleto(t *testing.T) {
 	}
 }
 
-// A charge lost in a restart is reported refunded, so the order's refund doesn't stay stuck.
 func TestRefundUnknownCharge(t *testing.T) {
 	g := New(0)
 	if got, err := g.Refund(context.Background(), "pay_lost", gateway.MethodPix); err != nil || got.Status != gateway.StatusRefunded {
@@ -121,7 +120,6 @@ func TestRefundUnknownCharge(t *testing.T) {
 	}
 }
 
-// A charge made before the server restarted is gone from memory; it can no longer be paid.
 func TestUnknownChargesAreDeleted(t *testing.T) {
 	ctx := context.Background()
 	g := New(0)
@@ -137,7 +135,6 @@ func TestUnknownChargesAreDeleted(t *testing.T) {
 		t.Error("a QR code was made for an unknown charge")
 	}
 
-	// Customers too: one created before the restart still works, and ids aren't reused.
 	charge, err := g.CreateCharge(ctx, gateway.ChargeRequest{CustomerID: "cus_lost", Method: gateway.MethodBoleto, Amount: "10.00"})
 	if err != nil || charge.Status != gateway.StatusPending {
 		t.Errorf("CreateCharge = %+v, %v", charge, err)

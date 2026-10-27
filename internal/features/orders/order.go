@@ -7,7 +7,6 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 )
 
-// ProductSnapshot is stored in order_items.product_snapshot: what the buyer saw when the order was placed.
 type ProductSnapshot struct {
 	Title          string               `json:"title"`
 	CoverImageURL  *string              `json:"cover_image_url"`
@@ -16,19 +15,23 @@ type ProductSnapshot struct {
 }
 
 type OrderItemEntity struct {
-	ID              string
-	AdvertisementID string
-	Quantity        int
-	UnitPrice       string
-	Subtotal        string
-	Snapshot        ProductSnapshot
-	Review          *ItemReviewEntity
-	// PrescriptionRequired is whether the ad required a prescription when the item was bought.
+	ID                   string
+	AdvertisementID      string
+	Quantity             int
+	UnitPrice            string
+	Subtotal             string
+	Snapshot             ProductSnapshot
+	Review               *ItemReviewEntity
 	PrescriptionRequired bool
 	Prescription         *PrescriptionEntity
+	CustomOrderRequestID *string
+	FittingReportSent    bool
 }
 
-// ItemReviewEntity is the buyer's review of an item, shown to the buyer and to the seller.
+func (i *OrderItemEntity) fittingReportPending() bool {
+	return i.CustomOrderRequestID != nil && !i.FittingReportSent
+}
+
 type ItemReviewEntity struct {
 	ProductRating      int
 	SellerRating       int
@@ -77,8 +80,6 @@ func (o *OrderEntity) ToOutput() OrderOutput {
 	return o.output(false)
 }
 
-// output tells, for each item, what the buyer can do with its prescription, or what the seller can when
-// seller is true.
 func (o *OrderEntity) output(seller bool) OrderOutput {
 	items := make([]OrderItemOutput, len(o.Items))
 	for i, item := range o.Items {
@@ -94,6 +95,8 @@ func (o *OrderEntity) output(seller bool) OrderOutput {
 			Review:               item.Review.ToOutput(),
 			PrescriptionRequired: item.PrescriptionRequired,
 			Prescription:         item.Prescription.ToOutput(),
+			CustomOrderID:        item.CustomOrderRequestID,
+			FittingReportPending: item.fittingReportPending(),
 		}
 		if item.PrescriptionRequired {
 			items[i].CanUploadPrescription = !seller && CanUploadPrescription(o.Status, item.Prescription)
@@ -178,7 +181,8 @@ func (d *OrderDetail) ToSellerOutput() *SellerOrderDetailOutput {
 		History:            d.historyOutput(),
 		Shipment:           d.Shipment.ToOutput(),
 		CanStartProcessing: d.Order.Status == OrderStatusPaid,
-		CanShip:            d.Order.Status == OrderStatusProcessing && len(d.Order.MissingPrescriptions()) == 0,
+		CanShip: d.Order.Status == OrderStatusProcessing && len(d.Order.MissingPrescriptions()) == 0 &&
+			len(d.Order.PendingFittingReports()) == 0,
 	}
 }
 

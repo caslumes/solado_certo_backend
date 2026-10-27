@@ -1,4 +1,3 @@
--- The order keeps the address it was shipped to, so the buyer can still edit or delete their addresses.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_address jsonb;
 ALTER TABLE orders ALTER COLUMN shipping_address SET NOT NULL;
 ALTER TABLE orders ALTER COLUMN shipping_address_id DROP NOT NULL;
@@ -15,5 +14,4 @@ BEGIN
 END
 $$;
 
--- The first entry of an order's history has no previous status.
 ALTER TABLE order_status_history ALTER COLUMN previous_status DROP NOT NULL;

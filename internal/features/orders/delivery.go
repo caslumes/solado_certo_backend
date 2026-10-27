@@ -18,9 +18,6 @@ const (
 	DeliveryJobInterval = time.Hour
 )
 
-// DeliverOverdueOrders marks as delivered the orders shipped more than DeliveryDeadline ago, so they
-// can be reviewed and don't stay open forever (RF-023). Both sides are notified. Failures of a single
-// order are logged and retried in the next round.
 func (s *service) DeliverOverdueOrders(ctx context.Context) error {
 	overdue, err := s.r.GetOverdueShippedOrders(ctx, s.now().Add(-DeliveryDeadline))
 	if err != nil {
@@ -38,7 +35,6 @@ func (s *service) DeliverOverdueOrders(ctx context.Context) error {
 				notifications.SellerDeliveryDeadline(order.SellerID, order.ID, order.Number),
 			},
 		})
-		// changeStatus logs the failures; a refused transition means the buyer confirmed it meanwhile.
 		if err == nil {
 			slog.InfoContext(ctx, "order delivered by deadline", "order_id", order.ID)
 		}
@@ -46,7 +42,6 @@ func (s *service) DeliverOverdueOrders(ctx context.Context) error {
 	return nil
 }
 
-// RunDeliveryJob runs DeliverOverdueOrders now and then every interval, until ctx is done.
 func RunDeliveryJob(ctx context.Context, job DeliverOverdueOrdersUseCase, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

@@ -1,4 +1,3 @@
--- The gateway needs the buyer's CPF; it is asked at the first payment and kept.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_id varchar(11);
 
 DO $$
@@ -9,7 +8,6 @@ BEGIN
 END
 $$;
 
--- Each gateway's customer is created once per user.
 CREATE TABLE IF NOT EXISTS payment_customers (
     user_id uuid NOT NULL,
     gateway varchar(60) NOT NULL,
@@ -22,5 +20,4 @@ CREATE TABLE IF NOT EXISTS payment_customers (
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS due_date date;
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS failure_reason varchar(120);
 
--- Webhooks find the payment by the gateway's id.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_gateway_transaction ON payments (gateway, gateway_transaction_id);

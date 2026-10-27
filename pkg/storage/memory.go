@@ -8,7 +8,6 @@ import (
 	"sync"
 )
 
-// MemoryStorage keeps files in memory. It is meant for tests.
 type MemoryStorage struct {
 	mu    sync.Mutex
 	files map[string][]byte
@@ -53,7 +52,6 @@ func (s *MemoryStorage) Delete(_ context.Context, area Area, key string) error {
 	return nil
 }
 
-// Has reports whether a file is stored, so tests can check saves and deletes.
 func (s *MemoryStorage) Has(area Area, key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -61,7 +59,6 @@ func (s *MemoryStorage) Has(area Area, key string) bool {
 	return ok
 }
 
-// Count returns how many files are stored in all areas.
 func (s *MemoryStorage) Count() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

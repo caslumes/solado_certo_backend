@@ -220,8 +220,6 @@ func (f *fakeRefunder) RefundOrder(_ context.Context, orderID string) error {
 	return f.err
 }
 
-// A paid order can be cancelled; it is refunded after the cancellation is saved, and a refund that
-// fails doesn't undo it (the payments poller tries again).
 func TestCancelPaidOrderRefundsIt(t *testing.T) {
 	for _, refundErr := range []error{nil, app.ErrGatewayUnavailable} {
 		r, s := ordersFixture(1)
