@@ -131,3 +131,24 @@ func TestNotificationTexts(t *testing.T) {
 		t.Errorf("OrderRefunded = %+v", refunded)
 	}
 }
+
+func TestCustomOrderNotificationsNameTheRecipient(t *testing.T) {
+	for _, tc := range []struct {
+		notification NewNotification
+		recipient    string
+	}{
+		{CustomOrderRequested("seller-1", "request-1", "Palmilha"), RecipientSeller},
+		{CustomOrderUnderReview("buyer-1", "request-1", "Palmilha"), RecipientBuyer},
+		{CustomOrderNeedsInfo("buyer-1", "request-1", "Palmilha", "Qual o arco?"), RecipientBuyer},
+		{CustomOrderComplemented("seller-1", "request-1", "Palmilha"), RecipientSeller},
+		{CustomOrderAccepted("buyer-1", "request-1", "Palmilha", "189.90"), RecipientBuyer},
+		{CustomOrderRejected("buyer-1", "request-1", "Palmilha", "Sem material"), RecipientBuyer},
+		{CustomOrderCancelled("seller-1", "request-1", "Palmilha"), RecipientSeller},
+		{CustomOrderCompleted("buyer-1", "request-1", "Palmilha"), RecipientBuyer},
+	} {
+		data := tc.notification.Data
+		if data["custom_order_id"] != "request-1" || data["recipient"] != tc.recipient {
+			t.Errorf("%q data = %v, want recipient %s", tc.notification.Title, data, tc.recipient)
+		}
+	}
+}

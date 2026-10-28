@@ -21,6 +21,11 @@ const (
 	TypeCustomOrderUpdated   Type = "custom_order_updated"
 )
 
+const (
+	RecipientBuyer  = "buyer"
+	RecipientSeller = "seller"
+)
+
 type NotificationEntity struct {
 	ID        string
 	UserID    string
@@ -159,48 +164,48 @@ func CustomOrderRequested(sellerID string, requestID string, title string) NewNo
 		Type:   TypeCustomOrderRequested,
 		Title:  "Nova solicitação sob medida",
 		Body:   "Um comprador pediu " + title + " sob medida. Analise as medidas e responda.",
-		Data:   map[string]string{"custom_order_id": requestID},
+		Data:   map[string]string{"custom_order_id": requestID, "recipient": RecipientSeller},
 	}
 }
 
 func CustomOrderUnderReview(buyerID string, requestID string, title string) NewNotification {
-	return customOrderUpdated(buyerID, requestID, "Solicitação em análise", "O vendedor está analisando sua solicitação de "+title+" sob medida.")
+	return customOrderUpdated(buyerID, requestID, RecipientBuyer, "Solicitação em análise", "O vendedor está analisando sua solicitação de "+title+" sob medida.")
 }
 
 func CustomOrderNeedsInfo(buyerID string, requestID string, title string, question string) NewNotification {
-	return customOrderUpdated(buyerID, requestID, "O vendedor precisa de mais informações",
+	return customOrderUpdated(buyerID, requestID, RecipientBuyer, "O vendedor precisa de mais informações",
 		"Sobre "+title+" sob medida: "+strings.TrimRight(question, ".")+". Responda para a análise continuar.")
 }
 
 func CustomOrderComplemented(sellerID string, requestID string, title string) NewNotification {
-	return customOrderUpdated(sellerID, requestID, "Solicitação complementada", "O comprador respondeu sobre "+title+" sob medida.")
+	return customOrderUpdated(sellerID, requestID, RecipientSeller, "Solicitação complementada", "O comprador respondeu sobre "+title+" sob medida.")
 }
 
 func CustomOrderAccepted(buyerID string, requestID string, title string, price string) NewNotification {
-	return customOrderUpdated(buyerID, requestID, "Solicitação aceita",
+	return customOrderUpdated(buyerID, requestID, RecipientBuyer, "Solicitação aceita",
 		"O vendedor aceitou fazer "+title+" sob medida por R$ "+strings.Replace(price, ".", ",", 1)+". Confirme e pague para a produção começar.")
 }
 
 func CustomOrderRejected(buyerID string, requestID string, title string, reason string) NewNotification {
-	return customOrderUpdated(buyerID, requestID, "Solicitação recusada", "O vendedor recusou fazer "+title+" sob medida: "+strings.TrimRight(reason, ".")+".")
+	return customOrderUpdated(buyerID, requestID, RecipientBuyer, "Solicitação recusada", "O vendedor recusou fazer "+title+" sob medida: "+strings.TrimRight(reason, ".")+".")
 }
 
 func CustomOrderCancelled(sellerID string, requestID string, title string) NewNotification {
-	return customOrderUpdated(sellerID, requestID, "Solicitação cancelada", "O comprador cancelou a solicitação de "+title+" sob medida.")
+	return customOrderUpdated(sellerID, requestID, RecipientSeller, "Solicitação cancelada", "O comprador cancelou a solicitação de "+title+" sob medida.")
 }
 
 func CustomOrderCompleted(buyerID string, requestID string, title string) NewNotification {
-	return customOrderUpdated(buyerID, requestID, "Laudo e instruções de adaptação",
+	return customOrderUpdated(buyerID, requestID, RecipientBuyer, "Laudo e instruções de adaptação",
 		"O vendedor enviou o laudo de "+title+" sob medida e as instruções de adaptação gradual. Leia antes de usar.")
 }
 
-func customOrderUpdated(userID string, requestID string, title string, body string) NewNotification {
+func customOrderUpdated(userID string, requestID string, recipient string, title string, body string) NewNotification {
 	return NewNotification{
 		UserID: userID,
 		Type:   TypeCustomOrderUpdated,
 		Title:  title,
 		Body:   body,
-		Data:   map[string]string{"custom_order_id": requestID},
+		Data:   map[string]string{"custom_order_id": requestID, "recipient": recipient},
 	}
 }
 
