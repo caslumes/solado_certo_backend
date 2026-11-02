@@ -19,6 +19,8 @@ const (
 	TypePrescriptionSent     Type = "prescription_sent"
 	TypeCustomOrderRequested Type = "custom_order_requested"
 	TypeCustomOrderUpdated   Type = "custom_order_updated"
+	TypeSupportTicketOpened  Type = "support_ticket_opened"
+	TypeSupportTicketUpdated Type = "support_ticket_updated"
 )
 
 const (
@@ -206,6 +208,33 @@ func customOrderUpdated(userID string, requestID string, recipient string, title
 		Title:  title,
 		Body:   body,
 		Data:   map[string]string{"custom_order_id": requestID, "recipient": recipient},
+	}
+}
+
+func SupportTicketOpenedForSupport(adminID string, ticketID string, subject string) NewNotification {
+	return supportTicket(adminID, TypeSupportTicketOpened, ticketID, "Novo chamado de suporte", "Chamado aberto: "+subject+".")
+}
+
+func SupportTicketOpenedAboutOrder(userID string, ticketID string, number string, subject string) NewNotification {
+	return supportTicket(userID, TypeSupportTicketOpened, ticketID, "Chamado de suporte sobre um pedido",
+		"Foi aberto um chamado sobre o pedido "+number+": "+subject+". Acompanhe e responda pelo chamado.")
+}
+
+func SupportTicketReplied(userID string, ticketID string, subject string, bySupport bool) NewNotification {
+	body := "Há uma nova mensagem no chamado \"" + subject + "\"."
+	if bySupport {
+		body = "O suporte respondeu ao chamado \"" + subject + "\"."
+	}
+	return supportTicket(userID, TypeSupportTicketUpdated, ticketID, "Nova mensagem no chamado", body)
+}
+
+func supportTicket(userID string, notificationType Type, ticketID string, title string, body string) NewNotification {
+	return NewNotification{
+		UserID: userID,
+		Type:   notificationType,
+		Title:  title,
+		Body:   body,
+		Data:   map[string]string{"ticket_id": ticketID},
 	}
 }
 

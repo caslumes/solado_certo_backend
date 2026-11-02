@@ -149,6 +149,10 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `POST` | `/seller/ads/:advertisementID/images` | Add a photo (multipart field `image`, optional `alt_text`). At most 6 per ad (409); the first becomes the cover. Returns the ad |
 | `PATCH` | `/seller/ads/:advertisementID/images/order` | `image_ids` (every image of the ad, in the new order) and optional `cover_image_id` (keeps the current cover when absent) |
 | `DELETE` | `/seller/ads/:advertisementID/images/:imageID` | Remove a photo and its file; the rest are renumbered and the first becomes the cover if the cover was removed. A published ad keeps its last photo (422) |
+| `GET` / `POST` | `/support/tickets` | The user's tickets (opened by them, or about an order they bought or sold), most recently changed first; optional `status`, `page`, `limit` / open a ticket: `category` (`order`, `payment`, `adaptation`, `other`), `subject` (5–150 characters), `description` (20–2000) and `order_id` (required for `order` and `payment`; the user must be its buyer or seller). Admins and the other party of the order are notified |
+| `GET` | `/support/tickets/:ticketID` | Ticket with its messages (`sender_role`: `buyer`, `seller`, `support` or `user`). Readable by the opener, the order's buyer and seller, and admins; 404 for anyone else |
+| `POST` | `/support/tickets/:ticketID/messages` | `message` (up to 2000 characters), as JSON or multipart with an optional `file` (PDF, JPEG or PNG up to 5 MB). An admin's answer moves the ticket to `awaiting_customer`; the customer's answer moves it back. 409 once `resolved` or `closed` |
+| `GET` | `/support/tickets/:ticketID/messages/:messageID/attachment` | A message's attachment, for the same readers (reads by others than the sender are audited) |
 | `GET` | `/files/public/*path` | A public uploaded file (e.g. `/files/public/ads/<name>.jpg`). Private files are only served by the endpoints that own them |
 
 ## Project structure
@@ -163,6 +167,7 @@ internal/
     catalog/           ads and categories
     files/             serves public uploaded files
     seller/            seller ads: CRUD and status changes
+    support/           support tickets and their messages
       <feature>/       service.go (use cases), entity/input/output types,
                        repository/postgres (SQL), transport/http (Gin handlers)
   middleware/          JWT auth, role checks (RequireRole) and per-IP rate limiting

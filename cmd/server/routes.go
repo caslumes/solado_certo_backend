@@ -142,6 +142,15 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		notificationsGroup.POST("/:notificationID/read", a.NotificationsHandler.MarkRead)
 	}
 
+	supportGroup := r.Group("/support", a.AuthMiddleware.Middleware())
+	{
+		supportGroup.GET("/tickets", a.SupportHandler.ListTickets)
+		supportGroup.POST("/tickets", a.SupportHandler.CreateTicket)
+		supportGroup.GET("/tickets/:ticketID", a.SupportHandler.GetTicket)
+		supportGroup.POST("/tickets/:ticketID/messages", a.SupportHandler.AddMessage)
+		supportGroup.GET("/tickets/:ticketID/messages/:messageID/attachment", a.SupportHandler.OpenAttachment)
+	}
+
 	r.POST("/webhooks/asaas", a.PaymentsHandler.AsaasWebhook)
 
 	r.GET("/documents/:documentID", a.AuthMiddleware.Middleware(), a.DocumentsHandler.OpenDocument)

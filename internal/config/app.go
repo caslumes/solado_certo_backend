@@ -38,6 +38,9 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/features/seller"
 	sellerRepository "github.com/caslumes/solado_certo_backend/internal/features/seller/repository/postgres"
 	httpseller "github.com/caslumes/solado_certo_backend/internal/features/seller/transport/http"
+	"github.com/caslumes/solado_certo_backend/internal/features/support"
+	supportRepository "github.com/caslumes/solado_certo_backend/internal/features/support/repository/postgres"
+	httpsupport "github.com/caslumes/solado_certo_backend/internal/features/support/transport/http"
 	authmiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/auth"
 	rolemiddleware "github.com/caslumes/solado_certo_backend/internal/middleware/role"
 	"github.com/caslumes/solado_certo_backend/pkg/gateway"
@@ -68,6 +71,7 @@ type App struct {
 	ReviewsHandler       *httpreviews.Handler
 	DocumentsHandler     *httpdocuments.Handler
 	CustomOrdersHandler  *httpcustomorders.Handler
+	SupportHandler       *httpsupport.Handler
 	PendingMail          auth.WaitForMailUseCase
 }
 
@@ -99,6 +103,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	reviewsService := reviews.NewService(reviewsRepository.NewPostgresRepository(dbPool))
 	documentsService := documents.NewService(documentsRepository.NewPostgresRepository(dbPool), fileStorage, meService)
 	customOrdersService := customorders.NewService(customordersRepository.NewPostgresRepository(dbPool), meService, ordersService, fileStorage)
+	supportService := support.NewService(supportRepository.NewPostgresRepository(dbPool), meService, fileStorage)
 
 	return &App{
 		Envs:           envs,
@@ -119,6 +124,7 @@ func InitApp(ctx context.Context) (*App, error) {
 		ReviewsHandler:       httpreviews.NewHandler(reviewsService),
 		DocumentsHandler:     httpdocuments.NewHandler(documentsService),
 		CustomOrdersHandler:  httpcustomorders.NewHandler(customOrdersService),
+		SupportHandler:       httpsupport.NewHandler(supportService),
 		PendingMail:          authService,
 	}, nil
 }

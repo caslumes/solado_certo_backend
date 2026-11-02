@@ -127,3 +127,6 @@ func (e *FittingReportRequiredError) Unwrap() error {
 
 var ErrInvalidResetCode = errors.New("invalid or expired code")
 var ErrResetAttemptsExceeded = errors.New("too many attempts, request a new code")
+
+var ErrTicketNotFound = errors.New("support ticket not found")
+var ErrAttachmentNotFound = errors.New("attachment not found")
