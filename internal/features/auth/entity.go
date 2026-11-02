@@ -36,3 +36,12 @@ func (r *RefreshTokenEntity) IsExpired() bool {
 
 	return r.ExpiresAt.Before(time.Now())
 }
+
+type PasswordResetEntity struct {
+	ID        string
+	UserID    string
+	CodeHash  string
+	Attempts  int
+	ExpiresAt time.Time
+	CreatedAt time.Time
+}

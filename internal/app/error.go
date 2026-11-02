@@ -124,3 +124,6 @@ func (e *FittingReportRequiredError) Error() string {
 func (e *FittingReportRequiredError) Unwrap() error {
 	return ErrFittingReportRequired
 }
+
+var ErrInvalidResetCode = errors.New("invalid or expired code")
+var ErrResetAttemptsExceeded = errors.New("too many attempts, request a new code")

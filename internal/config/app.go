@@ -43,6 +43,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/pkg/gateway"
 	"github.com/caslumes/solado_certo_backend/pkg/gateway/asaas"
 	"github.com/caslumes/solado_certo_backend/pkg/gateway/fake"
+	"github.com/caslumes/solado_certo_backend/pkg/mailer"
 	"github.com/caslumes/solado_certo_backend/pkg/storage"
 )
 
@@ -67,6 +68,7 @@ type App struct {
 	ReviewsHandler       *httpreviews.Handler
 	DocumentsHandler     *httpdocuments.Handler
 	CustomOrdersHandler  *httpcustomorders.Handler
+	PendingMail          auth.WaitForMailUseCase
 }
 
 func InitApp(ctx context.Context) (*App, error) {
@@ -86,6 +88,7 @@ func InitApp(ctx context.Context) (*App, error) {
 	}
 
 	authService := auth.NewService(authRepository.NewPostgresRepository(dbPool), envs.SecretKey)
+	authService.SetMailer(newMailer(envs))
 	meService := me.NewService(meRepository.NewPostgresRepository(dbPool), fileStorage)
 	sellerService := seller.NewService(sellerRepository.NewPostgresRepository(dbPool), fileStorage)
 	ordersService := orders.NewService(ordersRepository.NewPostgresRepository(dbPool))
@@ -116,6 +119,7 @@ func InitApp(ctx context.Context) (*App, error) {
 		ReviewsHandler:       httpreviews.NewHandler(reviewsService),
 		DocumentsHandler:     httpdocuments.NewHandler(documentsService),
 		CustomOrdersHandler:  httpcustomorders.NewHandler(customOrdersService),
+		PendingMail:          authService,
 	}, nil
 }
 
@@ -129,4 +133,13 @@ func newPaymentGateway(envs *Envs) gateway.PaymentGateway {
 	}
 	slog.Info("using the Asaas payment gateway", "base_url", envs.AsaasBaseURL)
 	return asaas.New(envs.AsaasBaseURL, envs.AsaasAPIKey)
+}
+
+func newMailer(envs *Envs) mailer.Mailer {
+	if envs.SMTPHost == "" {
+		slog.Warn("SMTP_HOST is not set: e-mails such as password recovery codes are not sent")
+		return mailer.Disabled{}
+	}
+	slog.Info("sending e-mail through SMTP", "host", envs.SMTPHost, "port", envs.SMTPPort)
+	return mailer.NewSMTP(envs.SMTPHost, envs.SMTPPort, envs.SMTPUsername, envs.SMTPPassword, envs.MailFrom)
 }

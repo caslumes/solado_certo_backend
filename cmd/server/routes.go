@@ -17,6 +17,8 @@ func initRoutes(r *gin.Engine, a *config.App) {
 
 	registerLimiter := ratelimit.New(5, time.Minute)
 	loginLimiter := ratelimit.New(5, time.Minute)
+	forgotPasswordLimiter := ratelimit.New(5, time.Minute)
+	resetPasswordLimiter := ratelimit.New(5, time.Minute)
 
 	authGroup := r.Group("/auth")
 	{
@@ -24,6 +26,8 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		authGroup.POST("/login", loginLimiter.Middleware(), a.AuthHandler.Login)
 		authGroup.POST("/logout", a.AuthHandler.Logout)
 		authGroup.POST("/refresh-token", a.AuthHandler.RefreshToken)
+		authGroup.POST("/password/forgot", forgotPasswordLimiter.Middleware(), a.AuthHandler.ForgotPassword)
+		authGroup.POST("/password/reset", resetPasswordLimiter.Middleware(), a.AuthHandler.ResetPassword)
 	}
 
 	meGroup := r.Group("/me", a.AuthMiddleware.Middleware())

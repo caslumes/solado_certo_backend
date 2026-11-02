@@ -16,6 +16,7 @@ const testSecretKey = "test-secret-key"
 type fakeRepository struct {
 	tokens map[string]*RefreshTokenEntity
 	users  map[string]*UserEntity
+	resets []*PasswordResetEntity
 }
 
 func newFakeRepository() *fakeRepository {

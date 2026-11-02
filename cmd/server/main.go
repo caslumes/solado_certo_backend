@@ -74,6 +74,7 @@ func run() error {
 	}
 	jobs.Wait()
 	app.PaymentsHandler.Wait()
+	app.PendingMail.WaitForMail()
 	return nil
 }
 

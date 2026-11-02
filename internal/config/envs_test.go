@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/caslumes/solado_certo_backend/pkg/gateway/asaas"
+	"github.com/caslumes/solado_certo_backend/pkg/mailer"
 )
 
 const validSecretKey = "0123456789abcdef0123456789abcdef"
@@ -96,5 +97,42 @@ func TestNewPaymentGateway(t *testing.T) {
 		if got.Name() != name {
 			t.Errorf("PAYMENT_GATEWAY=%s gives %q", name, got.Name())
 		}
+	}
+}
+
+func TestLoadEnvsMail(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/db")
+	t.Setenv("SECRET_KEY", validSecretKey)
+	t.Setenv("PAYMENT_GATEWAY", PaymentGatewayFake)
+	t.Setenv("SMTP_HOST", "")
+	t.Setenv("SMTP_PORT", "")
+	t.Setenv("MAIL_FROM", "")
+
+	envs, err := LoadEnvs()
+	if err != nil {
+		t.Fatalf("LoadEnvs: %v", err)
+	}
+	if envs.SMTPHost != "" || envs.SMTPPort != defaultSMTPPort || envs.MailFrom != defaultMailFrom {
+		t.Fatalf("envs = %+v", envs)
+	}
+
+	t.Setenv("SMTP_HOST", "mailpit")
+	t.Setenv("SMTP_PORT", "2525")
+	t.Setenv("MAIL_FROM", "Loja <loja@example.com>")
+	envs, err = LoadEnvs()
+	if err != nil {
+		t.Fatalf("LoadEnvs: %v", err)
+	}
+	if envs.SMTPHost != "mailpit" || envs.SMTPPort != "2525" || envs.MailFrom != "Loja <loja@example.com>" {
+		t.Fatalf("envs = %+v", envs)
+	}
+}
+
+func TestNewMailer(t *testing.T) {
+	if _, ok := newMailer(&Envs{}).(mailer.Disabled); !ok {
+		t.Error("no SMTP_HOST should disable e-mail")
+	}
+	if _, ok := newMailer(&Envs{SMTPHost: "mailpit", SMTPPort: "1025"}).(*mailer.SMTP); !ok {
+		t.Error("SMTP_HOST should send through SMTP")
 	}
 }

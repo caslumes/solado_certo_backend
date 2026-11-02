@@ -53,8 +53,16 @@ The server reloads automatically ([Air](https://github.com/air-verse/air)) when 
 | `ASAAS_API_KEY` | With `asaas` | Asaas API key (sandbox account) |
 | `ASAAS_BASE_URL` | No (default sandbox) | Asaas API address, `https://api-sandbox.asaas.com/v3` by default |
 | `ASAAS_WEBHOOK_TOKEN` | No | Token set on the webhook in the Asaas dashboard, checked on `POST /webhooks/asaas`. Without it webhooks are refused and statuses come from polling (every 2 minutes, and whenever the app lists an order's payments) |
+| `SMTP_HOST` | No | SMTP server for e-mails (password recovery codes). Compose sets it to `mailpit`; when empty, e-mails are dropped with a warning in the log |
+| `SMTP_PORT` | No (default `1025`) | SMTP port |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | No | SMTP login, used only when `SMTP_USERNAME` is set (Go then requires TLS unless the host is `localhost`) |
+| `MAIL_FROM` | No (default `Solado Certo <nao-responda@soladocerto.local>`) | Sender of the e-mails |
 
 The server exits with a clear error at startup if a required variable is missing or the database is unreachable.
+
+## E-mail in development
+
+Compose runs [Mailpit](https://mailpit.axllent.org/), which accepts every e-mail on port 1025 and delivers nothing. Open http://localhost:8025 to read what the server sent (such as password recovery codes). A real provider only needs the `SMTP_*` variables.
 
 ## Database and migrations
 
@@ -118,6 +126,8 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `POST` | `/auth/login` | Returns `access_token` and `refresh_token`. Rate limited: 5/min per IP |
 | `POST` | `/auth/refresh-token` | Exchange a refresh token for a new token pair (the old one is revoked) |
 | `POST` | `/auth/logout` | Revoke a refresh token |
+| `POST` | `/auth/password/forgot` | `email`. Always 202, whether or not the account exists; when it does, e-mails a 6-digit code valid for 15 minutes (at most one per minute, and a new one replaces the previous). Rate limited: 5/min per IP |
+| `POST` | `/auth/password/reset` | `email`, `code`, `new_password`. 400 `invalid or expired code`, or `too many attempts, request a new code` after 5 tries of the same code. Success revokes every refresh token of the account. Rate limited: 5/min per IP |
 | `GET` / `PATCH` | `/me/profile` | Read / edit name, email and phone (`avatar_url` is ignored; it changes only through `/me/avatar`) |
 | `PUT` / `DELETE` | `/me/avatar` | Upload the profile photo (multipart field `avatar`) / remove it. The old file is deleted. Returns the profile |
 | `GET` / `POST` | `/me/addresses` | List / add addresses |
@@ -148,7 +158,7 @@ cmd/server/            entry point: HTTP server, routes, CORS, graceful shutdown
 internal/
   config/              environment variables, database pool, dependency wiring (InitApp)
   features/
-    auth/              register, login, refresh, logout (JWT + bcrypt)
+    auth/              register, login, refresh, logout, password recovery (JWT + bcrypt)
     me/                profile, addresses, podological profile, consents, roles, onboarding
     catalog/           ads and categories
     files/             serves public uploaded files
@@ -160,6 +170,7 @@ internal/
   helpers/             small shared helpers
 pkg/
   storage/             Storage interface for uploaded files and its local-disk implementation (no dependency on internal/)
+  mailer/              Mailer interface, SMTP implementation and a disabled one (no dependency on internal/)
 data/migrations/       SQL migrations (run on first start)
 .setup/build/          Dockerfiles (dev: Air hot reload; prod: compiled binary)
 ```

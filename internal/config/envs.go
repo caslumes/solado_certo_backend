@@ -11,6 +11,8 @@ const (
 	minSecretKeyLength = 32
 	defaultServerPort  = "3000"
 	defaultUploadsDir  = "data/uploads"
+	defaultSMTPPort    = "1025"
+	defaultMailFrom    = "Solado Certo <nao-responda@soladocerto.local>"
 
 	PaymentGatewayAsaas = "asaas"
 	PaymentGatewayFake  = "fake"
@@ -26,6 +28,12 @@ type Envs struct {
 	AsaasAPIKey       string
 	AsaasBaseURL      string
 	AsaasWebhookToken string
+
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUsername string
+	SMTPPassword string
+	MailFrom     string
 }
 
 func LoadEnvs() (*Envs, error) {
@@ -60,6 +68,11 @@ func LoadEnvs() (*Envs, error) {
 		AsaasAPIKey:       asaasAPIKey,
 		AsaasBaseURL:      getString("ASAAS_BASE_URL", asaas.SandboxURL),
 		AsaasWebhookToken: os.Getenv("ASAAS_WEBHOOK_TOKEN"),
+		SMTPHost:          os.Getenv("SMTP_HOST"),
+		SMTPPort:          getString("SMTP_PORT", defaultSMTPPort),
+		SMTPUsername:      os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:      os.Getenv("SMTP_PASSWORD"),
+		MailFrom:          getString("MAIL_FROM", defaultMailFrom),
 	}, nil
 }
 

@@ -18,6 +18,8 @@ type fakeService struct {
 	login        func(context.Context, *auth.LoginInput) (auth.TokenPair, error)
 	logout       func(context.Context, string) error
 	refreshToken func(context.Context, string) (auth.TokenPair, error)
+	forgot       func(context.Context, string) error
+	reset        func(context.Context, *auth.ResetPasswordInput) error
 }
 
 func (f fakeService) Register(ctx context.Context, input *auth.RegisterInput) error {
@@ -36,6 +38,14 @@ func (f fakeService) RefreshToken(ctx context.Context, refreshToken string) (aut
 	return f.refreshToken(ctx, refreshToken)
 }
 
+func (f fakeService) ForgotPassword(ctx context.Context, email string) error {
+	return f.forgot(ctx, email)
+}
+
+func (f fakeService) ResetPassword(ctx context.Context, input *auth.ResetPasswordInput) error {
+	return f.reset(ctx, input)
+}
+
 func init() {
 	gin.SetMode(gin.TestMode)
 }
@@ -45,6 +55,8 @@ func serve(handler *Handler, request *http.Request) *httptest.ResponseRecorder {
 	router.POST("/auth/register", handler.Register)
 	router.POST("/auth/login", handler.Login)
 	router.POST("/auth/refresh-token", handler.RefreshToken)
+	router.POST("/auth/password/forgot", handler.ForgotPassword)
+	router.POST("/auth/password/reset", handler.ResetPassword)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -212,5 +224,100 @@ func TestRefreshTokenRequiresToken(t *testing.T) {
 	}
 	if called {
 		t.Fatal("use case was called without a refresh token")
+	}
+}
+
+func TestForgotPasswordAnswersAccepted(t *testing.T) {
+	var received string
+	handler := NewHandler(fakeService{
+		forgot: func(_ context.Context, email string) error {
+			received = email
+			return nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/auth/password/forgot", strings.NewReader(`{"email":"ana@example.com"}`))
+	recorder := serve(handler, request)
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusAccepted)
+	}
+	if received != "ana@example.com" {
+		t.Fatalf("email = %q", received)
+	}
+}
+
+func TestForgotPasswordMapsErrors(t *testing.T) {
+	tests := map[string]struct {
+		body string
+		err  error
+		want int
+	}{
+		"malformed JSON": {"{", nil, http.StatusBadRequest},
+		"invalid e-mail": {`{"email":"ana"}`, app.ErrInvalidInput, http.StatusBadRequest},
+		"unexpected":     {`{"email":"ana@example.com"}`, errors.New("database unavailable"), http.StatusInternalServerError},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			handler := NewHandler(fakeService{
+				forgot: func(context.Context, string) error { return tt.err },
+			})
+
+			recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/auth/password/forgot", strings.NewReader(tt.body)))
+
+			if recorder.Code != tt.want {
+				t.Fatalf("status = %d, want %d", recorder.Code, tt.want)
+			}
+		})
+	}
+}
+
+func TestResetPasswordDecodesRequest(t *testing.T) {
+	var received *auth.ResetPasswordInput
+	handler := NewHandler(fakeService{
+		reset: func(_ context.Context, input *auth.ResetPasswordInput) error {
+			received = input
+			return nil
+		},
+	})
+
+	body := `{"email":"ana@example.com","code":"123456","new_password":"new-password"}`
+	recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/auth/password/reset", strings.NewReader(body)))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if received == nil || received.Email != "ana@example.com" || received.Code != "123456" || received.NewPassword != "new-password" {
+		t.Fatalf("received = %#v", received)
+	}
+}
+
+func TestResetPasswordMapsErrors(t *testing.T) {
+	tests := map[string]struct {
+		body     string
+		err      error
+		want     int
+		wantBody string
+	}{
+		"malformed JSON":    {"{", nil, http.StatusBadRequest, "invalid request body"},
+		"invalid input":     {`{}`, app.ErrInvalidInput, http.StatusBadRequest, "invalid input"},
+		"wrong code":        {`{}`, app.ErrInvalidResetCode, http.StatusBadRequest, "invalid or expired code"},
+		"too many attempts": {`{}`, app.ErrResetAttemptsExceeded, http.StatusBadRequest, "too many attempts"},
+		"unexpected":        {`{}`, errors.New("database unavailable"), http.StatusInternalServerError, "could not reset"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			handler := NewHandler(fakeService{
+				reset: func(context.Context, *auth.ResetPasswordInput) error { return tt.err },
+			})
+
+			recorder := serve(handler, httptest.NewRequest(http.MethodPost, "/auth/password/reset", strings.NewReader(tt.body)))
+
+			if recorder.Code != tt.want || !strings.Contains(recorder.Body.String(), tt.wantBody) {
+				t.Fatalf("status = %d, body = %s; want %d with %q", recorder.Code, recorder.Body.String(), tt.want, tt.wantBody)
+			}
+		})
 	}
 }

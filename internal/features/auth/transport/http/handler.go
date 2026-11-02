@@ -14,6 +14,8 @@ type Service interface {
 	auth.LoginUseCase
 	auth.LogoutUseCase
 	auth.RefreshTokenUseCase
+	auth.ForgotPasswordUseCase
+	auth.ResetPasswordUseCase
 }
 
 type Handler struct {
@@ -38,6 +40,16 @@ type loginRequest struct {
 
 type refreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type resetPasswordRequest struct {
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	NewPassword string `json:"new_password"`
 }
 
 func (h *Handler) Register(c *gin.Context) {
@@ -155,4 +167,48 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"access_token": tokenPair.AccessToken, "refresh_token": tokenPair.RefreshToken})
+}
+
+func (h *Handler) ForgotPassword(c *gin.Context) {
+	var request forgotPasswordRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	err := h.service.ForgotPassword(c.Request.Context(), request.Email)
+	if err != nil {
+		if errors.Is(err, app.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not send the code"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "if the e-mail is registered, a code was sent to it"})
+}
+
+func (h *Handler) ResetPassword(c *gin.Context) {
+	var request resetPasswordRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	err := h.service.ResetPassword(c.Request.Context(), &auth.ResetPasswordInput{
+		Email:       request.Email,
+		Code:        request.Code,
+		NewPassword: request.NewPassword,
+	})
+	if err != nil {
+		if errors.Is(err, app.ErrInvalidInput) || errors.Is(err, app.ErrInvalidResetCode) || errors.Is(err, app.ErrResetAttemptsExceeded) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not reset the password"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "password changed"})
 }

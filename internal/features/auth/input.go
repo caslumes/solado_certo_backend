@@ -11,3 +11,9 @@ type LoginInput struct {
 	Email    string
 	Password string
 }
+
+type ResetPasswordInput struct {
+	Email       string
+	Code        string
+	NewPassword string
+}
