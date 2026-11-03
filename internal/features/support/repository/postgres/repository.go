@@ -25,15 +25,16 @@ func NewPostgresRepository(pool *pgxpool.Pool) *postgresRepository {
 
 const orderSeller = "(SELECT oi.seller_id FROM order_items oi WHERE oi.order_id = o.id LIMIT 1)"
 
-const selectTickets = "SELECT t.id, t.category, t.status, t.subject, t.description, t.opened_by, t.assigned_to, t.resolution, " +
+const selectTickets = "SELECT t.id, t.category, t.status, t.subject, t.description, t.opened_by, ou.name, t.assigned_to, au.name, t.resolution, " +
 	"t.opened_at, t.updated_at, t.closed_at, o.id, o.number, o.buyer_id, " + orderSeller + " " +
-	"FROM support_tickets t LEFT JOIN orders o ON o.id = t.order_id "
+	"FROM support_tickets t JOIN users ou ON ou.id = t.opened_by LEFT JOIN users au ON au.id = t.assigned_to " +
+	"LEFT JOIN orders o ON o.id = t.order_id "
 
 func scanTicket(row pgx.Row) (*support.TicketEntity, error) {
 	var t support.TicketEntity
 	var orderID, orderNumber, buyerID, sellerID *string
 	err := row.Scan(
-		&t.ID, &t.Category, &t.Status, &t.Subject, &t.Description, &t.OpenedBy, &t.AssignedTo, &t.Resolution,
+		&t.ID, &t.Category, &t.Status, &t.Subject, &t.Description, &t.OpenedBy, &t.OpenerName, &t.AssignedTo, &t.Assignee, &t.Resolution,
 		&t.OpenedAt, &t.UpdatedAt, &t.ClosedAt, &orderID, &orderNumber, &buyerID, &sellerID,
 	)
 	if err != nil {
@@ -160,6 +161,17 @@ func filter(f support.Filter) (string, []any) {
 		args = append(args, f.Status)
 		where += fmt.Sprintf(" AND t.status = $%d", len(args))
 	}
+	if f.Active {
+		args = append(args, []support.Status{support.StatusResolved, support.StatusClosed})
+		where += fmt.Sprintf(" AND t.status <> ALL($%d)", len(args))
+	}
+	if f.AssignedTo != "" {
+		args = append(args, f.AssignedTo)
+		where += fmt.Sprintf(" AND t.assigned_to = $%d", len(args))
+	}
+	if f.Unassigned {
+		where += " AND t.assigned_to IS NULL"
+	}
 	return where, args
 }
 
@@ -243,6 +255,52 @@ func (r *postgresRepository) RecordAttachmentView(ctx context.Context, ticketID 
 	defer tx.Rollback(ctx)
 
 	if err := audit(ctx, tx, userID, ticketID, "support.attachment_viewed", map[string]any{"message_id": messageID}, time.Now().UTC()); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *postgresRepository) ChangeTicket(ctx context.Context, change support.TicketChange) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var status support.Status
+	err = tx.QueryRow(ctx, "SELECT status FROM support_tickets WHERE id = $1 FOR UPDATE", change.TicketID).Scan(&status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return app.ErrTicketNotFound
+		}
+		return err
+	}
+	if status != change.From {
+		return fmt.Errorf("%w: the ticket is now %s", app.ErrInvalidStatusTransition, status)
+	}
+
+	now := time.Now().UTC()
+	var closedAt *time.Time
+	if !change.To.TakesMessages() {
+		closedAt = &now
+	}
+	_, err = tx.Exec(
+		ctx,
+		"UPDATE support_tickets SET status = $2, assigned_to = COALESCE($3, assigned_to), resolution = COALESCE($4, resolution), "+
+			"closed_at = COALESCE($5, closed_at), updated_at = $6 WHERE id = $1",
+		change.TicketID, change.To, change.AssignTo, change.Resolution, closedAt, now,
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, notification := range change.Notifications {
+		if err := notificationsdb.Create(ctx, tx, notification, now); err != nil {
+			return err
+		}
+	}
+
+	if err := audit(ctx, tx, change.ActorID, change.TicketID, change.Action, change.Details, now); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

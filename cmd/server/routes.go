@@ -151,6 +151,27 @@ func initRoutes(r *gin.Engine, a *config.App) {
 		supportGroup.GET("/tickets/:ticketID/messages/:messageID/attachment", a.SupportHandler.OpenAttachment)
 	}
 
+	adminGroup := r.Group("/admin", a.AuthMiddleware.Middleware(), a.RoleMiddleware.RequireRole(enum.RoleAdmin))
+	{
+		adminGroup.GET("/indicators", a.AdminHandler.GetIndicators)
+
+		adminGroup.GET("/users", a.AdminHandler.ListUsers)
+		adminGroup.POST("/users/:userID/block", a.AdminHandler.BlockUser)
+		adminGroup.POST("/users/:userID/suspend", a.AdminHandler.SuspendUser)
+		adminGroup.POST("/users/:userID/reactivate", a.AdminHandler.ReactivateUser)
+
+		adminGroup.GET("/ads", a.AdminHandler.ListAds)
+		adminGroup.POST("/ads/:advertisementID/remove", a.AdminHandler.RemoveAd)
+
+		adminGroup.GET("/orders", a.AdminHandler.ListOrders)
+		adminGroup.GET("/payments", a.AdminHandler.ListPayments)
+		adminGroup.GET("/audit-logs", a.AdminHandler.ListAuditLogs)
+
+		adminGroup.GET("/support/tickets", a.SupportHandler.ListQueue)
+		adminGroup.POST("/support/tickets/:ticketID/assign", a.SupportHandler.AssignTicket)
+		adminGroup.POST("/support/tickets/:ticketID/close", a.SupportHandler.CloseTicket)
+	}
+
 	r.POST("/webhooks/asaas", a.PaymentsHandler.AsaasWebhook)
 
 	r.GET("/documents/:documentID", a.AuthMiddleware.Middleware(), a.DocumentsHandler.OpenDocument)

@@ -7,6 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/caslumes/solado_certo_backend/internal/features/admin"
+	adminRepository "github.com/caslumes/solado_certo_backend/internal/features/admin/repository/postgres"
+	httpadmin "github.com/caslumes/solado_certo_backend/internal/features/admin/transport/http"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
 	authRepository "github.com/caslumes/solado_certo_backend/internal/features/auth/repository/postgres"
 	httpauth "github.com/caslumes/solado_certo_backend/internal/features/auth/transport/http"
@@ -72,6 +75,7 @@ type App struct {
 	DocumentsHandler     *httpdocuments.Handler
 	CustomOrdersHandler  *httpcustomorders.Handler
 	SupportHandler       *httpsupport.Handler
+	AdminHandler         *httpadmin.Handler
 	PendingMail          auth.WaitForMailUseCase
 }
 
@@ -125,6 +129,7 @@ func InitApp(ctx context.Context) (*App, error) {
 		DocumentsHandler:     httpdocuments.NewHandler(documentsService),
 		CustomOrdersHandler:  httpcustomorders.NewHandler(customOrdersService),
 		SupportHandler:       httpsupport.NewHandler(supportService),
+		AdminHandler:         httpadmin.NewHandler(admin.NewService(adminRepository.NewPostgresRepository(dbPool))),
 		PendingMail:          authService,
 	}, nil
 }

@@ -102,6 +102,15 @@ func (h *Handler) Login(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
+		if errors.Is(err, app.ErrAccountBlocked) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "this account is blocked", "code": "account_blocked"})
+			return
+		}
+		var suspended *app.AccountSuspendedError
+		if errors.As(err, &suspended) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "this account is suspended", "code": "account_suspended", "suspended_until": suspended.Until})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not login user"})
 		return
 	}

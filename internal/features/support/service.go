@@ -38,6 +38,18 @@ type OpenAttachmentUseCase interface {
 	OpenAttachment(ctx context.Context, userID string, id string, messageID string) (*AttachmentFile, error)
 }
 
+type ListQueueUseCase interface {
+	ListQueue(ctx context.Context, adminID string, query QueueQuery, page uint, limit uint) (*TicketPage, error)
+}
+
+type AssignTicketUseCase interface {
+	AssignTicket(ctx context.Context, adminID string, id string) (*TicketDetailEntity, error)
+}
+
+type CloseTicketUseCase interface {
+	CloseTicket(ctx context.Context, adminID string, id string, resolution string) (*TicketDetailEntity, error)
+}
+
 type RoleChecker interface {
 	HasRole(ctx context.Context, userID string, role enum.Role) (bool, error)
 }
@@ -51,6 +63,7 @@ type repository interface {
 	GetTickets(ctx context.Context, filter Filter, limit uint, offset uint) ([]*TicketEntity, error)
 	AddMessage(ctx context.Context, message NewMessage) error
 	RecordAttachmentView(ctx context.Context, ticketID string, messageID string, userID string) error
+	ChangeTicket(ctx context.Context, change TicketChange) error
 }
 
 type service struct {
@@ -126,13 +139,118 @@ func (s *service) CreateTicket(ctx context.Context, userID string, input TicketI
 }
 
 func (s *service) ListTickets(ctx context.Context, userID string, status Status, page uint, limit uint) (*TicketPage, error) {
-	if status != "" && !slices.Contains(statuses, status) {
-		names := make([]string, len(statuses))
-		for i, st := range statuses {
-			names[i] = string(st)
-		}
-		return nil, fmt.Errorf("%w: status must be one of %s", app.ErrInvalidInput, strings.Join(names, ", "))
+	if err := checkStatus(status); err != nil {
+		return nil, err
 	}
+	return s.page(ctx, Filter{ParticipantID: userID, Status: status}, page, limit)
+}
+
+func (s *service) ListQueue(ctx context.Context, adminID string, query QueueQuery, page uint, limit uint) (*TicketPage, error) {
+	filter := Filter{}
+	switch status := Status(query.Status); status {
+	case "":
+	case queueActive:
+		filter.Active = true
+	default:
+		if err := checkStatus(status); err != nil {
+			return nil, err
+		}
+		filter.Status = status
+	}
+	switch query.Assigned {
+	case "":
+	case assignedToMe:
+		filter.AssignedTo = adminID
+	case assignedToNobody:
+		filter.Unassigned = true
+	default:
+		return nil, fmt.Errorf("%w: assigned must be %s or %s", app.ErrInvalidInput, assignedToMe, assignedToNobody)
+	}
+	return s.page(ctx, filter, page, limit)
+}
+
+func (s *service) AssignTicket(ctx context.Context, adminID string, id string) (*TicketDetailEntity, error) {
+	ticket, err := s.load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !ticket.Status.TakesMessages() {
+		return nil, fmt.Errorf("%w: a %s ticket cannot be assigned", app.ErrInvalidStatusTransition, ticket.Status)
+	}
+	if ticket.AssignedTo != nil && *ticket.AssignedTo == adminID {
+		return ticket, nil
+	}
+
+	to := ticket.Status
+	if to == StatusOpen {
+		to = StatusInProgress
+	}
+	details := map[string]any{"previous_assignee": ticket.AssignedTo, "previous_status": ticket.Status, "status": to}
+	err = s.r.ChangeTicket(ctx, TicketChange{
+		TicketID: ticket.ID, ActorID: adminID, From: ticket.Status, To: to, AssignTo: &adminID,
+		Action: "support.ticket_assigned", Details: details,
+	})
+	if err != nil {
+		if !errors.Is(err, app.ErrInvalidStatusTransition) {
+			slog.ErrorContext(ctx, "AssignTicket failed", "ticket_id", ticket.ID, "error", err)
+		}
+		return nil, err
+	}
+
+	return s.load(ctx, ticket.ID)
+}
+
+func (s *service) CloseTicket(ctx context.Context, adminID string, id string, resolution string) (*TicketDetailEntity, error) {
+	text, err := checkResolution(resolution)
+	if err != nil {
+		return nil, err
+	}
+
+	ticket, err := s.load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !ticket.Status.TakesMessages() {
+		return nil, fmt.Errorf("%w: the ticket is already %s", app.ErrInvalidStatusTransition, ticket.Status)
+	}
+
+	var assignTo *string
+	if ticket.AssignedTo == nil {
+		assignTo = &adminID
+	}
+	var list []notifications.NewNotification
+	for _, party := range ticket.parties() {
+		if party != adminID {
+			list = append(list, notifications.SupportTicketResolved(party, ticket.ID, ticket.Subject, text))
+		}
+	}
+	err = s.r.ChangeTicket(ctx, TicketChange{
+		TicketID: ticket.ID, ActorID: adminID, From: ticket.Status, To: StatusResolved, AssignTo: assignTo, Resolution: &text,
+		Action: "support.ticket_resolved", Details: map[string]any{"previous_status": ticket.Status, "resolution": text},
+		Notifications: list,
+	})
+	if err != nil {
+		if !errors.Is(err, app.ErrInvalidStatusTransition) {
+			slog.ErrorContext(ctx, "CloseTicket failed", "ticket_id", ticket.ID, "error", err)
+		}
+		return nil, err
+	}
+
+	return s.load(ctx, ticket.ID)
+}
+
+func checkStatus(status Status) error {
+	if status == "" || slices.Contains(statuses, status) {
+		return nil
+	}
+	names := make([]string, len(statuses))
+	for i, st := range statuses {
+		names[i] = string(st)
+	}
+	return fmt.Errorf("%w: status must be one of %s", app.ErrInvalidInput, strings.Join(names, ", "))
+}
+
+func (s *service) page(ctx context.Context, filter Filter, page uint, limit uint) (*TicketPage, error) {
 	if page == 0 {
 		page = 1
 	}
@@ -143,7 +261,6 @@ func (s *service) ListTickets(ctx context.Context, userID string, status Status,
 		return nil, fmt.Errorf("%w: limit must be at most %d", app.ErrInvalidInput, maxTicketsPerPage)
 	}
 
-	filter := Filter{ParticipantID: userID, Status: status}
 	total, err := s.r.CountTickets(ctx, filter)
 	if err != nil {
 		slog.ErrorContext(ctx, "CountTickets failed", "error", err)

@@ -68,9 +68,9 @@ func (r *postgresRepository) GetUserByEmail(ctx context.Context, email string) (
 	var um model.UserModel
 	err := r.pool.QueryRow(
 		ctx,
-		"SELECT id, name, email, phone, password_hash, status, created_at, updated_at FROM users WHERE email = $1",
+		"SELECT id, name, email, phone, password_hash, status, suspended_until, created_at, updated_at FROM users WHERE email = $1",
 		email,
-	).Scan(&um.ID, &um.Name, &um.Email, &um.Phone, &um.PasswordHash, &um.Status, &um.CreatedAt, &um.UpdatedAt)
+	).Scan(&um.ID, &um.Name, &um.Email, &um.Phone, &um.PasswordHash, &um.Status, &um.SuspendedUntil, &um.CreatedAt, &um.UpdatedAt)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

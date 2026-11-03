@@ -7,15 +7,16 @@ import (
 )
 
 type UserModel struct {
-	ID           string
-	Name         string
-	Email        string
-	Phone        string
-	PasswordHash string
-	Status       string
-	CreatedAt    *time.Time
-	UpdatedAt    *time.Time
-	DeletedAt    *time.Time
+	ID             string
+	Name           string
+	Email          string
+	Phone          string
+	PasswordHash   string
+	Status         string
+	SuspendedUntil *time.Time
+	CreatedAt      *time.Time
+	UpdatedAt      *time.Time
+	DeletedAt      *time.Time
 }
 
 func (u *UserModel) ToEntity() auth.UserEntity {
@@ -26,6 +27,7 @@ func (u *UserModel) ToEntity() auth.UserEntity {
 	ue.Phone = u.Phone
 	ue.PasswordHash = u.PasswordHash
 	ue.Status = u.Status
+	ue.SuspendedUntil = u.SuspendedUntil
 	ue.CreatedAt = u.CreatedAt
 	ue.UpdatedAt = u.UpdatedAt
 	ue.DeletedAt = u.DeletedAt

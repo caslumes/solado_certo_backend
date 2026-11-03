@@ -57,6 +57,8 @@ const (
 	minDescriptionLength = 20
 	maxDescriptionLength = 2000
 	maxMessageLength     = 2000
+	minResolutionLength  = 10
+	maxResolutionLength  = 2000
 
 	defaultTicketsPerPage = 10
 	maxTicketsPerPage     = 100
@@ -139,6 +141,17 @@ func checkMessage(message string) (string, error) {
 	return trimmed, nil
 }
 
+func checkResolution(resolution string) (string, error) {
+	trimmed := strings.TrimSpace(resolution)
+	if trimmed == "" {
+		return "", &app.MissingFieldsError{Fields: []string{"resolution"}}
+	}
+	if n := len([]rune(trimmed)); n < minResolutionLength || n > maxResolutionLength {
+		return "", fmt.Errorf("%w: resolution must have between %d and %d characters", app.ErrInvalidInput, minResolutionLength, maxResolutionLength)
+	}
+	return trimmed, nil
+}
+
 type OrderParties struct {
 	ID       string
 	Number   string
@@ -169,6 +182,18 @@ type NewMessage struct {
 	Notifications []notifications.NewNotification
 }
 
+type TicketChange struct {
+	TicketID      string
+	ActorID       string
+	From          Status
+	To            Status
+	AssignTo      *string
+	Resolution    *string
+	Action        string
+	Details       map[string]any
+	Notifications []notifications.NewNotification
+}
+
 type TicketEntity struct {
 	ID          string
 	Category    Category
@@ -176,7 +201,9 @@ type TicketEntity struct {
 	Subject     string
 	Description string
 	OpenedBy    string
+	OpenerName  string
 	AssignedTo  *string
+	Assignee    *string
 	Resolution  *string
 	Order       *OrderParties
 	OpenedAt    time.Time
@@ -250,16 +277,17 @@ func (t *TicketEntity) ToSummaryOutput(viewerID string) TicketSummaryOutput {
 		orderID, orderNumber = &t.Order.ID, &t.Order.Number
 	}
 	return TicketSummaryOutput{
-		ID:          t.ID,
-		Category:    string(t.Category),
-		Status:      string(t.Status),
-		Subject:     t.Subject,
-		OrderID:     orderID,
-		OrderNumber: orderNumber,
-		OpenedByMe:  t.OpenedBy == viewerID,
-		OpenedAt:    t.OpenedAt,
-		UpdatedAt:   t.UpdatedAt,
-		ClosedAt:    t.ClosedAt,
+		ID:           t.ID,
+		Category:     string(t.Category),
+		Status:       string(t.Status),
+		Subject:      t.Subject,
+		OrderID:      orderID,
+		OrderNumber:  orderNumber,
+		OpenedByMe:   t.OpenedBy == viewerID,
+		AssignedToMe: t.AssignedTo != nil && *t.AssignedTo == viewerID,
+		OpenedAt:     t.OpenedAt,
+		UpdatedAt:    t.UpdatedAt,
+		ClosedAt:     t.ClosedAt,
 	}
 }
 
@@ -329,9 +357,23 @@ type AttachmentFile struct {
 	Name        string
 }
 
+type QueueQuery struct {
+	Status   string
+	Assigned string
+}
+
+const (
+	queueActive      Status = "active"
+	assignedToMe            = "me"
+	assignedToNobody        = "none"
+)
+
 type Filter struct {
 	ParticipantID string
 	Status        Status
+	Active        bool
+	AssignedTo    string
+	Unassigned    bool
 }
 
 type TicketPage struct {
@@ -347,6 +389,36 @@ func (p *TicketPage) ToOutput(viewerID string) *TicketPageOutput {
 		items[i] = ticket.ToSummaryOutput(viewerID)
 	}
 	return &TicketPageOutput{
+		Items:       items,
+		CurrentPage: p.CurrentPage,
+		TotalPages:  p.TotalPages,
+		TotalItems:  p.TotalItems,
+		HasNext:     p.CurrentPage < p.TotalPages,
+		HasPrevious: p.CurrentPage > 1,
+	}
+}
+
+func (t *TicketEntity) ToQueueOutput(viewerID string) QueueItemOutput {
+	item := QueueItemOutput{
+		TicketSummaryOutput: t.ToSummaryOutput(viewerID),
+		OpenedBy:            PersonOutput{ID: t.OpenedBy, Name: t.OpenerName},
+	}
+	if t.AssignedTo != nil {
+		name := ""
+		if t.Assignee != nil {
+			name = *t.Assignee
+		}
+		item.AssignedTo = &PersonOutput{ID: *t.AssignedTo, Name: name}
+	}
+	return item
+}
+
+func (p *TicketPage) ToQueueOutput(viewerID string) *QueuePageOutput {
+	items := make([]QueueItemOutput, len(p.Items))
+	for i, ticket := range p.Items {
+		items[i] = ticket.ToQueueOutput(viewerID)
+	}
+	return &QueuePageOutput{
 		Items:       items,
 		CurrentPage: p.CurrentPage,
 		TotalPages:  p.TotalPages,

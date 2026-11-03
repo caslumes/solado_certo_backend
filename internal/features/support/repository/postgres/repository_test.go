@@ -249,3 +249,64 @@ func TestRecordAttachmentView(t *testing.T) {
 		t.Fatalf("audit rows = %d", n)
 	}
 }
+
+func TestChangeTicketAssignsResolvesAndAudits(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	id := f.createTicket(t, f.buyer.ID, &f.orderID, nil)
+
+	err := f.r.ChangeTicket(ctx, support.TicketChange{
+		TicketID: id, ActorID: f.admin.ID, From: support.StatusOpen, To: support.StatusInProgress, AssignTo: &f.admin.ID,
+		Action: "support.ticket_assigned", Details: map[string]any{"status": support.StatusInProgress},
+	})
+	if err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	queue, err := f.r.GetTickets(ctx, support.Filter{AssignedTo: f.admin.ID, Active: true}, 10, 0)
+	if err != nil {
+		t.Fatalf("GetTickets: %v", err)
+	}
+	if len(queue) != 1 || queue[0].Assignee == nil || *queue[0].Assignee != f.admin.Name || queue[0].OpenerName != f.buyer.Name || queue[0].ClosedAt != nil {
+		t.Fatalf("queue = %+v", queue)
+	}
+
+	resolution := "Troca autorizada pelo vendedor."
+	err = f.r.ChangeTicket(ctx, support.TicketChange{
+		TicketID: id, ActorID: f.admin.ID, From: support.StatusInProgress, To: support.StatusResolved, Resolution: &resolution,
+		Action: "support.ticket_resolved", Details: map[string]any{"resolution": resolution},
+		Notifications: []notifications.NewNotification{notifications.SupportTicketResolved(f.buyer.ID, id, "Produto errado", resolution)},
+	})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	ticket, err := f.r.GetTicket(ctx, id)
+	if err != nil {
+		t.Fatalf("GetTicket: %v", err)
+	}
+	if ticket.Status != support.StatusResolved || ticket.Resolution == nil || *ticket.Resolution != resolution || ticket.ClosedAt == nil ||
+		ticket.AssignedTo == nil || *ticket.AssignedTo != f.admin.ID {
+		t.Fatalf("ticket = %+v", ticket.TicketEntity)
+	}
+	if n := f.count(t, "SELECT count(*) FROM audit_logs WHERE entity_id = $1 AND user_id = $2 AND action IN ('support.ticket_assigned', 'support.ticket_resolved')", id, f.admin.ID); n != 2 {
+		t.Fatalf("audit rows = %d", n)
+	}
+	if n := f.count(t, "SELECT count(*) FROM notifications WHERE user_id = $1 AND title = 'Chamado resolvido'", f.buyer.ID); n != 1 {
+		t.Fatalf("notifications = %d", n)
+	}
+	if active, _ := f.r.CountTickets(ctx, support.Filter{Active: true}); active != 0 {
+		t.Fatalf("active = %d", active)
+	}
+	if unassigned, _ := f.r.CountTickets(ctx, support.Filter{Unassigned: true}); unassigned != 0 {
+		t.Fatalf("unassigned = %d", unassigned)
+	}
+
+	err = f.r.ChangeTicket(ctx, support.TicketChange{TicketID: id, ActorID: f.admin.ID, From: support.StatusInProgress, To: support.StatusResolved, Action: "x"})
+	if !errors.Is(err, app.ErrInvalidStatusTransition) {
+		t.Fatalf("stale: err = %v", err)
+	}
+	err = f.r.ChangeTicket(ctx, support.TicketChange{TicketID: "33333333-3333-3333-3333-333333333333", ActorID: f.admin.ID, Action: "x"})
+	if !errors.Is(err, app.ErrTicketNotFound) {
+		t.Fatalf("unknown: err = %v", err)
+	}
+}

@@ -123,7 +123,7 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 |---|---|---|
 | `GET` | `/health` | Liveness and database check |
 | `POST` | `/auth/register` | Create an account (`name`, `email`, `phone`, `password`) with the `buyer` role. Rate limited: 5/min per IP |
-| `POST` | `/auth/login` | Returns `access_token` and `refresh_token`. Rate limited: 5/min per IP |
+| `POST` | `/auth/login` | Returns `access_token` and `refresh_token`. 403 with `code` `account_blocked`, or `account_suspended` and `suspended_until`, for a moderated account (checked after the password). Rate limited: 5/min per IP |
 | `POST` | `/auth/refresh-token` | Exchange a refresh token for a new token pair (the old one is revoked) |
 | `POST` | `/auth/logout` | Revoke a refresh token |
 | `POST` | `/auth/password/forgot` | `email`. Always 202, whether or not the account exists; when it does, e-mails a 6-digit code valid for 15 minutes (at most one per minute, and a new one replaces the previous). Rate limited: 5/min per IP |
@@ -153,6 +153,15 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `GET` | `/support/tickets/:ticketID` | Ticket with its messages (`sender_role`: `buyer`, `seller`, `support` or `user`). Readable by the opener, the order's buyer and seller, and admins; 404 for anyone else |
 | `POST` | `/support/tickets/:ticketID/messages` | `message` (up to 2000 characters), as JSON or multipart with an optional `file` (PDF, JPEG or PNG up to 5 MB). An admin's answer moves the ticket to `awaiting_customer`; the customer's answer moves it back. 409 once `resolved` or `closed` |
 | `GET` | `/support/tickets/:ticketID/messages/:messageID/attachment` | A message's attachment, for the same readers (reads by others than the sender are audited) |
+| `GET` | `/admin/indicators` | Admin only, like every `/admin` route (403 for anyone else). Counts and sums for `from`–`to` (`YYYY-MM-DD`, Brasília days, both included; the last 30 days by default, at most 366): new users and ads, orders by status, paid orders and amount, payments by status, tickets opened and resolved; and the current blocked and suspended users, published ads, open tickets and refunds the gateway gave up on |
+| `GET` | `/admin/users` | Users, newest first. Optional `q` (name, e-mail or phone), `status` (`active`, `pending`, `inactive`, `blocked`, `suspended`), `role`, `page`, `limit` |
+| `POST` | `/admin/users/:userID/block` · `/suspend` · `/reactivate` | `reason` (5–500 characters); `/suspend` also takes `until` (RFC 3339, up to 365 days ahead). Blocking and suspending revoke the user's refresh tokens; reactivating restores the status from before the block. Admins can't moderate themselves or other admins (403); 409 when the account is already in that state. Audited (`admin.user_*`) |
+| `GET` | `/admin/ads` | Every ad, removed ones included. Optional `q` (title), `status`, `seller_id`, `page`, `limit` |
+| `POST` | `/admin/ads/:advertisementID/remove` | `reason`. The ad leaves the catalog (`removed`), the seller is notified and the removal is audited (`admin.ad_removed`); 409 if already removed |
+| `GET` | `/admin/orders` · `/admin/payments` | Read-only lists, newest first. Orders: optional `q` (number, buyer name or e-mail), `status`, `from`, `to`. Payments: optional `status`, `method`, `from`, `to` and `refund_given_up=true` (captured payments whose refund the gateway refused 10 times, to refund by hand) |
+| `GET` | `/admin/audit-logs` | Audit trail, newest first. Optional `entity`, `entity_id`, `user_id`, `action` (prefix, e.g. `admin.`), `from`, `to` |
+| `GET` | `/admin/support/tickets` | Every ticket with who opened it and who it's assigned to. Optional `status` (a status or `active`), `assigned` (`me` or `none`), `page`, `limit` |
+| `POST` | `/admin/support/tickets/:ticketID/assign` · `/close` | Take a ticket (`open` → `in_progress`) / close it with a `resolution` (10–2000 characters): `resolved`, the parties are notified and see the resolution. 409 once `resolved` or `closed`. Both audited |
 | `GET` | `/files/public/*path` | A public uploaded file (e.g. `/files/public/ads/<name>.jpg`). Private files are only served by the endpoints that own them |
 
 ## Project structure
@@ -168,6 +177,7 @@ internal/
     files/             serves public uploaded files
     seller/            seller ads: CRUD and status changes
     support/           support tickets and their messages
+    admin/             admin area: user and ad moderation, order, payment and audit lists, indicators
       <feature>/       service.go (use cases), entity/input/output types,
                        repository/postgres (SQL), transport/http (Gin handlers)
   middleware/          JWT auth, role checks (RequireRole) and per-IP rate limiting

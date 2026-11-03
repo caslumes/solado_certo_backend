@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
+	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 	"github.com/caslumes/solado_certo_backend/pkg/mailer"
 	"github.com/golang-jwt/jwt/v5"
@@ -176,6 +177,10 @@ func (s *service) Login(context context.Context, input *LoginInput) (TokenPair, 
 
 	if !passwordMatches(ue.PasswordHash, input.Password) {
 		return TokenPair{}, app.ErrInvalidCredentials
+	}
+
+	if err := s.checkAccess(ue); err != nil {
+		return TokenPair{}, err
 	}
 
 	tokenPair, err := s.createTokens(ue.ID)
@@ -539,4 +544,14 @@ func (s *service) parseToken(tokenString, expectedType string) (*Claims, error) 
 	}
 
 	return claims, nil
+}
+
+func (s *service) checkAccess(ue *UserEntity) error {
+	if ue.Status == string(enum.ProfileStatusBlocked) {
+		return app.ErrAccountBlocked
+	}
+	if ue.SuspendedUntil != nil && s.now().Before(*ue.SuspendedUntil) {
+		return &app.AccountSuspendedError{Until: *ue.SuspendedUntil}
+	}
+	return nil
 }

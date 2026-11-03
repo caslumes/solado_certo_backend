@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/features/auth"
@@ -166,6 +167,33 @@ func TestLoginMapsInvalidCredentialsToUnauthorized(t *testing.T) {
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestLoginMapsRefusedAccountsToForbidden(t *testing.T) {
+	tests := map[string]struct {
+		err  error
+		code string
+	}{
+		"blocked":   {app.ErrAccountBlocked, "account_blocked"},
+		"suspended": {&app.AccountSuspendedError{Until: time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)}, "account_suspended"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			handler := NewHandler(fakeService{
+				login: func(context.Context, *auth.LoginInput) (auth.TokenPair, error) {
+					return auth.TokenPair{}, tt.err
+				},
+			})
+
+			request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"ana@example.com","password":"password"}`))
+			recorder := serve(handler, request)
+
+			if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), `"code":"`+tt.code+`"`) {
+				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+			}
+		})
 	}
 }
 

@@ -32,6 +32,7 @@ type fakeRepository struct {
 	tickets       map[string]*TicketDetailEntity
 	notifications []notifications.NewNotification
 	views         []string
+	changes       []TicketChange
 	addErr        error
 }
 
@@ -87,7 +88,9 @@ func (f *fakeRepository) CountTickets(_ context.Context, filter Filter) (uint, e
 func (f *fakeRepository) GetTickets(_ context.Context, filter Filter, limit uint, offset uint) ([]*TicketEntity, error) {
 	var list []*TicketEntity
 	for _, ticket := range f.tickets {
-		if ticket.IsParty(filter.ParticipantID) && (filter.Status == "" || ticket.Status == filter.Status) {
+		if (filter.ParticipantID == "" || ticket.IsParty(filter.ParticipantID)) && (filter.Status == "" || ticket.Status == filter.Status) &&
+			(!filter.Active || ticket.Status.TakesMessages()) && (!filter.Unassigned || ticket.AssignedTo == nil) &&
+			(filter.AssignedTo == "" || (ticket.AssignedTo != nil && *ticket.AssignedTo == filter.AssignedTo)) {
 			list = append(list, &ticket.TicketEntity)
 		}
 	}
@@ -108,6 +111,23 @@ func (f *fakeRepository) AddMessage(_ context.Context, message NewMessage) error
 		Message: message.Message, AttachmentKey: message.AttachmentKey, CreatedAt: time.Now(),
 	})
 	f.notifications = append(f.notifications, message.Notifications...)
+	return nil
+}
+
+func (f *fakeRepository) ChangeTicket(_ context.Context, change TicketChange) error {
+	ticket := f.tickets[change.TicketID]
+	if ticket.Status != change.From {
+		return app.ErrInvalidStatusTransition
+	}
+	ticket.Status = change.To
+	if change.AssignTo != nil {
+		ticket.AssignedTo = change.AssignTo
+	}
+	if change.Resolution != nil {
+		ticket.Resolution = change.Resolution
+	}
+	f.changes = append(f.changes, change)
+	f.notifications = append(f.notifications, change.Notifications...)
 	return nil
 }
 
@@ -481,5 +501,140 @@ func TestTicketOutputShowsRolesFromViewer(t *testing.T) {
 	}
 	if out.Messages[2].AttachmentURL == nil || *out.Messages[2].AttachmentURL != "/support/tickets/"+ticketID+"/messages/m3/attachment" {
 		t.Fatalf("attachment url = %v", out.Messages[2].AttachmentURL)
+	}
+}
+
+func TestListQueueFilters(t *testing.T) {
+	s, repository, _ := newTestService()
+	mine := openTicket(t, s, buyerID, orderTicket())
+	repository.tickets[mine.ID].AssignedTo = new(string)
+	*repository.tickets[mine.ID].AssignedTo = adminID
+	repository.tickets["33333333-3333-3333-3333-333333333333"] = &TicketDetailEntity{TicketEntity: TicketEntity{
+		ID: "33333333-3333-3333-3333-333333333333", Status: StatusResolved, OpenedBy: strangerID,
+	}}
+	ctx := context.Background()
+
+	tests := map[string]struct {
+		query QueueQuery
+		want  []string
+	}{
+		"everything": {QueueQuery{}, []string{mine.ID, "33333333-3333-3333-3333-333333333333"}},
+		"active":     {QueueQuery{Status: "active"}, []string{mine.ID}},
+		"resolved":   {QueueQuery{Status: "resolved"}, []string{"33333333-3333-3333-3333-333333333333"}},
+		"mine":       {QueueQuery{Assigned: "me"}, []string{mine.ID}},
+		"nobody":     {QueueQuery{Assigned: "none"}, []string{"33333333-3333-3333-3333-333333333333"}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			page, err := s.ListQueue(ctx, adminID, tt.query, 1, 10)
+			if err != nil {
+				t.Fatalf("ListQueue: %v", err)
+			}
+			var ids []string
+			for _, item := range page.Items {
+				ids = append(ids, item.ID)
+			}
+			slices.Sort(ids)
+			if !slices.Equal(ids, tt.want) {
+				t.Fatalf("ids = %v, want %v", ids, tt.want)
+			}
+		})
+	}
+
+	for _, query := range []QueueQuery{{Status: "lost"}, {Assigned: "someone"}} {
+		if _, err := s.ListQueue(ctx, adminID, query, 1, 10); !errors.Is(err, app.ErrInvalidInput) {
+			t.Fatalf("%+v: err = %v", query, err)
+		}
+	}
+}
+
+func TestAssignTicketTakesItInProgress(t *testing.T) {
+	s, repository, _ := newTestService()
+	ticket := openTicket(t, s, buyerID, orderTicket())
+
+	assigned, err := s.AssignTicket(context.Background(), adminID, ticket.ID)
+	if err != nil {
+		t.Fatalf("AssignTicket: %v", err)
+	}
+	if assigned.Status != StatusInProgress || assigned.AssignedTo == nil || *assigned.AssignedTo != adminID {
+		t.Fatalf("ticket = %+v", assigned.TicketEntity)
+	}
+	change := repository.changes[0]
+	if change.Action != "support.ticket_assigned" || change.ActorID != adminID || change.From != StatusOpen {
+		t.Fatalf("change = %+v", change)
+	}
+
+	if _, err := s.AssignTicket(context.Background(), adminID, ticket.ID); err != nil || len(repository.changes) != 1 {
+		t.Fatalf("assigning again: err = %v, changes = %d", err, len(repository.changes))
+	}
+
+	repository.tickets[ticket.ID].Status = StatusAwaitingCustomer
+	other := "admin-2"
+	if _, err := s.AssignTicket(context.Background(), other, ticket.ID); err != nil {
+		t.Fatalf("taking over: %v", err)
+	}
+	if got := repository.tickets[ticket.ID]; got.Status != StatusAwaitingCustomer || *got.AssignedTo != other {
+		t.Fatalf("taken over = %+v", got.TicketEntity)
+	}
+
+	repository.tickets[ticket.ID].Status = StatusResolved
+	if _, err := s.AssignTicket(context.Background(), adminID, ticket.ID); !errors.Is(err, app.ErrInvalidStatusTransition) {
+		t.Fatalf("resolved: err = %v", err)
+	}
+	if _, err := s.AssignTicket(context.Background(), adminID, "not-a-uuid"); !errors.Is(err, app.ErrTicketNotFound) {
+		t.Fatalf("unknown: err = %v", err)
+	}
+}
+
+func TestCloseTicketRecordsResolutionAndNotifiesParties(t *testing.T) {
+	s, repository, _ := newTestService()
+	ticket := openTicket(t, s, buyerID, orderTicket())
+	repository.notifications = nil
+
+	closed, err := s.CloseTicket(context.Background(), adminID, ticket.ID, "  Reembolso parcial aprovado pelo vendedor.  ")
+	if err != nil {
+		t.Fatalf("CloseTicket: %v", err)
+	}
+	if closed.Status != StatusResolved || closed.Resolution == nil || *closed.Resolution != "Reembolso parcial aprovado pelo vendedor." {
+		t.Fatalf("ticket = %+v", closed.TicketEntity)
+	}
+	if closed.AssignedTo == nil || *closed.AssignedTo != adminID {
+		t.Fatalf("an unassigned ticket should be assigned to whoever closes it: %+v", closed.AssignedTo)
+	}
+	output := closed.ToOutput(buyerID)
+	if output.CanReply || output.Resolution == nil {
+		t.Fatalf("output = %+v", output)
+	}
+
+	var recipients []string
+	for _, n := range repository.notifications {
+		recipients = append(recipients, n.UserID)
+		if n.Type != notifications.TypeSupportTicketUpdated || !strings.Contains(n.Body, "Reembolso parcial") {
+			t.Fatalf("notification = %+v", n)
+		}
+	}
+	slices.Sort(recipients)
+	if !slices.Equal(recipients, []string{buyerID, sellerID}) {
+		t.Fatalf("recipients = %v", recipients)
+	}
+	if change := repository.changes[0]; change.Action != "support.ticket_resolved" || change.Details["resolution"] != "Reembolso parcial aprovado pelo vendedor." {
+		t.Fatalf("change = %+v", change)
+	}
+
+	if _, err := s.CloseTicket(context.Background(), adminID, ticket.ID, "Encerrando de novo o chamado."); !errors.Is(err, app.ErrInvalidStatusTransition) {
+		t.Fatalf("closing twice: err = %v", err)
+	}
+}
+
+func TestCloseTicketNeedsResolution(t *testing.T) {
+	s, _, _ := newTestService()
+	ticket := openTicket(t, s, buyerID, orderTicket())
+
+	var missing *app.MissingFieldsError
+	if _, err := s.CloseTicket(context.Background(), adminID, ticket.ID, "  "); !errors.As(err, &missing) {
+		t.Fatalf("empty: err = %v", err)
+	}
+	if _, err := s.CloseTicket(context.Background(), adminID, ticket.ID, "Ok."); !errors.Is(err, app.ErrInvalidInput) {
+		t.Fatalf("short: err = %v", err)
 	}
 }

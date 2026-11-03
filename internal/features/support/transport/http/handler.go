@@ -21,6 +21,9 @@ type Service interface {
 	support.GetTicketUseCase
 	support.AddMessageUseCase
 	support.OpenAttachmentUseCase
+	support.ListQueueUseCase
+	support.AssignTicketUseCase
+	support.CloseTicketUseCase
 }
 
 type Handler struct {
@@ -73,6 +76,17 @@ type listQuery struct {
 
 type messageRequest struct {
 	Message string `json:"message"`
+}
+
+type queueQuery struct {
+	Status   string `form:"status"`
+	Assigned string `form:"assigned"`
+	Page     uint   `form:"page,default=1" binding:"min=1"`
+	Limit    uint   `form:"limit,default=10" binding:"min=1,max=100"`
+}
+
+type closeRequest struct {
+	Resolution string `json:"resolution"`
 }
 
 func (h *Handler) CreateTicket(c *gin.Context) {
@@ -187,4 +201,61 @@ func (h *Handler) OpenAttachment(c *gin.Context) {
 		"Content-Disposition":    fmt.Sprintf("inline; filename=%q", file.Name),
 		"X-Content-Type-Options": "nosniff",
 	})
+}
+
+func (h *Handler) ListQueue(c *gin.Context) {
+	adminID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var query queueQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters: page and limit must be positive integers (limit at most 100)"})
+		return
+	}
+
+	page, err := h.service.ListQueue(c.Request.Context(), adminID, support.QueueQuery{Status: query.Status, Assigned: query.Assigned}, query.Page, query.Limit)
+	if err != nil {
+		writeError(c, err, "could not get support tickets")
+		return
+	}
+
+	c.JSON(http.StatusOK, page.ToQueueOutput(adminID))
+}
+
+func (h *Handler) AssignTicket(c *gin.Context) {
+	adminID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	ticket, err := h.service.AssignTicket(c.Request.Context(), adminID, c.Param("ticketID"))
+	if err != nil {
+		writeError(c, err, "could not assign support ticket")
+		return
+	}
+
+	c.JSON(http.StatusOK, ticket.ToOutput(adminID))
+}
+
+func (h *Handler) CloseTicket(c *gin.Context) {
+	adminID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var request closeRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
+		return
+	}
+
+	ticket, err := h.service.CloseTicket(c.Request.Context(), adminID, c.Param("ticketID"), request.Resolution)
+	if err != nil {
+		writeError(c, err, "could not close support ticket")
+		return
+	}
+
+	c.JSON(http.StatusOK, ticket.ToOutput(adminID))
 }

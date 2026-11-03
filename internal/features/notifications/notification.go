@@ -21,6 +21,7 @@ const (
 	TypeCustomOrderUpdated   Type = "custom_order_updated"
 	TypeSupportTicketOpened  Type = "support_ticket_opened"
 	TypeSupportTicketUpdated Type = "support_ticket_updated"
+	TypeAdvertisementRemoved Type = "advertisement_removed"
 )
 
 const (
@@ -228,6 +229,11 @@ func SupportTicketReplied(userID string, ticketID string, subject string, bySupp
 	return supportTicket(userID, TypeSupportTicketUpdated, ticketID, "Nova mensagem no chamado", body)
 }
 
+func SupportTicketResolved(userID string, ticketID string, subject string, resolution string) NewNotification {
+	return supportTicket(userID, TypeSupportTicketUpdated, ticketID, "Chamado resolvido",
+		"O suporte encerrou o chamado \""+subject+"\": "+strings.TrimRight(resolution, ".")+".")
+}
+
 func supportTicket(userID string, notificationType Type, ticketID string, title string, body string) NewNotification {
 	return NewNotification{
 		UserID: userID,
@@ -235,6 +241,16 @@ func supportTicket(userID string, notificationType Type, ticketID string, title 
 		Title:  title,
 		Body:   body,
 		Data:   map[string]string{"ticket_id": ticketID},
+	}
+}
+
+func AdvertisementRemoved(sellerID string, advertisementID string, title string, reason string) NewNotification {
+	return NewNotification{
+		UserID: sellerID,
+		Type:   TypeAdvertisementRemoved,
+		Title:  "Anúncio removido pela moderação",
+		Body:   "O anúncio " + title + " foi removido do catálogo: " + strings.TrimRight(reason, ".") + ". Fale com o suporte se quiser contestar.",
+		Data:   map[string]string{"advertisement_id": advertisementID},
 	}
 }
 

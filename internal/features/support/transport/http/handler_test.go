@@ -27,6 +27,9 @@ type fakeService struct {
 	get    func(context.Context, string, string) (*support.TicketDetailEntity, error)
 	add    func(context.Context, string, string, string, io.Reader) (*support.TicketDetailEntity, error)
 	open   func(context.Context, string, string, string) (*support.AttachmentFile, error)
+	queue  func(context.Context, string, support.QueueQuery, uint, uint) (*support.TicketPage, error)
+	assign func(context.Context, string, string) (*support.TicketDetailEntity, error)
+	close  func(context.Context, string, string, string) (*support.TicketDetailEntity, error)
 }
 
 func (f fakeService) CreateTicket(ctx context.Context, userID string, input support.TicketInput) (*support.TicketDetailEntity, error) {
@@ -49,6 +52,18 @@ func (f fakeService) OpenAttachment(ctx context.Context, userID string, id strin
 	return f.open(ctx, userID, id, messageID)
 }
 
+func (f fakeService) ListQueue(ctx context.Context, adminID string, query support.QueueQuery, page uint, limit uint) (*support.TicketPage, error) {
+	return f.queue(ctx, adminID, query, page, limit)
+}
+
+func (f fakeService) AssignTicket(ctx context.Context, adminID string, id string) (*support.TicketDetailEntity, error) {
+	return f.assign(ctx, adminID, id)
+}
+
+func (f fakeService) CloseTicket(ctx context.Context, adminID string, id string, resolution string) (*support.TicketDetailEntity, error) {
+	return f.close(ctx, adminID, id, resolution)
+}
+
 func init() {
 	gin.SetMode(gin.TestMode)
 }
@@ -64,6 +79,9 @@ func serve(service fakeService, request *http.Request) *httptest.ResponseRecorde
 	router.GET("/support/tickets/:ticketID", handler.GetTicket)
 	router.POST("/support/tickets/:ticketID/messages", handler.AddMessage)
 	router.GET("/support/tickets/:ticketID/messages/:messageID/attachment", handler.OpenAttachment)
+	router.GET("/admin/support/tickets", handler.ListQueue)
+	router.POST("/admin/support/tickets/:ticketID/assign", handler.AssignTicket)
+	router.POST("/admin/support/tickets/:ticketID/close", handler.CloseTicket)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -272,6 +290,81 @@ func TestOpenAttachmentServesPrivately(t *testing.T) {
 		return nil, app.ErrAttachmentNotFound
 	}
 	if recorder := serve(service, httptest.NewRequest(http.MethodGet, "/support/tickets/ticket-1/messages/m-1/attachment", nil)); recorder.Code != http.StatusNotFound {
+		t.Fatalf("missing: status = %d", recorder.Code)
+	}
+}
+
+func TestListQueuePassesQueryAndShowsPeople(t *testing.T) {
+	service := fakeService{queue: func(_ context.Context, adminID string, query support.QueueQuery, page uint, limit uint) (*support.TicketPage, error) {
+		if adminID != userID || query.Status != "active" || query.Assigned != "none" || page != 1 || limit != 20 {
+			t.Errorf("admin = %q, query = %+v, page = %d, limit = %d", adminID, query, page, limit)
+		}
+		entity := ticket().TicketEntity
+		entity.OpenedBy, entity.OpenerName = "buyer-1", "Ana"
+		return &support.TicketPage{Items: []*support.TicketEntity{&entity}, CurrentPage: 1, TotalPages: 1, TotalItems: 1}, nil
+	}}
+
+	recorder := serve(service, httptest.NewRequest(http.MethodGet, "/admin/support/tickets?status=active&assigned=none&limit=20", nil))
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"opened_by":{"id":"buyer-1","name":"Ana"}`) ||
+		!strings.Contains(recorder.Body.String(), `"assigned_to":null`) {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+
+	service.queue = func(context.Context, string, support.QueueQuery, uint, uint) (*support.TicketPage, error) {
+		return nil, app.ErrInvalidInput
+	}
+	if recorder := serve(service, httptest.NewRequest(http.MethodGet, "/admin/support/tickets?assigned=x", nil)); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid: status = %d", recorder.Code)
+	}
+}
+
+func TestAssignTicket(t *testing.T) {
+	service := fakeService{assign: func(_ context.Context, adminID string, id string) (*support.TicketDetailEntity, error) {
+		if adminID != userID || id != "ticket-1" {
+			t.Errorf("admin = %q, id = %q", adminID, id)
+		}
+		assigned := ticket()
+		assigned.AssignedTo = &adminID
+		return assigned, nil
+	}}
+
+	recorder := serve(service, httptest.NewRequest(http.MethodPost, "/admin/support/tickets/ticket-1/assign", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"assigned_to_me":true`) {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+
+	service.assign = func(context.Context, string, string) (*support.TicketDetailEntity, error) {
+		return nil, app.ErrInvalidStatusTransition
+	}
+	if recorder := serve(service, httptest.NewRequest(http.MethodPost, "/admin/support/tickets/ticket-1/assign", nil)); recorder.Code != http.StatusConflict {
+		t.Fatalf("resolved: status = %d", recorder.Code)
+	}
+}
+
+func TestCloseTicket(t *testing.T) {
+	service := fakeService{close: func(_ context.Context, _ string, id string, resolution string) (*support.TicketDetailEntity, error) {
+		if id != "ticket-1" || resolution != "Reembolso aprovado." {
+			t.Errorf("id = %q, resolution = %q", id, resolution)
+		}
+		closed := ticket()
+		closed.Status, closed.Resolution = support.StatusResolved, &resolution
+		return closed, nil
+	}}
+
+	recorder := serve(service, httptest.NewRequest(http.MethodPost, "/admin/support/tickets/ticket-1/close", strings.NewReader(`{"resolution":"Reembolso aprovado."}`)))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"resolution":"Reembolso aprovado."`) || !strings.Contains(recorder.Body.String(), `"can_reply":false`) {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+
+	if recorder := serve(service, httptest.NewRequest(http.MethodPost, "/admin/support/tickets/ticket-1/close", strings.NewReader("{"))); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("malformed: status = %d", recorder.Code)
+	}
+
+	service.close = func(context.Context, string, string, string) (*support.TicketDetailEntity, error) {
+		return nil, &app.MissingFieldsError{Fields: []string{"resolution"}}
+	}
+	if recorder := serve(service, httptest.NewRequest(http.MethodPost, "/admin/support/tickets/ticket-1/close", strings.NewReader(`{}`))); recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("missing: status = %d", recorder.Code)
 	}
 }

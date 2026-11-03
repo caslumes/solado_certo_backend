@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"strings"
+	"time"
 )
 
 var ErrInvalidInput = errors.New("invalid input")
@@ -130,3 +131,18 @@ var ErrResetAttemptsExceeded = errors.New("too many attempts, request a new code
 
 var ErrTicketNotFound = errors.New("support ticket not found")
 var ErrAttachmentNotFound = errors.New("attachment not found")
+
+var ErrAccountBlocked = errors.New("account blocked")
+var ErrAccountSuspended = errors.New("account suspended")
+
+type AccountSuspendedError struct {
+	Until time.Time
+}
+
+func (e *AccountSuspendedError) Error() string {
+	return ErrAccountSuspended.Error() + " until " + e.Until.Format(time.RFC3339)
+}
+
+func (e *AccountSuspendedError) Unwrap() error {
+	return ErrAccountSuspended
+}

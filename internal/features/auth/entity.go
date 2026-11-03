@@ -3,16 +3,17 @@ package auth
 import "time"
 
 type UserEntity struct {
-	ID           string
-	Name         string
-	Email        string
-	Phone        string
-	PasswordHash string
-	AvatarURL    string
-	Status       string
-	CreatedAt    *time.Time
-	UpdatedAt    *time.Time
-	DeletedAt    *time.Time
+	ID             string
+	Name           string
+	Email          string
+	Phone          string
+	PasswordHash   string
+	AvatarURL      string
+	Status         string
+	SuspendedUntil *time.Time
+	CreatedAt      *time.Time
+	UpdatedAt      *time.Time
+	DeletedAt      *time.Time
 }
 
 type RefreshTokenEntity struct {

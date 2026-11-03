@@ -436,3 +436,51 @@ func TestLoginUnknownEmailReturnsInvalidCredentials(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, app.ErrInvalidCredentials)
 	}
 }
+
+func TestLoginRefusesBlockedAndSuspendedAccounts(t *testing.T) {
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	later := now.Add(48 * time.Hour)
+	earlier := now.Add(-time.Hour)
+
+	tests := map[string]struct {
+		status string
+		until  *time.Time
+		want   error
+	}{
+		"blocked":         {"blocked", nil, app.ErrAccountBlocked},
+		"suspended":       {"active", &later, app.ErrAccountSuspended},
+		"suspension over": {"active", &earlier, nil},
+		"active":          {"active", nil, nil},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := newFakeRepository()
+			s := NewService(r, testSecretKey)
+			s.now = func() time.Time { return now }
+			if err := s.Register(context.Background(), &RegisterInput{Name: "Ana", Email: "ana@example.com", Phone: "19912345678", Password: "password"}); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			r.users["ana@example.com"].Status = tt.status
+			r.users["ana@example.com"].SuspendedUntil = tt.until
+
+			_, err := s.Login(context.Background(), &LoginInput{Email: "ana@example.com", Password: "password"})
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want %v", err, tt.want)
+			}
+			var suspended *app.AccountSuspendedError
+			if tt.until != nil && tt.want != nil && (!errors.As(err, &suspended) || !suspended.Until.Equal(later)) {
+				t.Fatalf("err = %#v", err)
+			}
+		})
+	}
+
+	s := NewService(newFakeRepository(), testSecretKey)
+	if err := s.Register(context.Background(), &RegisterInput{Name: "Bia", Email: "bia@example.com", Phone: "19912345679", Password: "password"}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	s.r.(*fakeRepository).users["bia@example.com"].Status = "blocked"
+	if _, err := s.Login(context.Background(), &LoginInput{Email: "bia@example.com", Password: "wrong-password"}); !errors.Is(err, app.ErrInvalidCredentials) {
+		t.Fatalf("wrong password on a blocked account: err = %v", err)
+	}
+}
