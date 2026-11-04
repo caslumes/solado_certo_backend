@@ -29,13 +29,15 @@ INSERT INTO categories (id, parent_category_id, name, slug) VALUES
 ('00000000-0000-0000-0000-000000000302', NULL, 'Calçados ortopédicos', 'calcados-ortopedicos'),
 ('00000000-0000-0000-0000-000000000303', NULL, 'Órteses', 'orteses'),
 ('00000000-0000-0000-0000-000000000304', NULL, 'Meias terapêuticas', 'meias-terapeuticas'),
-('00000000-0000-0000-0000-000000000305', '00000000-0000-0000-0000-000000000301', 'Palmilhas sob medida', 'palmilhas-sob-medida')
+('00000000-0000-0000-0000-000000000305', '00000000-0000-0000-0000-000000000301', 'Palmilhas sob medida', 'palmilhas-sob-medida'),
+('00000000-0000-0000-0000-000000000306', NULL, 'Tênis esportivos', 'tenis-esportivos'),
+('00000000-0000-0000-0000-000000000307', NULL, 'Colecionáveis', 'colecionaveis')
 ON CONFLICT (slug) DO NOTHING;
 
 UPDATE categories SET required_attributes = '{side,size,material,rigidity,usage_indication}'
 WHERE slug IN ('palmilhas', 'palmilhas-sob-medida', 'orteses');
 UPDATE categories SET required_attributes = '{size,material}'
-WHERE slug IN ('calcados-ortopedicos', 'meias-terapeuticas');
+WHERE slug IN ('calcados-ortopedicos', 'meias-terapeuticas', 'tenis-esportivos', 'colecionaveis');
 
 INSERT INTO podological_purposes (id, code, name, description) VALUES
 ('00000000-0000-0000-0000-000000000401', 'prevention', 'Prevenção', 'Evitar o surgimento de lesões e desconfortos'),
@@ -86,7 +88,31 @@ INSERT INTO advertisements (id, seller_id, category_id, title, description, pric
  'both', NULL, 'EVA', 'semi_rigid', 'Correção de pisada', 'Adaptação gradual nas primeiras semanas.', NULL, 'Produção em até 10 dias úteis.', NOW(), NOW()),
 ('00000000-0000-0000-0000-000000000605', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000304',
  'Meia de compressão terapêutica', 'Meia de média compressão (20-30 mmHg).', 159.90, 0, 'paused', false, false,
- 'both', 'G', 'Poliamida', NULL, 'Uso diurno', NULL, 'Doença arterial periférica.', NULL, NOW(), NOW())
+ 'both', 'G', 'Poliamida', NULL, 'Uso diurno', NULL, 'Doença arterial periférica.', NULL, NOW(), NOW()),
+('00000000-0000-0000-0000-000000000606', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000306',
+ 'Tênis Nike Pegasus 41', 'Tênis de corrida para treinos diários, com amortecimento ReactX e cabedal em mesh respirável.', 899.99, 15, 'published', false, false,
+ 'both', '40', 'Mesh e espuma ReactX', NULL, NULL, NULL, NULL, 'Enviado em até 2 dias úteis.', NOW(), NOW()),
+('00000000-0000-0000-0000-000000000607', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000306',
+ 'Tênis Adidas Ultraboost 5', 'Tênis de corrida com entressola Boost e cabedal em Primeknit.', 1199.99, 10, 'published', false, false,
+ 'both', '41', 'Primeknit e espuma Boost', NULL, NULL, NULL, NULL, 'Enviado em até 2 dias úteis.', NOW(), NOW()),
+('00000000-0000-0000-0000-000000000608', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000306',
+ 'Tênis New Balance Fresh Foam X 1080v14', 'Tênis de corrida com amortecimento macio para longas distâncias.', 1099.99, 8, 'published', false, false,
+ 'both', '42', 'Mesh e espuma Fresh Foam X', NULL, NULL, NULL, NULL, 'Enviado em até 3 dias úteis.', NOW(), NOW()),
+('00000000-0000-0000-0000-000000000609', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000306',
+ 'Tênis Asics Novablast 5', 'Tênis de corrida leve e responsivo para treinos de ritmo.', 899.99, 12, 'published', false, false,
+ 'both', '39', 'Mesh e espuma FF Blast Max', NULL, NULL, NULL, NULL, 'Enviado em até 2 dias úteis.', NOW(), NOW()),
+('00000000-0000-0000-0000-000000000610', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000306',
+ 'Tênis Olympikus Corre 4', 'Tênis nacional de corrida, leve e com boa durabilidade.', 499.99, 20, 'published', false, false,
+ 'both', '41', 'Mesh e espuma EVA', NULL, NULL, NULL, NULL, 'Enviado em até 2 dias úteis.', NOW(), NOW()),
+('00000000-0000-0000-0000-000000000611', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000307',
+ 'Tênis Air Jordan 1 Retro High OG', 'Reedição do modelo clássico de basquete de 1985, na caixa original.', 1599.99, 2, 'published', false, false,
+ 'both', '42', 'Couro', NULL, NULL, NULL, NULL, 'Enviado em até 2 dias úteis, com seguro.', NOW(), NOW()),
+('00000000-0000-0000-0000-000000000612', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000307',
+ 'Tênis Adidas Samba OG', 'Modelo clássico com cabedal em couro, biqueira em camurça e sola de borracha.', 699.99, 6, 'published', false, false,
+ 'both', '40', 'Couro e camurça', NULL, NULL, NULL, NULL, 'Enviado em até 2 dias úteis.', NOW(), NOW()),
+('00000000-0000-0000-0000-000000000613', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000307',
+ 'Tênis New Balance 550', 'Reedição do modelo de basquete de 1989, em couro branco e verde.', 999.99, 3, 'published', false, false,
+ 'both', '41', 'Couro', NULL, NULL, NULL, NULL, 'Enviado em até 2 dias úteis.', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO advertisement_images (advertisement_id, url, alt_text, position, is_cover)
