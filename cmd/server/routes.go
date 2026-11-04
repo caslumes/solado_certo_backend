@@ -19,6 +19,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 	loginLimiter := ratelimit.New(5, time.Minute)
 	forgotPasswordLimiter := ratelimit.New(5, time.Minute)
 	resetPasswordLimiter := ratelimit.New(5, time.Minute)
+	deleteAccountLimiter := ratelimit.New(5, time.Minute)
 
 	authGroup := r.Group("/auth")
 	{
@@ -55,6 +56,9 @@ func initRoutes(r *gin.Engine, a *config.App) {
 
 		meGroup.GET("/onboarding", a.MeHandler.GetOnboarding)
 		meGroup.PUT("/onboarding", a.MeHandler.ChangeOnboardingStep)
+
+		meGroup.GET("/data", a.MeHandler.GetPersonalData)
+		meGroup.DELETE("", deleteAccountLimiter.Middleware(), a.MeHandler.DeleteAccount)
 	}
 
 	catalogGroup := r.Group("/catalog")

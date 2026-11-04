@@ -146,3 +146,6 @@ func (e *AccountSuspendedError) Error() string {
 func (e *AccountSuspendedError) Unwrap() error {
 	return ErrAccountSuspended
 }
+
+var ErrInvalidPassword = errors.New("invalid password")
+var ErrAccountHasOpenOrders = errors.New("finish or cancel open orders and custom orders before deleting the account")

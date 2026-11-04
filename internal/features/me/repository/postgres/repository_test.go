@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -655,5 +656,218 @@ func TestUpdateAvatarReturnsNotFoundForUnknownUser(t *testing.T) {
 
 	if err := r.UpdateAvatar(context.Background(), unknownID, nil); !errors.Is(err, app.ErrUserNotFound) {
 		t.Fatalf("err = %v, want %v", err, app.ErrUserNotFound)
+	}
+}
+
+func exec(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), sql, args...); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+}
+
+func insertOrder(t *testing.T, pool *pgxpool.Pool, buyerID string, ad testutil.Ad, status string) string {
+	t.Helper()
+	ctx := context.Background()
+	var checkoutID, orderID string
+	err := pool.QueryRow(ctx, "INSERT INTO checkouts (buyer_id, idempotency_key, created_at) VALUES ($1, gen_random_uuid()::text, NOW()) RETURNING id", buyerID).Scan(&checkoutID)
+	if err != nil {
+		t.Fatalf("insert checkout: %v", err)
+	}
+	err = pool.QueryRow(
+		ctx,
+		"INSERT INTO orders (buyer_id, checkout_id, number, status, subtotal, total, shipping_address, created_at, updated_at) "+
+			"VALUES ($1, $2, 'SC-' || substr(md5(random()::text), 1, 10), $3, 100, 100, json_build_object('receiver', 'Maria', 'city', 'Recife'), NOW(), NOW()) RETURNING id",
+		buyerID, checkoutID, status,
+	).Scan(&orderID)
+	if err != nil {
+		t.Fatalf("insert order: %v", err)
+	}
+	exec(t, pool,
+		"INSERT INTO order_items (order_id, advertisement_id, seller_id, quantity, unit_price, subtotal, product_snapshot, created_at) "+
+			"VALUES ($1, $2, $3, 1, 100, 100, json_build_object('title', $4::text, 'seller_name', 'Loja'), NOW())",
+		orderID, ad.ID, ad.SellerID, ad.Title,
+	)
+	exec(t, pool,
+		"INSERT INTO payments (order_id, gateway, idempotency_key, status, method, amount, created_at, updated_at) "+
+			"VALUES ($1, 'fake', gen_random_uuid()::text, 'captured', 'pix', 100, NOW(), NOW())",
+		orderID,
+	)
+	return orderID
+}
+
+type accountFixture struct {
+	buyer   testutil.User
+	seller  testutil.User
+	ad      testutil.Ad
+	orderID string
+}
+
+func newAccountFixture(t *testing.T, pool *pgxpool.Pool, orderStatus string) accountFixture {
+	t.Helper()
+	f := accountFixture{buyer: testutil.InsertUser(t, pool), seller: testutil.InsertUser(t, pool)}
+	category := testutil.InsertCategory(t, pool, nil)
+	f.ad = testutil.InsertAd(t, pool, testutil.Ad{SellerID: f.seller.ID, CategoryID: category.ID, Stock: 3})
+	f.orderID = insertOrder(t, pool, f.buyer.ID, f.ad, orderStatus)
+
+	exec(t, pool, "UPDATE users SET tax_id = '52998224725', avatar_url = '/files/public/avatars/a.png' WHERE id = $1", f.buyer.ID)
+	exec(t, pool,
+		"INSERT INTO addresses (user_id, receiver, zip_code, street, number, district, city, state, created_at, updated_at) "+
+			"VALUES ($1, 'Maria', '50000000', 'Rua A', '10', 'Centro', 'Recife', 'PE', NOW(), NOW())",
+		f.buyer.ID,
+	)
+	exec(t, pool, "INSERT INTO podological_profiles (user_id, footstrike_type, notes, updated_at) VALUES ($1, 'pronated', 'Dor ao correr', NOW())", f.buyer.ID)
+	exec(t, pool, "INSERT INTO consents (user_id, purpose, terms_version, granted_at) VALUES ($1, 'podological_profile', 'podological-profile-v1', NOW())", f.buyer.ID)
+	exec(t, pool, "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, created_at) VALUES ($1, gen_random_uuid()::text, NOW() + interval '1 day', NOW())", f.buyer.ID)
+	exec(t, pool, "INSERT INTO notifications (user_id, type, title, body, created_at) VALUES ($1, 'order_paid', 'Pagamento aprovado', 'Seu pedido foi pago', NOW())", f.buyer.ID)
+	return f
+}
+
+func TestExportPersonalDataCollectsTheUsersDataAndAudits(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	f := newAccountFixture(t, pool, "delivered")
+
+	data, err := r.ExportPersonalData(ctx, f.buyer.ID)
+	if err != nil {
+		t.Fatalf("ExportPersonalData: %v", err)
+	}
+
+	var export struct {
+		Profile            map[string]any   `json:"profile"`
+		Roles              []map[string]any `json:"roles"`
+		Addresses          []map[string]any `json:"addresses"`
+		PodologicalProfile []map[string]any `json:"podological_profile"`
+		Consents           []map[string]any `json:"consents"`
+		Orders             []map[string]any `json:"orders"`
+		OrderItems         []map[string]any `json:"order_items"`
+		Payments           []map[string]any `json:"payments"`
+		Notifications      []map[string]any `json:"notifications"`
+		SupportTickets     []map[string]any `json:"support_tickets"`
+	}
+	if err := json.Unmarshal(data, &export); err != nil {
+		t.Fatalf("unmarshal %s: %v", data, err)
+	}
+	if export.Profile["email"] != f.buyer.Email || export.Profile["tax_id"] != "52998224725" || export.Profile["password_hash"] != nil {
+		t.Fatalf("profile = %v", export.Profile)
+	}
+	if len(export.Addresses) != 1 || len(export.PodologicalProfile) != 1 || export.PodologicalProfile[0]["notes"] != "Dor ao correr" || len(export.Consents) != 1 || len(export.Notifications) != 1 {
+		t.Fatalf("export = %s", data)
+	}
+	if len(export.Orders) != 1 || len(export.OrderItems) != 1 || export.OrderItems[0]["title"] != f.ad.Title || len(export.Payments) != 1 ||
+		export.OrderItems[0]["order_number"] != export.Orders[0]["number"] {
+		t.Fatalf("export = %s", data)
+	}
+	if export.Roles == nil || export.SupportTickets == nil {
+		t.Fatalf("empty sections should be [] not null: %s", data)
+	}
+
+	var audits int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM audit_logs WHERE user_id = $1 AND action = 'user.data_exported'", f.buyer.ID).Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("audit rows = %d, %v", audits, err)
+	}
+}
+
+func TestDeleteAccountAnonymizesTheUserAndKeepsTheOrders(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	f := newAccountFixture(t, pool, "delivered")
+
+	avatarURL, err := r.DeleteAccount(ctx, f.buyer.ID)
+	if err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	if avatarURL != "/files/public/avatars/a.png" {
+		t.Fatalf("avatarURL = %q", avatarURL)
+	}
+
+	var name, email, phone, passwordHash, status string
+	var taxID *string
+	var deleted bool
+	err = pool.QueryRow(ctx, "SELECT name, email, phone, password_hash, tax_id, status, deleted_at IS NOT NULL FROM users WHERE id = $1", f.buyer.ID).
+		Scan(&name, &email, &phone, &passwordHash, &taxID, &status, &deleted)
+	if err != nil {
+		t.Fatalf("read user: %v", err)
+	}
+	if name != "Usuário removido" || email == f.buyer.Email || phone == f.buyer.Phone || passwordHash != "" || taxID != nil || status != "inactive" || !deleted {
+		t.Fatalf("user = %q %q %q %q %v %q %v", name, email, phone, passwordHash, taxID, status, deleted)
+	}
+
+	var remaining int
+	err = pool.QueryRow(ctx,
+		"SELECT (SELECT count(*) FROM addresses WHERE user_id = $1) + (SELECT count(*) FROM podological_profiles WHERE user_id = $1) + "+
+			"(SELECT count(*) FROM consents WHERE user_id = $1 AND revoked_at IS NULL) + (SELECT count(*) FROM refresh_tokens WHERE user_id = $1 AND revoked_at IS NULL) + "+
+			"(SELECT count(*) FROM notifications WHERE user_id = $1)",
+		f.buyer.ID,
+	).Scan(&remaining)
+	if err != nil || remaining != 0 {
+		t.Fatalf("personal rows left = %d, %v", remaining, err)
+	}
+
+	var orderBuyer, receiver string
+	err = pool.QueryRow(ctx, "SELECT buyer_id, shipping_address->>'receiver' FROM orders WHERE id = $1", f.orderID).Scan(&orderBuyer, &receiver)
+	if err != nil || orderBuyer != f.buyer.ID || receiver != "Maria" {
+		t.Fatalf("order = %q %q, %v", orderBuyer, receiver, err)
+	}
+
+	var audits int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM audit_logs WHERE user_id = $1 AND action = 'user.account_deleted'", f.buyer.ID).Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("audit rows = %d, %v", audits, err)
+	}
+
+	if _, err := r.DeleteAccount(ctx, f.buyer.ID); !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("second DeleteAccount error = %v, want ErrUserNotFound", err)
+	}
+	if _, err := r.GetPasswordHash(ctx, f.buyer.ID); !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("GetPasswordHash error = %v, want ErrUserNotFound", err)
+	}
+	if _, err := r.ExportPersonalData(ctx, f.buyer.ID); !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("ExportPersonalData error = %v, want ErrUserNotFound", err)
+	}
+}
+
+func TestDeleteAccountArchivesTheSellersAds(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	f := newAccountFixture(t, pool, "delivered")
+
+	if _, err := r.DeleteAccount(ctx, f.seller.ID); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+
+	var status string
+	if err := pool.QueryRow(ctx, "SELECT status FROM advertisements WHERE id = $1", f.ad.ID).Scan(&status); err != nil || status != "archived" {
+		t.Fatalf("ad status = %q, %v", status, err)
+	}
+}
+
+func TestDeleteAccountRefusesWhileOrdersAreOpen(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	f := newAccountFixture(t, pool, "paid")
+
+	for name, userID := range map[string]string{"buyer": f.buyer.ID, "seller": f.seller.ID} {
+		if _, err := r.DeleteAccount(ctx, userID); !errors.Is(err, app.ErrAccountHasOpenOrders) {
+			t.Fatalf("%s: DeleteAccount error = %v, want ErrAccountHasOpenOrders", name, err)
+		}
+	}
+
+	var deleted int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM users WHERE deleted_at IS NOT NULL").Scan(&deleted); err != nil || deleted != 0 {
+		t.Fatalf("deleted users = %d, %v", deleted, err)
+	}
+}
+
+func TestDeleteAccountRefusesWhileACustomOrderIsOpen(t *testing.T) {
+	r, pool := newRepository(t)
+	ctx := context.Background()
+	f := newAccountFixture(t, pool, "delivered")
+	exec(t, pool,
+		"INSERT INTO custom_order_requests (buyer_id, advertisement_id, status, measurements, created_at, updated_at) VALUES ($1, $2, 'under_review', '{}', NOW(), NOW())",
+		f.buyer.ID, f.ad.ID,
+	)
+
+	if _, err := r.DeleteAccount(ctx, f.buyer.ID); !errors.Is(err, app.ErrAccountHasOpenOrders) {
+		t.Fatalf("DeleteAccount error = %v, want ErrAccountHasOpenOrders", err)
 	}
 }

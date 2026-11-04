@@ -139,6 +139,8 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `GET` | `/me/roles` | The user's roles: `{"roles": ["buyer", "seller"]}` |
 | `POST` | `/me/roles/seller` | Become a seller (no approval step; 201 when new, 200 when already a seller). Returns the roles |
 | `GET` / `PUT` | `/me/onboarding` | Read the current onboarding step / change it (`action`: `advance`, `retreat`, `skip`, `dismiss`, `complete`) |
+| `GET` | `/me/data` | LGPD export: all of the user's personal data as one JSON document (profile, addresses, podological profile, consent history, orders, custom orders, documents, reviews, support, notifications, ads). Not cached; audited (`user.data_exported`) |
+| `DELETE` | `/me` | Delete the account: `password` (403 if wrong). Anonymizes the user and deletes or revokes their personal data; orders are kept for the other party with the anonymized user. 409 while an order or custom order is still open. Rate limited: 5/min per IP; audited (`user.account_deleted`) |
 | `GET` | `/catalog` | List published ads. Query: `page`, `limit` (max 100), `q`, `category`, `price_min`, `price_max`, `prescription_required`, `custom_made_allowed`, `side`, `size`, `material`, `rigidity`, `usage_indication` |
 | `GET` | `/catalog/items/:advertisementID` | One ad |
 | `GET` | `/catalog/categories` | Categories |

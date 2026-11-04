@@ -47,6 +47,8 @@ type fakeService struct {
 	becomeSeller           func(context.Context, string) ([]enum.Role, bool, error)
 	getOnboarding          func(context.Context, string) (*me.OnboardingEntity, error)
 	changeOnboardingStep   func(context.Context, string, me.OnboardingInput) error
+	exportPersonalData     func(context.Context, string) (json.RawMessage, error)
+	deleteAccount          func(context.Context, string, me.DeleteAccountInput) error
 }
 
 func (f fakeService) GetProfileByUserID(ctx context.Context, userID string) (*me.ProfileEntity, error) {
@@ -121,6 +123,14 @@ func (f fakeService) ChangeOnboardingStep(ctx context.Context, userID string, in
 	return f.changeOnboardingStep(ctx, userID, input)
 }
 
+func (f fakeService) ExportPersonalData(ctx context.Context, userID string) (json.RawMessage, error) {
+	return f.exportPersonalData(ctx, userID)
+}
+
+func (f fakeService) DeleteAccount(ctx context.Context, userID string, input me.DeleteAccountInput) error {
+	return f.deleteAccount(ctx, userID, input)
+}
+
 func newRouter(handler *Handler, authenticated bool) *gin.Engine {
 	router := gin.New()
 	if authenticated {
@@ -146,6 +156,8 @@ func newRouter(handler *Handler, authenticated bool) *gin.Engine {
 	router.POST("/me/roles/seller", handler.BecomeSeller)
 	router.GET("/me/onboarding", handler.GetOnboarding)
 	router.PUT("/me/onboarding", handler.ChangeOnboardingStep)
+	router.GET("/me/data", handler.GetPersonalData)
+	router.DELETE("/me", handler.DeleteAccount)
 	return router
 }
 
@@ -382,6 +394,8 @@ var userEndpoints = map[string]endpoint{
 	"become seller":            {http.MethodPost, "/me/roles/seller", ""},
 	"get onboarding":           {http.MethodGet, "/me/onboarding", ""},
 	"change onboarding step":   {http.MethodPut, "/me/onboarding", `{"step":"welcome","action":"advance"}`},
+	"export personal data":     {http.MethodGet, "/me/data", ""},
+	"delete account":           {http.MethodDelete, "/me", `{"password":"Senha@123"}`},
 }
 
 func TestEndpointsRequireAuthenticatedUser(t *testing.T) {
@@ -438,6 +452,8 @@ func failingService() fakeService {
 		becomeSeller:         func(context.Context, string) ([]enum.Role, bool, error) { return nil, false, errUnexpected },
 		getOnboarding:        func(context.Context, string) (*me.OnboardingEntity, error) { return nil, errUnexpected },
 		changeOnboardingStep: func(context.Context, string, me.OnboardingInput) error { return errUnexpected },
+		exportPersonalData:   func(context.Context, string) (json.RawMessage, error) { return nil, errUnexpected },
+		deleteAccount:        func(context.Context, string, me.DeleteAccountInput) error { return errUnexpected },
 	}
 }
 
@@ -895,5 +911,77 @@ func TestRemoveAvatarMapsNotFound(t *testing.T) {
 
 	if recorder := serve(handler, request(http.MethodDelete, "/me/avatar", "")); recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
+func TestGetPersonalDataReturnsTheExportUncached(t *testing.T) {
+	service := fakeService{exportPersonalData: func(_ context.Context, userID string) (json.RawMessage, error) {
+		if userID != testUserID {
+			t.Fatalf("userID = %q, want %q", userID, testUserID)
+		}
+		return json.RawMessage(`{"profile":{"name":"Maria"}}`), nil
+	}}
+
+	recorder := serve(NewHandler(service), request(http.MethodGet, "/me/data", ""))
+
+	if recorder.Code != http.StatusOK || recorder.Body.String() != `{"profile":{"name":"Maria"}}` {
+		t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+	if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("Content-Type = %q", got)
+	}
+}
+
+func TestGetPersonalDataMapsNotFound(t *testing.T) {
+	service := fakeService{exportPersonalData: func(context.Context, string) (json.RawMessage, error) {
+		return nil, app.ErrUserNotFound
+	}}
+
+	recorder := serve(NewHandler(service), request(http.MethodGet, "/me/data", ""))
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
+func TestDeleteAccountPassesPasswordAndReturnsNoContent(t *testing.T) {
+	service := fakeService{deleteAccount: func(_ context.Context, userID string, input me.DeleteAccountInput) error {
+		if userID != testUserID || input.Password != "Senha@123" {
+			t.Fatalf("DeleteAccount(%q, %+v)", userID, input)
+		}
+		return nil
+	}}
+
+	recorder := serve(NewHandler(service), request(http.MethodDelete, "/me", `{"password":"Senha@123"}`))
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
+	}
+}
+
+func TestDeleteAccountMapsErrors(t *testing.T) {
+	cases := map[string]struct {
+		err  error
+		want int
+		body string
+	}{
+		"missing password": {&app.MissingFieldsError{Fields: []string{"password"}}, http.StatusUnprocessableEntity, `"fields":["password"]`},
+		"wrong password":   {app.ErrInvalidPassword, http.StatusForbidden, app.ErrInvalidPassword.Error()},
+		"open orders":      {app.ErrAccountHasOpenOrders, http.StatusConflict, app.ErrAccountHasOpenOrders.Error()},
+		"not found":        {app.ErrUserNotFound, http.StatusNotFound, "user not found"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			service := fakeService{deleteAccount: func(context.Context, string, me.DeleteAccountInput) error { return c.err }}
+
+			recorder := serve(NewHandler(service), request(http.MethodDelete, "/me", `{}`))
+
+			if recorder.Code != c.want || !strings.Contains(recorder.Body.String(), c.body) {
+				t.Fatalf("response = %d %s, want %d with %s", recorder.Code, recorder.Body.String(), c.want, c.body)
+			}
+		})
 	}
 }

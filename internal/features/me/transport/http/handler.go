@@ -67,6 +67,10 @@ type onboardingRequest struct {
 	Action string `json:"action"`
 }
 
+type deleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
 type Service interface {
 	me.GetProfileUseCase
 	me.EditProfileUseCase
@@ -86,6 +90,8 @@ type Service interface {
 	me.BecomeSellerUseCase
 	me.GetOnboardingUseCase
 	me.ChangeOnboardingStepUseCase
+	me.ExportPersonalDataUseCase
+	me.DeleteAccountUseCase
 }
 
 type Handler struct {
@@ -539,4 +545,54 @@ func (h *Handler) RemoveAvatar(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, profile.ToOutput())
+}
+
+func (h *Handler) GetPersonalData(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.ExportPersonalData(c.Request.Context(), userID)
+	if errors.Is(err, app.ErrUserNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export personal data"})
+		return
+	}
+
+	c.Header("Cache-Control", "private, no-store")
+	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
+}
+
+func (h *Handler) DeleteAccount(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	var request deleteAccountRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not decode input"})
+		return
+	}
+
+	err := h.service.DeleteAccount(c.Request.Context(), userID, me.DeleteAccountInput{Password: request.Password})
+	var missingFields *app.MissingFieldsError
+	switch {
+	case err == nil:
+		c.Status(http.StatusNoContent)
+	case errors.As(err, &missingFields):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": app.ErrMissingRequiredFields.Error(), "fields": missingFields.Fields})
+	case errors.Is(err, app.ErrInvalidPassword):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrAccountHasOpenOrders):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrUserNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete account"})
+	}
 }

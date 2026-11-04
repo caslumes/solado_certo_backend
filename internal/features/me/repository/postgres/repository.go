@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
@@ -625,4 +627,145 @@ func (r *postgresRepository) UpdateAvatar(ctx context.Context, userID string, av
 		return app.ErrUserNotFound
 	}
 	return nil
+}
+
+const personalDataProfileQuery = "SELECT id, name, email, phone, tax_id, avatar_url, status, created_at, updated_at FROM users WHERE id = $1 AND deleted_at IS NULL"
+
+var personalDataSections = []struct{ name, query string }{
+	{"roles", "SELECT r.code FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1 ORDER BY r.code"},
+	{"addresses", "SELECT label, receiver, zip_code, street, number, complement, district, city, state, country, is_default, created_at " +
+		"FROM addresses WHERE user_id = $1 ORDER BY created_at"},
+	{"podological_profile", "SELECT footstrike_type, clinical_condition, notes, updated_at FROM podological_profiles WHERE user_id = $1"},
+	{"podological_pain_points", "SELECT pp.name FROM podological_profile_pain_points ppp JOIN pain_points pp ON pp.id = ppp.pain_point_id " +
+		"WHERE ppp.profile_user_id = $1 ORDER BY pp.name"},
+	{"consents", "SELECT purpose, terms_version, granted_at, revoked_at FROM consents WHERE user_id = $1 ORDER BY granted_at"},
+	{"orders", "SELECT number, status, subtotal, shipping_total, discount_total, total, shipping_address, created_at, paid_at, delivered_at " +
+		"FROM orders WHERE buyer_id = $1 ORDER BY created_at"},
+	{"order_items", "SELECT o.number AS order_number, oi.product_snapshot->>'title' AS title, oi.product_snapshot->>'seller_name' AS seller_name, " +
+		"oi.quantity, oi.unit_price, oi.subtotal FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.buyer_id = $1 ORDER BY o.created_at, oi.created_at"},
+	{"payments", "SELECT o.number AS order_number, p.method, p.status, p.amount, p.created_at " +
+		"FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.buyer_id = $1 ORDER BY p.created_at"},
+	{"custom_orders", "SELECT a.title AS advertisement, c.status, c.measurements, c.technical_notes, c.quoted_price, c.created_at " +
+		"FROM custom_order_requests c JOIN advertisements a ON a.id = c.advertisement_id WHERE c.buyer_id = $1 ORDER BY c.created_at"},
+	{"documents", "SELECT o.number AS order_number, d.document_type, d.validation_status, d.created_at " +
+		"FROM order_documents d JOIN orders o ON o.id = d.order_id WHERE d.uploaded_by = $1 ORDER BY d.created_at"},
+	{"reviews", "SELECT oi.product_snapshot->>'title' AS product, r.product_rating, r.seller_rating, r.comfort_rating, r.comment, r.adaptation_feedback, r.created_at " +
+		"FROM reviews r JOIN order_items oi ON oi.id = r.order_item_id WHERE r.reviewer_id = $1 ORDER BY r.created_at"},
+	{"support_tickets", "SELECT category, status, subject, description, resolution, opened_at, closed_at FROM support_tickets WHERE opened_by = $1 ORDER BY opened_at"},
+	{"support_messages", "SELECT t.subject AS ticket, m.message, m.attachment_url IS NOT NULL AS has_attachment, m.created_at " +
+		"FROM support_messages m JOIN support_tickets t ON t.id = m.ticket_id WHERE m.sender_id = $1 ORDER BY m.created_at"},
+	{"notifications", "SELECT type, title, body, read_at, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at"},
+	{"advertisements", "SELECT title, status, price, stock, created_at FROM advertisements WHERE seller_id = $1 ORDER BY created_at"},
+}
+
+func (r *postgresRepository) ExportPersonalData(ctx context.Context, userID string) (json.RawMessage, error) {
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	export := map[string]any{"generated_at": time.Now().UTC()}
+
+	var profile json.RawMessage
+	if err := tx.QueryRow(ctx, "SELECT row_to_json(t) FROM ("+personalDataProfileQuery+") t", userID).Scan(&profile); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, app.ErrUserNotFound
+		}
+		return nil, err
+	}
+	export["profile"] = profile
+
+	for _, section := range personalDataSections {
+		var rows json.RawMessage
+		if err := tx.QueryRow(ctx, "SELECT COALESCE(json_agg(t), '[]') FROM ("+section.query+") t", userID).Scan(&rows); err != nil {
+			return nil, err
+		}
+		export[section.name] = rows
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		"INSERT INTO audit_logs (user_id, entity, entity_id, action, context, created_at) VALUES ($1, 'user', $1, 'user.data_exported', '{}', NOW())",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return json.Marshal(export)
+}
+
+func (r *postgresRepository) GetPasswordHash(ctx context.Context, userID string) (string, error) {
+	var hash string
+	err := r.pool.QueryRow(ctx, "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL", userID).Scan(&hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", app.ErrUserNotFound
+	}
+	return hash, err
+}
+
+const openOrdersQuery = "SELECT EXISTS (SELECT 1 FROM orders WHERE buyer_id = $1 AND status IN ('awaiting_payment', 'paid', 'processing', 'shipped')) " +
+	"OR EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id = oi.order_id " +
+	"WHERE oi.seller_id = $1 AND o.status IN ('awaiting_payment', 'paid', 'processing', 'shipped')) " +
+	"OR EXISTS (SELECT 1 FROM custom_order_requests cr JOIN advertisements a ON a.id = cr.advertisement_id " +
+	"WHERE (cr.buyer_id = $1 OR a.seller_id = $1) AND cr.status IN ('requested', 'under_review', 'needs_info', 'approved', 'in_production'))"
+
+var accountDeletionStatements = []string{
+	"UPDATE users SET name = 'Usuário removido', email = id::text || '@removido.invalid', phone = replace(id::text, '-', ''), " +
+		"password_hash = '', avatar_url = NULL, tax_id = NULL, status = 'inactive', suspended_until = NULL, deleted_at = NOW(), updated_at = NOW() WHERE id = $1",
+	"UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+	"DELETE FROM password_reset_tokens WHERE user_id = $1",
+	"UPDATE consents SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+	"DELETE FROM podological_profile_pain_points WHERE profile_user_id = $1",
+	"DELETE FROM podological_profiles WHERE user_id = $1",
+	"DELETE FROM addresses WHERE user_id = $1",
+	"DELETE FROM cart_items WHERE cart_id IN (SELECT id FROM carts WHERE user_id = $1)",
+	"UPDATE carts SET status = 'abandoned', updated_at = NOW() WHERE user_id = $1 AND status = 'active'",
+	"DELETE FROM notifications WHERE user_id = $1",
+	"DELETE FROM payment_customers WHERE user_id = $1",
+	"UPDATE advertisements SET status = 'archived', updated_at = NOW() WHERE seller_id = $1 AND status IN ('draft', 'published', 'paused')",
+	"INSERT INTO audit_logs (user_id, entity, entity_id, action, context, created_at) VALUES ($1, 'user', $1, 'user.account_deleted', '{}', NOW())",
+}
+
+func (r *postgresRepository) DeleteAccount(ctx context.Context, userID string) (string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	var avatarURL *string
+	err = tx.QueryRow(ctx, "SELECT avatar_url FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", userID).Scan(&avatarURL)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", app.ErrUserNotFound
+		}
+		return "", err
+	}
+
+	var hasOpenOrders bool
+	if err := tx.QueryRow(ctx, openOrdersQuery, userID).Scan(&hasOpenOrders); err != nil {
+		return "", err
+	}
+	if hasOpenOrders {
+		return "", app.ErrAccountHasOpenOrders
+	}
+
+	for _, statement := range accountDeletionStatements {
+		if _, err := tx.Exec(ctx, statement, userID); err != nil {
+			return "", err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	if avatarURL == nil {
+		return "", nil
+	}
+	return *avatarURL, nil
 }

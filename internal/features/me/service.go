@@ -2,6 +2,7 @@ package me
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 	"github.com/caslumes/solado_certo_backend/pkg/storage"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type GetProfileUseCase interface {
@@ -89,6 +91,14 @@ type ChangeOnboardingStepUseCase interface {
 	ChangeOnboardingStep(context context.Context, userID string, input OnboardingInput) error
 }
 
+type ExportPersonalDataUseCase interface {
+	ExportPersonalData(context context.Context, userID string) (json.RawMessage, error)
+}
+
+type DeleteAccountUseCase interface {
+	DeleteAccount(context context.Context, userID string, input DeleteAccountInput) error
+}
+
 type repository interface {
 	GetProfileByUserID(context context.Context, userID string) (*ProfileEntity, error)
 	UpdateProfile(context context.Context, profile *ProfileEntity) error
@@ -114,6 +124,9 @@ type repository interface {
 	GetOnboardingStepByTag(context context.Context, tag string) (*OnboardingStepEntity, error)
 	GetOnboardingStepByOrder(context context.Context, order int) (*OnboardingStepEntity, error)
 	UpdateOnboarding(context context.Context, userID string, onboarding *OnboardingEntity) error
+	ExportPersonalData(context context.Context, userID string) (json.RawMessage, error)
+	GetPasswordHash(context context.Context, userID string) (string, error)
+	DeleteAccount(context context.Context, userID string) (avatarURL string, err error)
 }
 
 type service struct {
@@ -685,6 +698,42 @@ func (s *service) RemoveAvatar(context context.Context, userID string) (*Profile
 	s.deleteAvatarFile(context, profile.AvatarURL)
 	profile.AvatarURL = ""
 	return profile, nil
+}
+
+func (s *service) ExportPersonalData(context context.Context, userID string) (json.RawMessage, error) {
+	data, err := s.r.ExportPersonalData(context, userID)
+	if err != nil {
+		slog.ErrorContext(context, "ExportPersonalData failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	return data, nil
+}
+
+func (s *service) DeleteAccount(context context.Context, userID string, input DeleteAccountInput) error {
+	if input.Password == "" {
+		return &app.MissingFieldsError{Fields: []string{"password"}}
+	}
+
+	hash, err := s.r.GetPasswordHash(context, userID)
+	if err != nil {
+		slog.ErrorContext(context, "DeleteAccount failed", "user_id", userID, "error", err)
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(input.Password)) != nil {
+		return app.ErrInvalidPassword
+	}
+
+	avatarURL, err := s.r.DeleteAccount(context, userID)
+	if err != nil {
+		if !errors.Is(err, app.ErrAccountHasOpenOrders) {
+			slog.ErrorContext(context, "DeleteAccount failed", "user_id", userID, "error", err)
+		}
+		return err
+	}
+
+	s.deleteAvatarFile(context, avatarURL)
+	return nil
 }
 
 func (s *service) deleteAvatarFile(context context.Context, url string) {

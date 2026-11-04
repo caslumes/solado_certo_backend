@@ -14,6 +14,7 @@ import (
 	"github.com/caslumes/solado_certo_backend/internal/app/enum"
 	"github.com/caslumes/solado_certo_backend/internal/helpers"
 	"github.com/caslumes/solado_certo_backend/pkg/storage"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const testUserID = "user-1"
@@ -41,6 +42,9 @@ type fakeRepository struct {
 	addresses           map[string]*AddressEntity
 	nextAddressID       int
 	roles               map[string][]enum.Role
+	passwordHash        string
+	deleteAccountErr    error
+	deletedAccounts     []string
 }
 
 func newFakeRepository() *fakeRepository {
@@ -55,6 +59,21 @@ func newFakeRepository() *fakeRepository {
 		addresses: map[string]*AddressEntity{},
 		roles:     map[string][]enum.Role{testUserID: {enum.RoleBuyer}},
 	}
+}
+
+func (f *fakeRepository) GetPasswordHash(_ context.Context, userID string) (string, error) {
+	if _, ok := f.profiles[userID]; !ok {
+		return "", app.ErrUserNotFound
+	}
+	return f.passwordHash, nil
+}
+
+func (f *fakeRepository) DeleteAccount(_ context.Context, userID string) (string, error) {
+	if f.deleteAccountErr != nil {
+		return "", f.deleteAccountErr
+	}
+	f.deletedAccounts = append(f.deletedAccounts, userID)
+	return f.profiles[userID].AvatarURL, nil
 }
 
 func (f *fakeRepository) GetRolesByUserID(_ context.Context, userID string) ([]enum.Role, error) {
@@ -1268,5 +1287,84 @@ func TestPrescriptionConsent(t *testing.T) {
 	}
 	if err := s.RequireConsent(ctx, testUserID, ConsentPurposePrescription); !errors.Is(err, app.ErrConsentRequired) {
 		t.Fatalf("after revoking: err = %v, want %v", err, app.ErrConsentRequired)
+	}
+}
+
+func newDeletableAccount(t *testing.T) (*fakeRepository, *storage.MemoryStorage, *service) {
+	t.Helper()
+	hash, err := bcrypt.GenerateFromPassword([]byte("Senha@123"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	repository := newFakeRepository()
+	repository.passwordHash = string(hash)
+	files := storage.NewMemoryStorage()
+	s := NewService(repository, files)
+	if _, err := s.ChangeAvatar(context.Background(), testUserID, bytes.NewReader(pngBytes)); err != nil {
+		t.Fatalf("ChangeAvatar: %v", err)
+	}
+	return repository, files, s
+}
+
+func TestDeleteAccountAnonymizesAndRemovesTheAvatar(t *testing.T) {
+	repository, files, s := newDeletableAccount(t)
+
+	if err := s.DeleteAccount(context.Background(), testUserID, DeleteAccountInput{Password: "Senha@123"}); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+
+	if !slices.Equal(repository.deletedAccounts, []string{testUserID}) {
+		t.Fatalf("deleted accounts = %v", repository.deletedAccounts)
+	}
+	if files.Count() != 0 {
+		t.Fatalf("avatar file kept: %d files", files.Count())
+	}
+}
+
+func TestDeleteAccountRefusesWithoutTheRightPassword(t *testing.T) {
+	cases := map[string]struct {
+		password string
+		check    func(error) bool
+	}{
+		"missing": {"", func(err error) bool {
+			var missing *app.MissingFieldsError
+			return errors.As(err, &missing) && slices.Equal(missing.Fields, []string{"password"})
+		}},
+		"wrong": {"Senha@999", func(err error) bool { return errors.Is(err, app.ErrInvalidPassword) }},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			repository, files, s := newDeletableAccount(t)
+
+			err := s.DeleteAccount(context.Background(), testUserID, DeleteAccountInput{Password: c.password})
+
+			if !c.check(err) {
+				t.Fatalf("DeleteAccount error = %v", err)
+			}
+			if len(repository.deletedAccounts) != 0 || files.Count() != 1 {
+				t.Fatalf("account touched: deleted %v, %d files", repository.deletedAccounts, files.Count())
+			}
+		})
+	}
+}
+
+func TestDeleteAccountKeepsTheAvatarWhenTheRepositoryRefuses(t *testing.T) {
+	repository, files, s := newDeletableAccount(t)
+	repository.deleteAccountErr = app.ErrAccountHasOpenOrders
+
+	err := s.DeleteAccount(context.Background(), testUserID, DeleteAccountInput{Password: "Senha@123"})
+
+	if !errors.Is(err, app.ErrAccountHasOpenOrders) || files.Count() != 1 {
+		t.Fatalf("DeleteAccount = %v with %d files, want ErrAccountHasOpenOrders and the avatar kept", err, files.Count())
+	}
+}
+
+func TestDeleteAccountReturnsNotFoundForUnknownUser(t *testing.T) {
+	_, _, s := newDeletableAccount(t)
+
+	err := s.DeleteAccount(context.Background(), "someone-else", DeleteAccountInput{Password: "Senha@123"})
+
+	if !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("DeleteAccount error = %v, want ErrUserNotFound", err)
 	}
 }

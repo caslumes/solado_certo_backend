@@ -36,3 +36,7 @@ type OnboardingInput struct {
 	Step   string
 	Action string
 }
+
+type DeleteAccountInput struct {
+	Password string
+}
