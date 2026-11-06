@@ -36,6 +36,7 @@ type getAdvertisementsQuery struct {
 type Service interface {
 	catalog.GetAdvertisementsUseCase
 	catalog.GetAdvertisementUseCase
+	catalog.GetHomeUseCase
 	catalog.GetCategoriesUseCase
 	catalog.GetPurposesUseCase
 	catalog.GetConditionsUseCase
@@ -117,6 +118,18 @@ func (h *Handler) GetAdvertisement(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ad.ToOutput())
+}
+
+func (h *Handler) GetHome(c *gin.Context) {
+	userID, _ := authmiddleware.UserIDFrom(c.Request.Context())
+
+	home, err := h.service.GetHome(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get home sections"})
+		return
+	}
+
+	c.JSON(http.StatusOK, home.ToOutput())
 }
 
 func (h *Handler) GetCategories(c *gin.Context) {

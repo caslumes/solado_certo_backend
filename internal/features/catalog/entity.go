@@ -83,6 +83,41 @@ func (a *AdvertisementEntity) ToOutput() *AdvertisementOutput {
 	}
 }
 
+type HomeSectionEntity struct {
+	Code  HomeSectionCode
+	Title string
+	Items []*AdvertisementEntity
+}
+
+func (hs *HomeSectionEntity) ToOutput() *HomeSectionOutput {
+	items := make([]*AdvertisementOutput, len(hs.Items))
+	for i, item := range hs.Items {
+		items[i] = item.ToOutput()
+	}
+
+	return &HomeSectionOutput{Code: hs.Code, Title: hs.Title, Items: items}
+}
+
+type HomeEntity struct {
+	Sections []*HomeSectionEntity
+}
+
+func (h *HomeEntity) addSection(code HomeSectionCode, title string, items []*AdvertisementEntity) {
+	if len(items) == 0 {
+		return
+	}
+	h.Sections = append(h.Sections, &HomeSectionEntity{Code: code, Title: title, Items: items})
+}
+
+func (h *HomeEntity) ToOutput() *HomeOutput {
+	sections := make([]*HomeSectionOutput, len(h.Sections))
+	for i, section := range h.Sections {
+		sections[i] = section.ToOutput()
+	}
+
+	return &HomeOutput{Sections: sections}
+}
+
 type SellerEntity struct {
 	ID            string
 	Name          string

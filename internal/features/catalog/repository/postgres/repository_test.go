@@ -111,6 +111,34 @@ func (f fixture) insertReview(t *testing.T, adID string, productRating int) {
 	}
 }
 
+func (f fixture) insertSale(t *testing.T, adID string, quantity int, status string, createdAt time.Time) {
+	t.Helper()
+	buyer := testutil.InsertUser(t, f.pool)
+	f.insertAddress(t, buyer.ID, "RJ", true)
+
+	var orderID string
+	err := f.pool.QueryRow(
+		context.Background(),
+		"WITH checkout AS (INSERT INTO checkouts (buyer_id, idempotency_key, created_at) VALUES ($1, $2, $3) RETURNING id) "+
+			"INSERT INTO orders (buyer_id, checkout_id, shipping_address_id, shipping_address, number, status, subtotal, total, created_at, updated_at) "+
+			"SELECT $1, checkout.id, a.id, '{}', $2, $4, 100, 100, $3, $3 FROM addresses a, checkout WHERE a.user_id = $1 RETURNING id",
+		buyer.ID, fmt.Sprintf("ORD-%d", orderSequence.Add(1)), createdAt, status,
+	).Scan(&orderID)
+	if err != nil {
+		t.Fatalf("insert order: %v", err)
+	}
+
+	_, err = f.pool.Exec(
+		context.Background(),
+		"INSERT INTO order_items (order_id, advertisement_id, seller_id, quantity, unit_price, subtotal, product_snapshot, created_at) "+
+			"VALUES ($1, $2, $3, $4, 100, 100, '{}', $5)",
+		orderID, adID, f.seller.ID, quantity, createdAt,
+	)
+	if err != nil {
+		t.Fatalf("insert order item: %v", err)
+	}
+}
+
 func (f fixture) detail(t *testing.T, id string) *catalog.AdvertisementDetailEntity {
 	t.Helper()
 	detail, err := f.r.GetAdvertisementByID(context.Background(), id)
@@ -863,5 +891,68 @@ func TestGetAdvertisementsFiltersByProfile(t *testing.T) {
 				t.Fatalf("count = %d, want %d", count, len(tt.want))
 			}
 		})
+	}
+}
+
+func TestGetTrendingAdvertisementsRanksByUnitsSold(t *testing.T) {
+	f := newFixture(t)
+	now := time.Now().UTC()
+	less := f.insertAd(t, testutil.Ad{Title: "Menos vendido"})
+	more := f.insertAd(t, testutil.Ad{Title: "Mais vendido"})
+	f.insertAd(t, testutil.Ad{Title: "Sem vendas"})
+	f.insertSale(t, less.ID, 2, "paid", now)
+	f.insertSale(t, more.ID, 2, "delivered", now)
+	f.insertSale(t, more.ID, 1, "shipped", now)
+
+	ads, err := f.r.GetTrendingAdvertisements(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetTrendingAdvertisements: %v", err)
+	}
+
+	if len(ads) != 2 || ads[0].ID != more.ID || ads[1].ID != less.ID {
+		t.Fatalf("ads = %+v", ads)
+	}
+}
+
+func TestGetTrendingAdvertisementsIgnoresSalesThatDoNotCount(t *testing.T) {
+	f := newFixture(t)
+	now := time.Now().UTC()
+	unpaid := f.insertAd(t, testutil.Ad{Title: "Não pago"})
+	cancelled := f.insertAd(t, testutil.Ad{Title: "Cancelado"})
+	returned := f.insertAd(t, testutil.Ad{Title: "Devolvido"})
+	old := f.insertAd(t, testutil.Ad{Title: "Venda antiga"})
+	paused := f.insertAd(t, testutil.Ad{Title: "Pausado", Status: "paused"})
+	f.insertSale(t, unpaid.ID, 1, "awaiting_payment", now)
+	f.insertSale(t, cancelled.ID, 1, "cancelled", now)
+	f.insertSale(t, returned.ID, 1, "returned", now)
+	f.insertSale(t, old.ID, 1, "delivered", now.AddDate(0, 0, -31))
+	f.insertSale(t, paused.ID, 1, "paid", now)
+
+	ads, err := f.r.GetTrendingAdvertisements(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetTrendingAdvertisements: %v", err)
+	}
+
+	if len(ads) != 0 {
+		t.Fatalf("ads = %+v, want none", ads)
+	}
+}
+
+func TestGetTrendingAdvertisementsAppliesLimitAndLoadsImages(t *testing.T) {
+	f := newFixture(t)
+	now := time.Now().UTC()
+	first := f.insertAd(t, testutil.Ad{Title: "Primeiro"})
+	second := f.insertAd(t, testutil.Ad{Title: "Segundo"})
+	f.insertImage(t, first.ID, "capa.jpg", 1, true)
+	f.insertSale(t, first.ID, 3, "paid", now)
+	f.insertSale(t, second.ID, 1, "paid", now)
+
+	ads, err := f.r.GetTrendingAdvertisements(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetTrendingAdvertisements: %v", err)
+	}
+
+	if len(ads) != 1 || ads[0].ID != first.ID || len(ads[0].Images) != 1 {
+		t.Fatalf("ads = %+v", ads)
 	}
 }

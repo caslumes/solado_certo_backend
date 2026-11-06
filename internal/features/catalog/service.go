@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/caslumes/solado_certo_backend/internal/app"
@@ -15,6 +16,10 @@ type GetAdvertisementsUseCase interface {
 
 type GetAdvertisementUseCase interface {
 	GetAdvertisement(ctx context.Context, id string) (*AdvertisementDetailEntity, error)
+}
+
+type GetHomeUseCase interface {
+	GetHome(ctx context.Context, userID string) (*HomeEntity, error)
 }
 
 type GetCategoriesUseCase interface {
@@ -31,6 +36,7 @@ type GetConditionsUseCase interface {
 
 type repository interface {
 	GetAdvertisements(ctx context.Context, limit uint, offset uint, filters AdvertisementFilters, sort AdvertisementSort) ([]*AdvertisementEntity, error)
+	GetTrendingAdvertisements(ctx context.Context, limit uint) ([]*AdvertisementEntity, error)
 	GetAdvertisementByID(ctx context.Context, id string) (*AdvertisementDetailEntity, error)
 	CountAdvertisements(ctx context.Context, filters AdvertisementFilters) (uint, error)
 	GetCategories(ctx context.Context) ([]*CategoryEntity, error)
@@ -41,6 +47,8 @@ type repository interface {
 type podologicalProfileReader interface {
 	GetConsentedPodologicalProfile(ctx context.Context, userID string) (*me.PodologicalProfileEntity, error)
 }
+
+const homeSectionLimit = 10
 
 type service struct {
 	repo     repository
@@ -135,6 +143,26 @@ func (s *service) GetAdvertisement(ctx context.Context, id string) (*Advertiseme
 	}
 
 	return ad, nil
+}
+
+func (s *service) GetHome(ctx context.Context, userID string) (*HomeEntity, error) {
+	home := &HomeEntity{Sections: []*HomeSectionEntity{}}
+
+	if userID != "" {
+		page, err := s.GetAdvertisements(ctx, GetAdvertisementsInput{Limit: homeSectionLimit, ForMe: true, UserID: userID})
+		if err != nil && !errors.Is(err, app.ErrConsentRequired) {
+			return nil, err
+		}
+		home.addSection(HomeSectionForMe, "Para você", page.Items)
+	}
+
+	trending, err := s.repo.GetTrendingAdvertisements(ctx, homeSectionLimit)
+	if err != nil {
+		return nil, err
+	}
+	home.addSection(HomeSectionTrending, "Em alta", trending)
+
+	return home, nil
 }
 
 func (s *service) GetCategories(ctx context.Context) (*CategoriesEntity, error) {

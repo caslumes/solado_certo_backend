@@ -28,6 +28,7 @@ migrate:
 seed:
 	docker compose cp ${SEED_FILE} ${DB_CONTAINER}:/tmp/seed.sql
 	${EXEC} -T ${DB_CONTAINER} psql -v ON_ERROR_STOP=1 -q -o /dev/null -U ${DB_USER} -d ${DB_NAME} -f /tmp/seed.sql
+	${EXEC} -T ${SERVER_CONTAINER} sh -c 'mkdir -p data/uploads/public/seed && cp data/seed-images/*.jpg data/uploads/public/seed/'
 restart: down up
 logs:
 	docker compose logs -f

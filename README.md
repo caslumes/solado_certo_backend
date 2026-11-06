@@ -78,7 +78,7 @@ It runs every file in `data/migrations` in name order against the running databa
 
 To start from scratch instead: `make down`, delete `data/postgres`, `make up` (this erases all data; restore with `make restore` if needed).
 
-The migrations create the schema, the onboarding steps and the roles (`buyer`, `seller`, `admin`) only. `make seed` loads development data (users, categories, ads).
+The migrations create the schema, the onboarding steps and the roles (`buyer`, `seller`, `admin`) only. `make seed` loads development data (users, categories, ads, sample sales) and copies the ad photos in `data/seed-images` to the public uploads (credits in `data/seed-images/CREDITS.md`).
 
 From the host, Postgres listens on port `2345` (user `postgres`, password `postgres`, database `solado_certo`).
 
@@ -110,7 +110,7 @@ Never run the stack on two machines at the same time.
 | `make dump` | Write a SQL dump to `data/dump.sql` |
 | `make restore` | Load `data/dump.sql` into the database |
 | `make migrate` | Apply every migration in `data/migrations` to the running database |
-| `make seed` | Load the development data in `data/seeds/dev.sql` (safe to run again) |
+| `make seed` | Load the development data in `data/seeds/dev.sql` and the ad photos in `data/seed-images` (safe to run again) |
 | `make secret-key` | Print a random value for `SECRET_KEY` |
 | `make format` / `make tidy` | `go fmt` / `go mod tidy` (need Go on the host) |
 | `make audit` | Verify modules, tidy, format, and run `golangci-lint` in the container |
@@ -142,6 +142,7 @@ All bodies are JSON. Errors are returned as `{"error": "message"}`. Routes under
 | `GET` | `/me/data` | LGPD export: all of the user's personal data as one JSON document (profile, addresses, podological profile, consent history, orders, custom orders, documents, reviews, support, notifications, ads). Not cached; audited (`user.data_exported`) |
 | `DELETE` | `/me` | Delete the account: `password` (403 if wrong). Anonymizes the user and deletes or revokes their personal data; orders are kept for the other party with the anonymized user. 409 while an order or custom order is still open. Rate limited: 5/min per IP; audited (`user.account_deleted`) |
 | `GET` | `/catalog` | List published ads. Query: `page`, `limit` (max 100), `q`, `category`, `price_min`, `price_max`, `prescription_required`, `custom_made_allowed`, `side`, `size`, `material`, `rigidity`, `usage_indication` |
+| `GET` | `/catalog/home` | Sections for the home screen (`code`, `title`, `items`). Optional auth: `FOR_ME` needs a login and the podological profile consent, `TRENDING` lists the best sellers of the last 30 days; a section with no items is left out |
 | `GET` | `/catalog/items/:advertisementID` | One ad |
 | `GET` | `/catalog/categories` | Categories |
 | `GET` | `/seller/ads` | The seller's ads except removed ones, most recently changed first. Optional `status` (`draft`, `published`, `paused`). Each ad has `sold_out` (published with stock 0) and `missing_fields` (what blocks publishing) |

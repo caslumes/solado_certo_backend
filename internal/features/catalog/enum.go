@@ -10,6 +10,13 @@ const (
 	AdvertisementStatusRemoved   AdvertisementStatus = "removed"
 )
 
+type HomeSectionCode string
+
+const (
+	HomeSectionForMe    HomeSectionCode = "FOR_ME"
+	HomeSectionTrending HomeSectionCode = "TRENDING"
+)
+
 type AdvertisementSort string
 
 const (

@@ -110,12 +110,29 @@ func (r *postgresRepository) GetAdvertisements(ctx context.Context, limit uint, 
 
 	whereClause, args := whereStringFromFilters(filters)
 	argsCount := len(args)
-	rows, err := r.pool.Query(
+	return r.queryAdvertisements(
 		ctx,
 		"SELECT "+advertisementColumns+" FROM advertisements "+whereClause+
 			" ORDER BY "+order+" LIMIT $"+strconv.Itoa(argsCount+1)+" OFFSET $"+strconv.Itoa(argsCount+2),
 		append(args, limit, offset)...,
 	)
+}
+
+func (r *postgresRepository) GetTrendingAdvertisements(ctx context.Context, limit uint) ([]*catalog.AdvertisementEntity, error) {
+	return r.queryAdvertisements(
+		ctx,
+		"SELECT "+advertisementColumns+" FROM advertisements JOIN ("+
+			"SELECT oi.advertisement_id, SUM(oi.quantity) AS units_sold FROM order_items oi JOIN orders o ON o.id = oi.order_id "+
+			"WHERE o.status IN ('paid', 'processing', 'shipped', 'delivered') AND o.created_at >= NOW() - INTERVAL '30 days' "+
+			"GROUP BY oi.advertisement_id"+
+			") sales ON sales.advertisement_id = advertisements.id WHERE status = $1 "+
+			"ORDER BY sales.units_sold DESC, advertisements.created_at DESC, advertisements.id DESC LIMIT $2",
+		catalog.AdvertisementStatusPublished, limit,
+	)
+}
+
+func (r *postgresRepository) queryAdvertisements(ctx context.Context, query string, args ...any) ([]*catalog.AdvertisementEntity, error) {
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

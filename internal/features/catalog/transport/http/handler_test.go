@@ -27,6 +27,11 @@ type fakeService struct {
 	getPurposes       func(context.Context) ([]*catalog.PurposeEntity, error)
 	getConditions     func(context.Context) ([]*catalog.ConditionEntity, error)
 	getAdvertisement  func(context.Context, string) (*catalog.AdvertisementDetailEntity, error)
+	getHome           func(context.Context, string) (*catalog.HomeEntity, error)
+}
+
+func (f fakeService) GetHome(ctx context.Context, userID string) (*catalog.HomeEntity, error) {
+	return f.getHome(ctx, userID)
 }
 
 func (f fakeService) GetPurposes(ctx context.Context) ([]*catalog.PurposeEntity, error) {
@@ -385,5 +390,78 @@ func TestGetAdvertisementsForMeMapsMissingConsent(t *testing.T) {
 
 	if status != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", status, http.StatusForbidden)
+	}
+}
+
+func serveHome(t *testing.T, userID string, home *catalog.HomeEntity, err error) (*httptest.ResponseRecorder, string) {
+	t.Helper()
+
+	var received string
+	handler := NewHandler(fakeService{
+		getHome: func(_ context.Context, userID string) (*catalog.HomeEntity, error) {
+			received = userID
+			return home, err
+		},
+	})
+	router := gin.New()
+	router.GET("/catalog/home", func(c *gin.Context) {
+		if userID != "" {
+			c.Request = c.Request.WithContext(authmiddleware.WithUserID(c.Request.Context(), userID))
+		}
+	}, handler.GetHome)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/catalog/home", nil))
+	return recorder, received
+}
+
+func TestGetHomeReturnsSections(t *testing.T) {
+	home := &catalog.HomeEntity{Sections: []*catalog.HomeSectionEntity{{
+		Code:  catalog.HomeSectionTrending,
+		Title: "Em alta",
+		Items: []*catalog.AdvertisementEntity{{ID: "ad-1"}},
+	}}}
+
+	recorder, userID := serveHome(t, "buyer-1", home, nil)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if userID != "buyer-1" {
+		t.Fatalf("user = %q, want buyer-1", userID)
+	}
+	var body struct {
+		Sections []struct {
+			Code  string `json:"code"`
+			Title string `json:"title"`
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		} `json:"sections"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Sections) != 1 || body.Sections[0].Code != "TRENDING" || body.Sections[0].Title != "Em alta" || body.Sections[0].Items[0].ID != "ad-1" {
+		t.Fatalf("body = %s", recorder.Body.String())
+	}
+}
+
+func TestGetHomeAllowsAnonymousRequests(t *testing.T) {
+	recorder, userID := serveHome(t, "", &catalog.HomeEntity{Sections: []*catalog.HomeSectionEntity{}}, nil)
+
+	if recorder.Code != http.StatusOK || userID != "" {
+		t.Fatalf("status = %d, user = %q", recorder.Code, userID)
+	}
+	if got := strings.TrimSpace(recorder.Body.String()); got != `{"sections":[]}` {
+		t.Fatalf("body = %s", got)
+	}
+}
+
+func TestGetHomeMapsUnexpectedErrors(t *testing.T) {
+	recorder, _ := serveHome(t, "", nil, errors.New("database is down"))
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
 	}
 }

@@ -25,14 +25,16 @@ type fakeRepository struct {
 	categories []*CategoryEntity
 	purposes   []*PurposeEntity
 	conditions []*ConditionEntity
+	trending   []*AdvertisementEntity
 	err        error
 
-	gotLimit        uint
-	gotOffset       uint
-	gotFilters      AdvertisementFilters
-	gotCountFilters AdvertisementFilters
-	gotSort         AdvertisementSort
-	called          bool
+	gotLimit         uint
+	gotOffset        uint
+	gotFilters       AdvertisementFilters
+	gotCountFilters  AdvertisementFilters
+	gotSort          AdvertisementSort
+	gotTrendingLimit uint
+	called           bool
 }
 
 func (f *fakeRepository) GetAdvertisements(_ context.Context, limit uint, offset uint, filters AdvertisementFilters, sort AdvertisementSort) ([]*AdvertisementEntity, error) {
@@ -45,6 +47,11 @@ func (f *fakeRepository) GetAdvertisements(_ context.Context, limit uint, offset
 		ads = append(ads, ad)
 	}
 	return ads, nil
+}
+
+func (f *fakeRepository) GetTrendingAdvertisements(_ context.Context, limit uint) ([]*AdvertisementEntity, error) {
+	f.gotTrendingLimit = limit
+	return f.trending, f.err
 }
 
 func (f *fakeRepository) GetAdvertisementByID(_ context.Context, id string) (*AdvertisementDetailEntity, error) {
@@ -452,5 +459,97 @@ func TestGetAdvertisementsWithoutForMeIgnoresProfile(t *testing.T) {
 	}
 	if profiles.gotUser != "" || repository.gotFilters.Profile != nil {
 		t.Fatalf("profile read for %q, filter = %+v", profiles.gotUser, repository.gotFilters.Profile)
+	}
+}
+
+func homeCodes(home *HomeEntity) []HomeSectionCode {
+	codes := []HomeSectionCode{}
+	for _, section := range home.Sections {
+		codes = append(codes, section.Code)
+	}
+	return codes
+}
+
+func TestGetHomeShowsForMeBeforeTrending(t *testing.T) {
+	repository := &fakeRepository{
+		ads:      map[string]*AdvertisementEntity{adID: {ID: adID}},
+		trending: []*AdvertisementEntity{{ID: "trending"}},
+	}
+	profiles := &fakeProfiles{profile: &me.PodologicalProfileEntity{PainPoints: []me.PainPointEntity{{ID: "heel"}}}}
+
+	home, err := NewService(repository, profiles).GetHome(context.Background(), "buyer-1")
+	if err != nil {
+		t.Fatalf("GetHome: %v", err)
+	}
+
+	if got, want := homeCodes(home), []HomeSectionCode{HomeSectionForMe, HomeSectionTrending}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("sections = %v, want %v", got, want)
+	}
+	if home.Sections[0].Title != "Para você" || home.Sections[1].Title != "Em alta" {
+		t.Fatalf("titles = %q, %q", home.Sections[0].Title, home.Sections[1].Title)
+	}
+	if repository.gotLimit != homeSectionLimit || repository.gotTrendingLimit != homeSectionLimit {
+		t.Fatalf("limits = %d, %d, want %d", repository.gotLimit, repository.gotTrendingLimit, homeSectionLimit)
+	}
+	if !reflect.DeepEqual(repository.gotFilters.Profile.PainPointIDs, []string{"heel"}) {
+		t.Fatalf("profile = %+v", repository.gotFilters.Profile)
+	}
+}
+
+func TestGetHomeLeavesOutForMeWhenAnonymous(t *testing.T) {
+	repository := &fakeRepository{trending: []*AdvertisementEntity{{ID: "trending"}}}
+	profiles := &fakeProfiles{}
+
+	home, err := NewService(repository, profiles).GetHome(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetHome: %v", err)
+	}
+
+	if got, want := homeCodes(home), []HomeSectionCode{HomeSectionTrending}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("sections = %v, want %v", got, want)
+	}
+	if profiles.gotUser != "" {
+		t.Fatal("profile was read without a user")
+	}
+}
+
+func TestGetHomeLeavesOutForMeWithoutConsent(t *testing.T) {
+	repository := &fakeRepository{
+		ads:      map[string]*AdvertisementEntity{adID: {ID: adID}},
+		trending: []*AdvertisementEntity{{ID: "trending"}},
+	}
+	profiles := &fakeProfiles{err: app.ErrConsentRequired}
+
+	home, err := NewService(repository, profiles).GetHome(context.Background(), "buyer-1")
+	if err != nil {
+		t.Fatalf("GetHome: %v", err)
+	}
+
+	if got, want := homeCodes(home), []HomeSectionCode{HomeSectionTrending}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("sections = %v, want %v", got, want)
+	}
+}
+
+func TestGetHomeLeavesOutEmptySections(t *testing.T) {
+	profiles := &fakeProfiles{profile: &me.PodologicalProfileEntity{}}
+
+	home, err := NewService(&fakeRepository{}, profiles).GetHome(context.Background(), "buyer-1")
+	if err != nil {
+		t.Fatalf("GetHome: %v", err)
+	}
+
+	if home.Sections == nil || len(home.Sections) != 0 {
+		t.Fatalf("sections = %#v, want empty", home.Sections)
+	}
+}
+
+func TestGetHomePropagatesErrors(t *testing.T) {
+	if _, err := newService(&fakeRepository{err: errDatabase}).GetHome(context.Background(), ""); !errors.Is(err, errDatabase) {
+		t.Fatalf("trending err = %v, want %v", err, errDatabase)
+	}
+
+	profiles := &fakeProfiles{err: errDatabase}
+	if _, err := NewService(&fakeRepository{}, profiles).GetHome(context.Background(), "buyer-1"); !errors.Is(err, errDatabase) {
+		t.Fatalf("profile err = %v, want %v", err, errDatabase)
 	}
 }

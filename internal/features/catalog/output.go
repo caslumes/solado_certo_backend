@@ -70,6 +70,16 @@ type AdvertisementPageOutput struct {
 	HasPrevious bool                   `json:"has_previous"`
 }
 
+type HomeSectionOutput struct {
+	Code  HomeSectionCode        `json:"code"`
+	Title string                 `json:"title"`
+	Items []*AdvertisementOutput `json:"items"`
+}
+
+type HomeOutput struct {
+	Sections []*HomeSectionOutput `json:"sections"`
+}
+
 type CategoryOutput struct {
 	ID                 string            `json:"id"`
 	ParentCategoryID   *string           `json:"parent_category_id,omitempty"`

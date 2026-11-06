@@ -64,6 +64,7 @@ func initRoutes(r *gin.Engine, a *config.App) {
 	catalogGroup := r.Group("/catalog")
 	{
 		catalogGroup.GET("", a.AuthMiddleware.OptionalMiddleware(), a.CatalogHandler.GetAdvertisements)
+		catalogGroup.GET("/home", a.AuthMiddleware.OptionalMiddleware(), a.CatalogHandler.GetHome)
 		catalogGroup.GET("/items/:advertisementID", a.CatalogHandler.GetAdvertisement)
 		catalogGroup.GET("/items/:advertisementID/reviews", a.ReviewsHandler.ListReviews)
 		catalogGroup.GET("/categories", a.CatalogHandler.GetCategories)

@@ -115,11 +115,26 @@ INSERT INTO advertisements (id, seller_id, category_id, title, description, pric
  'both', '41', 'Couro', NULL, NULL, NULL, NULL, 'Enviado em até 2 dias úteis.', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
+DELETE FROM advertisement_images WHERE url LIKE 'https://placehold.co/%';
+
 INSERT INTO advertisement_images (advertisement_id, url, alt_text, position, is_cover)
-SELECT a.id, 'https://placehold.co/600x600?text=' || replace(a.title, ' ', '+'), a.title, 1, true
-FROM advertisements a
-WHERE a.seller_id = '00000000-0000-0000-0000-000000000002'
-  AND NOT EXISTS (SELECT 1 FROM advertisement_images i WHERE i.advertisement_id = a.id);
+SELECT a.id, p.url, a.title, 1, true
+FROM (VALUES
+('00000000-0000-0000-0000-000000000601', '/files/public/seed/00000000000000000000000000000601.jpg'),
+('00000000-0000-0000-0000-000000000602', '/files/public/seed/00000000000000000000000000000602.jpg'),
+('00000000-0000-0000-0000-000000000604', '/files/public/seed/00000000000000000000000000000604.jpg'),
+('00000000-0000-0000-0000-000000000605', '/files/public/seed/00000000000000000000000000000605.jpg'),
+('00000000-0000-0000-0000-000000000606', '/files/public/seed/00000000000000000000000000000606.jpg'),
+('00000000-0000-0000-0000-000000000607', '/files/public/seed/00000000000000000000000000000607.jpg'),
+('00000000-0000-0000-0000-000000000608', '/files/public/seed/00000000000000000000000000000608.jpg'),
+('00000000-0000-0000-0000-000000000609', '/files/public/seed/00000000000000000000000000000609.jpg'),
+('00000000-0000-0000-0000-000000000610', '/files/public/seed/00000000000000000000000000000610.jpg'),
+('00000000-0000-0000-0000-000000000611', '/files/public/seed/00000000000000000000000000000611.jpg'),
+('00000000-0000-0000-0000-000000000612', '/files/public/seed/00000000000000000000000000000612.jpg'),
+('00000000-0000-0000-0000-000000000613', '/files/public/seed/00000000000000000000000000000613.jpg')
+) AS p(advertisement_id, url)
+JOIN advertisements a ON a.id = p.advertisement_id::uuid
+WHERE NOT EXISTS (SELECT 1 FROM advertisement_images i WHERE i.advertisement_id = a.id);
 
 INSERT INTO advertisement_purposes (advertisement_id, purpose_id) VALUES
 ('00000000-0000-0000-0000-000000000601', '00000000-0000-0000-0000-000000000402'),
@@ -145,5 +160,57 @@ CROSS JOIN (VALUES
 ) AS o(name, carrier, service_code, price, delivery_days)
 WHERE a.seller_id = '00000000-0000-0000-0000-000000000002'
   AND NOT EXISTS (SELECT 1 FROM shipping_options s WHERE s.advertisement_id = a.id);
+
+INSERT INTO users (id, name, email, phone, password_hash, status, created_at, updated_at) VALUES
+('00000000-0000-0000-0000-000000000004', 'Ana Lima', 'ana@example.com', '19999990004', crypt('senha12345', gen_salt('bf', 10)), 'active', NOW(), NOW())
+ON CONFLICT (email) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role_id) VALUES
+('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000101')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO onboardings (user_id, status, current_step_id, completed_at)
+SELECT '00000000-0000-0000-0000-000000000004', 'completed', s.id, NOW()
+FROM onboarding_steps s
+WHERE s.tag = 'completion'
+ON CONFLICT (user_id) DO NOTHING;
+
+INSERT INTO addresses (id, user_id, label, receiver, zip_code, street, number, district, city, state, is_default, created_at, updated_at) VALUES
+('00000000-0000-0000-0000-000000000202', '00000000-0000-0000-0000-000000000004', 'Casa', 'Ana Lima', '13015100', 'Rua Conceição', '200', 'Centro', 'Campinas', 'SP', true, NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO checkouts (id, buyer_id, idempotency_key, created_at) VALUES
+('00000000-0000-0000-0000-000000000801', '00000000-0000-0000-0000-000000000004', 'seed-sales', NOW() - INTERVAL '5 days')
+ON CONFLICT (id) DO NOTHING;
+
+WITH sales (id, number, advertisement_id, quantity) AS (VALUES
+    ('00000000-0000-0000-0000-000000000811'::uuid, 'SEED-0001', '00000000-0000-0000-0000-000000000601'::uuid, 4),
+    ('00000000-0000-0000-0000-000000000812'::uuid, 'SEED-0002', '00000000-0000-0000-0000-000000000610'::uuid, 3),
+    ('00000000-0000-0000-0000-000000000813'::uuid, 'SEED-0003', '00000000-0000-0000-0000-000000000606'::uuid, 2),
+    ('00000000-0000-0000-0000-000000000814'::uuid, 'SEED-0004', '00000000-0000-0000-0000-000000000612'::uuid, 1)
+),
+priced AS (
+    SELECT s.id, s.number, s.advertisement_id, s.quantity, a.title, a.price, a.seller_id, o.id AS shipping_option_id, o.name, o.carrier, o.price AS shipping_price, o.delivery_days
+    FROM sales s
+    JOIN advertisements a ON a.id = s.advertisement_id
+    JOIN shipping_options o ON o.advertisement_id = a.id AND o.name = 'PAC'
+),
+new_orders AS (
+    INSERT INTO orders (id, buyer_id, checkout_id, shipping_address_id, shipping_address, number, status, subtotal, shipping_total, total, created_at, updated_at, paid_at, delivered_at)
+    SELECT p.id, '00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000801', '00000000-0000-0000-0000-000000000202',
+        jsonb_build_object('receiver', 'Ana Lima', 'zip_code', '13015100', 'street', 'Rua Conceição', 'number', '200', 'district', 'Centro', 'city', 'Campinas', 'state', 'SP'),
+        p.number, 'delivered', p.price * p.quantity, p.shipping_price, p.price * p.quantity + p.shipping_price,
+        NOW() - INTERVAL '5 days', NOW() - INTERVAL '1 day', NOW() - INTERVAL '5 days', NOW() - INTERVAL '1 day'
+    FROM priced p
+    ON CONFLICT (id) DO NOTHING
+    RETURNING id
+)
+INSERT INTO order_items (order_id, advertisement_id, seller_id, shipping_option_id, quantity, unit_price, subtotal, product_snapshot, created_at)
+SELECT p.id, p.advertisement_id, p.seller_id, p.shipping_option_id, p.quantity, p.price, p.price * p.quantity,
+    jsonb_build_object('title', p.title, 'cover_image_url', '/files/public/seed/' || lpad(right(p.advertisement_id::text, 3), 32, '0') || '.jpg', 'seller_name', 'João Pereira',
+        'shipping_option', jsonb_build_object('id', p.shipping_option_id, 'name', p.name, 'carrier', p.carrier, 'price', p.shipping_price::text, 'delivery_days', p.delivery_days)),
+    NOW() - INTERVAL '5 days'
+FROM priced p
+JOIN new_orders n ON n.id = p.id;
 
 COMMIT;
